@@ -38,9 +38,9 @@ export default function Layout({ children }: { children: ReactNode }) {
   const allowedHrefs = ROLE_NAV[currentUser!.role];
   const navItems = ALL_NAV_ITEMS.filter(item => allowedHrefs.includes(item.href));
 
-  const expiringSoon = state.members.filter(m => m.status === 'expiring_soon').length;
-  const hasDebt = state.members.filter(m => m.status === 'has_debt').length;
-  const newLeads = state.leads.filter(l => l.status === 'New').length;
+  // const expiringSoon = state.members.filter(m => m.status === 'expiring_soon').length;
+  // const hasDebt = state.members.filter(m => m.status === 'has_debt').length;
+  // const newLeads = state.leads.filter(l => l.status === 'New').length;
 
   const dueLiabilities = state.liabilities.filter(l => {
     if (l.isComplete) return false;
@@ -71,7 +71,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           </div>
         </div>
 
-        {/* Alert strip */}
+        {/* Alert strip
         {(expiringSoon > 0 || hasDebt > 0 || newLeads > 0) && (
           <div className="px-3 py-2 border-b border-sidebar-border space-y-1">
             {expiringSoon > 0 && (
@@ -93,7 +93,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               </div>
             )}
           </div>
-        )}
+        )} */}
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
