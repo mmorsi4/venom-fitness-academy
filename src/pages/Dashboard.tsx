@@ -3,25 +3,27 @@ import { Users, LogIn, AlertTriangle, DollarSign, UserPlus, Clock, TrendingUp } 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useAppState } from "@/lib/store";
+import { useMembers, useInvoices, useLeads, useGymSessions } from "@/hooks/use-data";
 import StatusBadge from "@/components/StatusBadge";
-import { MOCK_SESSIONS } from "@/lib/mock-data";
 import { format } from "date-fns";
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
-  const { state } = useAppState();
+  const { data: members = [] } = useMembers();
+  const { data: invoices = [] } = useInvoices();
+  const { data: leads = [] } = useLeads();
+  const { data: sessions = [] } = useGymSessions();
 
-  const activeMembers = state.members.filter(m => m.status === 'active').length;
-  const expiringSoon = state.members.filter(m => m.status === 'expiring_soon');
-  const expired = state.members.filter(m => m.status === 'expired');
-  const withDebt = state.members.filter(m => m.status === 'has_debt');
-  const newLeads = state.leads.filter(l => l.status === 'New');
-  const outstandingAmount = state.invoices
+  const activeMembers = members.filter(m => m.status === 'active').length;
+  const expiringSoon = members.filter(m => m.status === 'expiring_soon');
+  const expired = members.filter(m => m.status === 'expired');
+  const withDebt = members.filter(m => m.status === 'has_debt');
+  const newLeads = leads.filter(l => l.status === 'New');
+  const outstandingAmount = invoices
     .filter(i => i.status === 'partial' || i.status === 'unpaid')
-    .reduce((sum, i) => sum + (i.totalAmount - i.paidAmount), 0);
+    .reduce((sum, i) => sum + (i.total_amount - i.paid_amount), 0);
 
-  const todaySessions = MOCK_SESSIONS.slice(0, 4);
+  const todaySessions = sessions.slice(0, 4);
 
   const statCards = [
     { label: "Active Members", value: activeMembers, icon: Users, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
@@ -84,13 +86,13 @@ export default function Dashboard() {
               <div key={s.id} data-testid={`session-${s.id}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
                 <div className="text-center min-w-[42px]">
                   <p className="text-xs font-bold text-foreground">{s.time}</p>
-                  <p className="text-xs text-muted-foreground">{s.dayOfWeek.slice(0,3)}</p>
+                  <p className="text-xs text-muted-foreground">{s.day_of_week.slice(0,3)}</p>
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
-                  <p className="text-xs text-muted-foreground">{s.coachName}</p>
+                  <p className="text-xs text-muted-foreground">{s.coach_name ?? 'Unassigned'}</p>
                 </div>
-                <Badge variant="secondary" className="text-xs">{s.attendanceCount}/{s.capacity}</Badge>
+                <Badge variant="secondary" className="text-xs">{s.attendance_count}/{s.capacity}</Badge>
               </div>
             ))}
           </CardContent>
@@ -112,7 +114,7 @@ export default function Dashboard() {
                 <div key={m.id} data-testid={`expiring-${m.id}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{m.name}</p>
-                    <p className="text-xs text-muted-foreground">{m.sessionsRemaining} sessions left</p>
+                    <p className="text-xs text-muted-foreground">{m.sessions_remaining} sessions left</p>
                   </div>
                   <StatusBadge status={m.status} />
                 </div>
@@ -130,17 +132,17 @@ export default function Dashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 pt-0">
-            {state.invoices.filter(i => i.status !== 'paid').length === 0 ? (
+            {invoices.filter(i => i.status !== 'paid').length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">No outstanding payments</p>
             ) : (
-              state.invoices.filter(i => i.status !== 'paid').map(inv => (
+              invoices.filter(i => i.status !== 'paid').map(inv => (
                 <div key={inv.id} data-testid={`outstanding-${inv.id}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{inv.memberName}</p>
-                    <p className="text-xs text-muted-foreground">{inv.id}</p>
+                    <p className="text-sm font-medium text-foreground truncate">{inv.member_name}</p>
+                    <p className="text-xs text-muted-foreground">{inv.display_id}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-bold text-foreground">{(inv.totalAmount - inv.paidAmount).toLocaleString()} EGP</p>
+                    <p className="text-sm font-bold text-foreground">{(inv.total_amount - inv.paid_amount).toLocaleString()} EGP</p>
                     <Badge variant={inv.status === 'partial' ? 'secondary' : 'destructive'} className="text-xs capitalize">{inv.status}</Badge>
                   </div>
                 </div>

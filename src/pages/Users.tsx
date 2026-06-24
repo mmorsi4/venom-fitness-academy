@@ -57,7 +57,7 @@ export default function UsersPage() {
   };
   const closeDialog = () => { setShowDialog(false); setEditUser(null); };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name.trim() || !form.email.trim() || !form.password.trim()) {
       toast.error("All fields are required");
       return;
@@ -67,19 +67,21 @@ export default function UsersPage() {
       return;
     }
     if (editUser) {
-      updateUser(editUser.id, { name: form.name.trim(), email: form.email.trim(), password: form.password, role: form.role });
+      const result = await updateUser(editUser.id, { name: form.name.trim(), email: form.email.trim(), password: form.password, role: form.role });
+      if (!result.ok) { toast.error(result.error ?? "Failed to update user"); return; }
       toast.success(`User updated: ${form.name}`);
     } else {
-      const result = createUser({ name: form.name.trim(), email: form.email.trim(), password: form.password, role: form.role });
+      const result = await createUser({ name: form.name.trim(), email: form.email.trim(), password: form.password, role: form.role });
       if (!result.ok) { toast.error(result.error ?? "Failed to create user"); return; }
       toast.success(`Account created for ${form.name}`);
     }
     closeDialog();
   };
 
-  const handleDelete = (u: AppUser) => {
+  const handleDelete = async (u: AppUser) => {
     if (u.id === currentUser?.id) { toast.error("You cannot delete your own account"); return; }
-    deleteUser(u.id);
+    const result = await deleteUser(u.id);
+    if (!result.ok) { toast.error(result.error ?? "Failed to delete user"); return; }
     toast.success(`Deleted: ${u.name}`);
     setConfirmDelete(null);
   };

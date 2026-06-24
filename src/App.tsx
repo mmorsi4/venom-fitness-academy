@@ -2,7 +2,6 @@ import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
-import { AppStateProvider } from "@/lib/store";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import Layout from "@/components/Layout";
 import LoginPage from "@/pages/Login";
@@ -64,12 +63,10 @@ function App() {
   return (
     <AuthProvider>
       <QueryClientProvider client={queryClient}>
-        <AppStateProvider>
-          <TooltipProvider>
-            <AppInner />
-            <Toaster richColors position="top-right" />
-          </TooltipProvider>
-        </AppStateProvider>
+        <TooltipProvider>
+          <AppInner />
+          <Toaster richColors position="top-right" />
+        </TooltipProvider>
       </QueryClientProvider>
     </AuthProvider>
   );

@@ -8,8 +8,8 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from "@/components/ui/dialog";
-import { useAppState } from "@/lib/store";
-import { SubscriptionPackage } from "@/lib/mock-data";
+import { usePackages, useMembers, useCreatePackage, useUpdatePackage, useDeletePackage } from "@/hooks/use-data";
+import type { SubscriptionPackage } from "@/lib/types";
 import { toast } from "sonner";
 
 interface PkgForm {
@@ -30,14 +30,19 @@ const emptyForm: PkgForm = {
 function pkgToForm(p: SubscriptionPackage): PkgForm {
   return {
     name: p.name, sessions: p.sessions === 999 ? "0" : String(p.sessions),
-    price: String(p.price), validityDays: String(p.validityDays),
-    freezeDays: String(p.freezeDays), invitations: String(p.invitations),
-    inBodySessions: String(p.inBodySessions),
+    price: String(p.price), validityDays: String(p.validity_days),
+    freezeDays: String(p.freeze_days), invitations: String(p.invitations),
+    inBodySessions: String(p.inbody_sessions),
   };
 }
 
 export default function Subscriptions() {
-  const { state, dispatch } = useAppState();
+  const { data: packages = [] } = usePackages();
+  const { data: members = [] } = useMembers();
+  const createPackage = useCreatePackage();
+  const updatePackage = useUpdatePackage();
+  const deletePackage = useDeletePackage();
+
   const [showDialog, setShowDialog] = useState(false);
   const [editPkg, setEditPkg] = useState<SubscriptionPackage | null>(null);
   const [form, setForm] = useState<PkgForm>(emptyForm);
@@ -61,40 +66,62 @@ export default function Subscriptions() {
     if (!unlimited && sessions <= 0) { toast.error("Enter a valid number of sessions"); return; }
 
     if (editPkg) {
-      const updated: SubscriptionPackage = {
-        ...editPkg, name: form.name.trim(), sessions, price: Number(form.price),
-        validityDays: Number(form.validityDays) || 30, freezeDays: Number(form.freezeDays) || 7,
-        invitations: Number(form.invitations) || 0, inBodySessions: Number(form.inBodySessions) || 0,
-      };
-      dispatch({ type: 'UPDATE_PACKAGE', payload: updated });
-      toast.success(`Package updated: ${form.name}`);
+      updatePackage.mutate({
+        id: editPkg.id,
+        updates: {
+          name: form.name.trim(),
+          sessions,
+          price: Number(form.price),
+          validity_days: Number(form.validityDays) || 30,
+          freeze_days: Number(form.freezeDays) || 7,
+          invitations: Number(form.invitations) || 0,
+          inbody_sessions: Number(form.inBodySessions) || 0,
+        }
+      }, {
+        onSuccess: () => {
+          toast.success(`Package updated: ${form.name}`);
+          closeDialog();
+        },
+        onError: (err) => toast.error(`Error updating package: ${err.message}`)
+      });
     } else {
-      const newPkg: SubscriptionPackage = {
-        id: `P${Date.now()}`, name: form.name.trim(), sessions, price: Number(form.price),
-        validityDays: Number(form.validityDays) || 30, freezeDays: Number(form.freezeDays) || 7,
-        invitations: Number(form.invitations) || 0, inBodySessions: Number(form.inBodySessions) || 0,
-      };
-      dispatch({ type: 'ADD_PACKAGE', payload: newPkg });
-      toast.success(`Package created: ${form.name}`);
+      createPackage.mutate({
+        name: form.name.trim(),
+        sessions,
+        price: Number(form.price),
+        validity_days: Number(form.validityDays) || 30,
+        freeze_days: Number(form.freezeDays) || 7,
+        invitations: Number(form.invitations) || 0,
+        inbody_sessions: Number(form.inBodySessions) || 0,
+      }, {
+        onSuccess: () => {
+          toast.success(`Package created: ${form.name}`);
+          closeDialog();
+        },
+        onError: (err) => toast.error(`Error creating package: ${err.message}`)
+      });
     }
-    closeDialog();
   };
 
   const handleDelete = (pkg: SubscriptionPackage) => {
-    const inUse = state.members.some(m => m.packageName === pkg.name);
+    const inUse = members.some(m => m.package_name === pkg.name);
     if (inUse) {
       toast.error("Cannot delete — members are currently on this package");
       setConfirmDelete(null);
       return;
     }
-    dispatch({ type: 'DELETE_PACKAGE', payload: pkg.id });
-    toast.success(`Package deleted: ${pkg.name}`);
-    setConfirmDelete(null);
+    deletePackage.mutate(pkg.id, {
+      onSuccess: () => {
+        toast.success(`Package deleted: ${pkg.name}`);
+        setConfirmDelete(null);
+      },
+      onError: (err) => toast.error(`Error deleting package: ${err.message}`)
+    });
   };
 
-  const packageUsage = state.packages.map(pkg => ({
+  const packageUsage = packages.map(pkg => ({
     ...pkg,
-    activeCount: state.members.filter(m => m.packageName === pkg.name && m.status === 'active').length,
+    activeCount: members.filter(m => m.package_name === pkg.name && m.status === 'active').length,
   }));
 
   return (
@@ -120,7 +147,7 @@ export default function Subscriptions() {
                   </div>
                   <div>
                     <CardTitle className="text-base">{pkg.name}</CardTitle>
-                    <p className="text-sm text-muted-foreground mt-0.5">{pkg.validityDays}-day validity</p>
+                    <p className="text-sm text-muted-foreground mt-0.5">{pkg.validity_days}-day validity</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -152,13 +179,13 @@ export default function Subscriptions() {
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Included Amenities</p>
                 <div className="flex flex-wrap gap-2">
                   <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium">
-                    <Snowflake className="w-3 h-3" />{pkg.freezeDays} Freeze Days
+                    <Snowflake className="w-3 h-3" />{pkg.freeze_days} Freeze Days
                   </div>
                   <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-50 border border-violet-100 text-violet-700 text-xs font-medium">
                     <Users className="w-3 h-3" />{pkg.invitations} Invitation{pkg.invitations !== 1 ? 's' : ''}
                   </div>
                   <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-medium">
-                    <Activity className="w-3 h-3" />{pkg.inBodySessions} InBody Session{pkg.inBodySessions !== 1 ? 's' : ''}
+                    <Activity className="w-3 h-3" />{pkg.inbody_sessions} InBody Session{pkg.inbody_sessions !== 1 ? 's' : ''}
                   </div>
                 </div>
               </div>
@@ -180,9 +207,9 @@ export default function Subscriptions() {
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Member Distribution</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {state.packages.map(pkg => {
-            const count = state.members.filter(m => m.packageName === pkg.name).length;
-            const pct = state.members.length > 0 ? Math.round((count / state.members.length) * 100) : 0;
+          {packages.map(pkg => {
+            const count = members.filter(m => m.package_name === pkg.name).length;
+            const pct = members.length > 0 ? Math.round((count / members.length) * 100) : 0;
             return (
               <div key={pkg.id} className="flex items-center gap-3 p-3 rounded-lg bg-card border">
                 <div className="flex-1 min-w-0">
@@ -191,7 +218,7 @@ export default function Subscriptions() {
                     <span className="text-sm text-muted-foreground">{count} members ({pct}%)</span>
                   </div>
                   <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
+                    <div className="h-full bg-constructive rounded-full transition-all" style={{ width: `${pct}%` }} />
                   </div>
                 </div>
               </div>
@@ -273,7 +300,7 @@ export default function Subscriptions() {
           <DialogHeader><DialogTitle>Delete Package</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground py-2">
             Are you sure you want to delete <strong>{confirmDelete?.name}</strong>?
-            {state.members.some(m => m.packageName === confirmDelete?.name) && (
+            {members.some(m => m.package_name === confirmDelete?.name) && (
               <span className="block mt-2 text-red-600 font-medium">⚠ Members are currently on this package — cannot delete.</span>
             )}
           </p>

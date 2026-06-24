@@ -5,9 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
-import { useAppState } from "@/lib/store";
+import { useAuditLogs } from "@/hooks/use-data";
 import { format } from "date-fns";
-import { AuditLog as AuditLogType } from "@/lib/mock-data";
 
 const actionTypeColors: Record<string, string> = {
   override_checkin: "bg-red-100 text-red-700 border-red-200",
@@ -28,13 +27,14 @@ const actionTypeLabels: Record<string, string> = {
 };
 
 export default function AuditLog() {
-  const { state } = useAppState();
+  const { data: auditLogs = [] } = useAuditLogs();
   const [filter, setFilter] = useState("all");
 
-  const filtered = state.auditLogs.filter(l => filter === "all" || l.actionType === filter);
+  const filtered = auditLogs.filter(l => filter === "all" || l.action_type === filter);
 
-  const userCounts = state.auditLogs.reduce((acc, log) => {
-    acc[log.performedBy] = (acc[log.performedBy] || 0) + 1;
+  const userCounts = auditLogs.reduce((acc, log) => {
+    const user = log.performer_name;
+    acc[user] = (acc[user] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
 
@@ -48,7 +48,7 @@ export default function AuditLog() {
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {Object.entries(actionTypeLabels).filter(([k]) => k !== 'other').map(([key, label]) => {
-          const count = state.auditLogs.filter(l => l.actionType === key).length;
+          const count = auditLogs.filter(l => l.action_type === key).length;
           return (
             <div key={key} className={`p-3 rounded-xl border text-center ${actionTypeColors[key]}`}>
               <p className="text-xl font-bold">{count}</p>
@@ -66,7 +66,7 @@ export default function AuditLog() {
             <SelectValue placeholder="Filter by action..." />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Actions ({state.auditLogs.length})</SelectItem>
+            <SelectItem value="all">All Actions ({auditLogs.length})</SelectItem>
             <SelectItem value="override_checkin">Override Check-in</SelectItem>
             <SelectItem value="edit_payment">Edit Payment</SelectItem>
             <SelectItem value="apply_discount">Apply Discount</SelectItem>
@@ -82,7 +82,7 @@ export default function AuditLog() {
         <Card><CardContent className="py-12 text-center"><p className="text-muted-foreground">No audit entries found</p></CardContent></Card>
       ) : (
         <div className="space-y-2">
-          {filtered.map((log: AuditLogType) => (
+          {filtered.map(log => (
             <div
               key={log.id}
               data-testid={`audit-entry-${log.id}`}
@@ -90,23 +90,23 @@ export default function AuditLog() {
             >
               <div className="flex-shrink-0 mt-0.5">
                 <ShieldCheck className={`w-5 h-5 ${
-                  log.actionType === 'override_checkin' ? 'text-red-500' :
-                  log.actionType === 'edit_payment' ? 'text-amber-500' :
-                  log.actionType === 'apply_discount' || log.actionType === 'remove_discount' ? 'text-blue-500' :
+                  log.action_type === 'override_checkin' ? 'text-red-500' :
+                  log.action_type === 'edit_payment' ? 'text-amber-500' :
+                  log.action_type === 'apply_discount' || log.action_type === 'remove_discount' ? 'text-blue-500' :
                   'text-emerald-500'
                 }`} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${actionTypeColors[log.actionType]}`}>
-                    {actionTypeLabels[log.actionType]}
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${actionTypeColors[log.action_type]}`}>
+                    {actionTypeLabels[log.action_type]}
                   </span>
                   <span className="text-sm font-medium text-foreground">{log.action}</span>
                 </div>
                 <p className="text-sm text-muted-foreground mt-1">{log.details}</p>
               </div>
               <div className="text-right flex-shrink-0">
-                <p className="text-sm font-medium text-foreground">{log.performedBy}</p>
+                <p className="text-sm font-medium text-foreground">{log.performer_name}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{format(new Date(log.timestamp), "dd MMM, HH:mm")}</p>
               </div>
             </div>

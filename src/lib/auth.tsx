@@ -1,11 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { supabase } from './supabase';
+import type { UserRole, Profile } from './types';
+import type { Session, User } from '@supabase/supabase-js';
 
-export type UserRole = 'admin' | 'reception' | 'sales';
+export type { UserRole } from './types';
 
 export interface AppUser {
   id: string;
   email: string;
-  password: string;
   role: UserRole;
   name: string;
 }
@@ -13,87 +15,162 @@ export interface AppUser {
 interface AuthContextType {
   currentUser: AppUser | null;
   users: AppUser[];
-  login: (email: string, password: string) => boolean;
-  logout: () => void;
-  createUser: (user: Omit<AppUser, 'id'>) => { ok: boolean; error?: string };
-  updateUser: (id: string, updates: Partial<AppUser>) => void;
-  deleteUser: (id: string) => void;
-}
-
-const USERS_KEY = 'gymp_users';
-const SESSION_KEY = 'gymp_session';
-
-const DEFAULT_USERS: AppUser[] = [
-  { id: 'U001', email: 'admin@gym.com', password: 'admin123', role: 'admin', name: 'Admin User' },
-  { id: 'U002', email: 'reception@gym.com', password: 'rec123', role: 'reception', name: 'Reception Staff' },
-  { id: 'U003', email: 'sales@gym.com', password: 'sales123', role: 'sales', name: 'Sales Team' },
-];
-
-function loadUsers(): AppUser[] {
-  try {
-    const stored = localStorage.getItem(USERS_KEY);
-    if (stored) return JSON.parse(stored);
-  } catch { /* ignore */ }
-  localStorage.setItem(USERS_KEY, JSON.stringify(DEFAULT_USERS));
-  return DEFAULT_USERS;
-}
-
-function saveUsers(users: AppUser[]) {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-}
-
-function loadSession(users: AppUser[]): AppUser | null {
-  try {
-    const id = localStorage.getItem(SESSION_KEY);
-    if (id) return users.find(u => u.id === id) ?? null;
-  } catch { /* ignore */ }
-  return null;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  logout: () => Promise<void>;
+  createUser: (data: { name: string; email: string; password: string; role: UserRole }) => Promise<{ ok: boolean; error?: string }>;
+  updateUser: (id: string, updates: { name?: string; email?: string; password?: string; role?: UserRole }) => Promise<{ ok: boolean; error?: string }>;
+  deleteUser: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  refreshUsers: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+async function profileToAppUser(user: User): Promise<AppUser | null> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single();
+  if (!data) return null;
+  return {
+    id: data.id,
+    email: data.email,
+    role: data.role as UserRole,
+    name: data.name,
+  };
+}
+
+async function fetchAllUsers(): Promise<AppUser[]> {
+  const { data } = await supabase.from('profiles').select('*').order('created_at');
+  return (data ?? []).map((p: Profile) => ({
+    id: p.id,
+    email: p.email,
+    role: p.role as UserRole,
+    name: p.name,
+  }));
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [users, setUsers] = useState<AppUser[]>(() => loadUsers());
-  const [currentUser, setCurrentUser] = useState<AppUser | null>(() => loadSession(loadUsers()));
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [users, setUsers] = useState<AppUser[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => { saveUsers(users); }, [users]);
+  // Initialize: check existing session
+  useEffect(() => {
+    let mounted = true;
 
-  const login = (email: string, password: string): boolean => {
-    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
-    if (user) {
-      setCurrentUser(user);
-      localStorage.setItem(SESSION_KEY, user.id);
-      return true;
+    async function init() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user && mounted) {
+        const appUser = await profileToAppUser(session.user);
+        setCurrentUser(appUser);
+        const allUsers = await fetchAllUsers();
+        setUsers(allUsers);
+      }
+      if (mounted) setLoading(false);
     }
-    return false;
-  };
 
-  const logout = () => {
-    setCurrentUser(null);
-    localStorage.removeItem(SESSION_KEY);
-  };
+    init();
 
-  const createUser = (data: Omit<AppUser, 'id'>): { ok: boolean; error?: string } => {
-    if (users.find(u => u.email.toLowerCase() === data.email.toLowerCase())) {
-      return { ok: false, error: 'Email already exists' };
-    }
-    const newUser: AppUser = { ...data, id: `U${Date.now()}` };
-    setUsers(prev => [...prev, newUser]);
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        if (session?.user && mounted) {
+          const appUser = await profileToAppUser(session.user);
+          setCurrentUser(appUser);
+          const allUsers = await fetchAllUsers();
+          setUsers(allUsers);
+        } else if (mounted) {
+          setCurrentUser(null);
+          setUsers([]);
+        }
+      }
+    );
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const login = async (email: string, password: string): Promise<{ ok: boolean; error?: string }> => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return { ok: false, error: error.message };
     return { ok: true };
   };
 
-  const updateUser = (id: string, updates: Partial<AppUser>) => {
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u));
-    if (currentUser?.id === id) setCurrentUser(prev => prev ? { ...prev, ...updates } : null);
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setCurrentUser(null);
+    setUsers([]);
   };
 
-  const deleteUser = (id: string) => {
-    if (id === currentUser?.id) return;
-    setUsers(prev => prev.filter(u => u.id !== id));
+  const refreshUsers = async () => {
+    const allUsers = await fetchAllUsers();
+    setUsers(allUsers);
+  };
+
+  // Admin user management via Edge Functions
+  const createUser = async (data: { name: string; email: string; password: string; role: UserRole }): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return { ok: false, error: 'Not authenticated' };
+
+      const response = await supabase.functions.invoke('admin-create-user', {
+        body: data,
+      });
+      if (response.error) return { ok: false, error: response.error.message };
+      if (response.data?.error) return { ok: false, error: response.data.error };
+
+      await refreshUsers();
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err.message ?? 'Failed to create user' };
+    }
+  };
+
+  const updateUser = async (id: string, updates: { name?: string; email?: string; password?: string; role?: UserRole }): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const response = await supabase.functions.invoke('admin-update-user', {
+        body: { userId: id, ...updates },
+      });
+      if (response.error) return { ok: false, error: response.error.message };
+      if (response.data?.error) return { ok: false, error: response.data.error };
+
+      await refreshUsers();
+      // If we updated ourselves, refresh current user
+      if (id === currentUser?.id) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const appUser = await profileToAppUser(user);
+          setCurrentUser(appUser);
+        }
+      }
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err.message ?? 'Failed to update user' };
+    }
+  };
+
+  const deleteUser = async (id: string): Promise<{ ok: boolean; error?: string }> => {
+    if (id === currentUser?.id) return { ok: false, error: 'Cannot delete your own account' };
+    try {
+      const response = await supabase.functions.invoke('admin-delete-user', {
+        body: { userId: id },
+      });
+      if (response.error) return { ok: false, error: response.error.message };
+      if (response.data?.error) return { ok: false, error: response.data.error };
+
+      await refreshUsers();
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err.message ?? 'Failed to delete user' };
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, users, login, logout, createUser, updateUser, deleteUser }}>
+    <AuthContext.Provider value={{ currentUser, users, loading, login, logout, createUser, updateUser, deleteUser, refreshUsers }}>
       {children}
     </AuthContext.Provider>
   );

@@ -11,8 +11,8 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAppState } from "@/lib/store";
-import { Member, Gender } from "@/lib/mock-data";
+import { useMembers, useCoaches, useCreateMember, useUpdateMember } from "@/hooks/use-data";
+import type { Member, Gender } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import { toast } from "sonner";
 import { format, differenceInYears, parseISO } from "date-fns";
@@ -31,100 +31,112 @@ interface MemberForm {
   birthDate: string;
   gender: Gender | "";
   source: string;
-  assignedCoach: string;
+  assignedCoachId: string;
 }
 
 const emptyForm: MemberForm = {
   name: "", phone: "", parentPhone: "", birthDate: "",
-  gender: "", source: "Walk-in", assignedCoach: "",
+  gender: "", source: "Walk-in", assignedCoachId: "",
 };
 
 function memberToForm(m: Member): MemberForm {
   return {
-    name: m.name, phone: m.phone, parentPhone: m.parentPhone ?? "",
-    birthDate: m.birthDate ?? "", gender: m.gender ?? "",
-    source: m.source, assignedCoach: m.assignedCoach ?? "",
+    name: m.name, phone: m.phone, parentPhone: m.parent_phone ?? "",
+    birthDate: m.birth_date ?? "", gender: m.gender ?? "",
+    source: m.source, assignedCoachId: m.assigned_coach_id ?? "",
   };
 }
 
-function calcAge(birthDate?: string) {
+function calcAge(birthDate?: string | null) {
   if (!birthDate) return null;
   try { return differenceInYears(new Date(), parseISO(birthDate)); } catch { return null; }
 }
 
 export default function Members() {
-  const { state, dispatch } = useAppState();
+  const { data: members = [] } = useMembers();
+  const { data: coaches = [] } = useCoaches();
+  const createMember = useCreateMember();
+  const updateMember = useUpdateMember();
+
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [showAdd, setShowAdd] = useState(false);
   const [editMember, setEditMember] = useState<Member | null>(null);
   const [form, setForm] = useState<MemberForm>(emptyForm);
 
-  const coachNames = [...new Set(state.coaches.map(c => c.name))];
-
-  const filtered = state.members.filter(m => {
+  const filtered = members.filter(m => {
     const matchSearch =
       m.name.toLowerCase().includes(query.toLowerCase()) ||
-      m.id.toLowerCase().includes(query.toLowerCase()) ||
+      m.display_id.toLowerCase().includes(query.toLowerCase()) ||
       m.phone.includes(query);
     const matchStatus = statusFilter === "all" || m.status === statusFilter;
     return matchSearch && matchStatus;
   });
 
   const counts: Record<string, number> = {
-    all: state.members.length,
-    active: state.members.filter(m => m.status === 'active').length,
-    expiring_soon: state.members.filter(m => m.status === 'expiring_soon').length,
-    expired: state.members.filter(m => m.status === 'expired').length,
-    has_debt: state.members.filter(m => m.status === 'has_debt').length,
+    all: members.length,
+    active: members.filter(m => m.status === 'active').length,
+    expiring_soon: members.filter(m => m.status === 'expiring_soon').length,
+    expired: members.filter(m => m.status === 'expired').length,
+    has_debt: members.filter(m => m.status === 'has_debt').length,
   };
 
   const openAdd = () => { setForm(emptyForm); setShowAdd(true); };
   const openEdit = (m: Member) => { setEditMember(m); setForm(memberToForm(m)); };
   const closeDialogs = () => { setShowAdd(false); setEditMember(null); };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name.trim() || !form.phone.trim()) {
       toast.error("Name and phone are required");
       return;
     }
+
+    const assignedCoachId = (form.assignedCoachId && form.assignedCoachId !== '__none__') ? form.assignedCoachId : null;
+
     if (editMember) {
-      const updated: Member = {
-        ...editMember,
-        name: form.name.trim(),
-        phone: form.phone.trim(),
-        parentPhone: form.parentPhone.trim() || undefined,
-        birthDate: form.birthDate || undefined,
-        gender: (form.gender as Gender) || undefined,
-        source: form.source,
-        assignedCoach: (form.assignedCoach && form.assignedCoach !== '__none__') ? form.assignedCoach : undefined,
-      };
-      dispatch({ type: 'UPDATE_MEMBER', payload: updated });
-      toast.success(`${form.name} updated`);
+      updateMember.mutate({
+        id: editMember.id,
+        updates: {
+          name: form.name.trim(),
+          phone: form.phone.trim(),
+          parent_phone: form.parentPhone.trim() || null,
+          birth_date: form.birthDate || null,
+          gender: (form.gender as Gender) || null,
+          source: form.source,
+          assigned_coach_id: assignedCoachId,
+        }
+      }, {
+        onSuccess: () => {
+          toast.success(`${form.name} updated`);
+          closeDialogs();
+        },
+        onError: (err) => toast.error(`Error updating: ${err.message}`)
+      });
     } else {
-      const newId = `M${String(state.members.length + 1).padStart(3, '0')}`;
-      const newMember: Member = {
-        id: newId,
+      createMember.mutate({
         name: form.name.trim(),
         phone: form.phone.trim(),
-        parentPhone: form.parentPhone.trim() || undefined,
-        birthDate: form.birthDate || undefined,
-        gender: (form.gender as Gender) || undefined,
+        parent_phone: form.parentPhone.trim() || null,
+        birth_date: form.birthDate || null,
+        gender: (form.gender as Gender) || null,
         source: form.source,
-        assignedCoach: (form.assignedCoach && form.assignedCoach !== '__none__') ? form.assignedCoach : undefined,
+        assigned_coach_id: assignedCoachId,
         status: 'active',
-        sessionsRemaining: 0,
-        totalSessions: 0,
-        expiresAt: new Date().toISOString(),
-        memberSince: new Date().toISOString(),
-        packageName: "None",
-        freezeDaysUsed: 0,
-        freezeDaysTotal: 7,
-      };
-      dispatch({ type: 'ADD_MEMBER', payload: newMember });
-      toast.success(`Member ${form.name} created`, { description: `ID: ${newId}` });
+        sessions_remaining: 0,
+        total_sessions: 0,
+        expires_at: new Date().toISOString(),
+        member_since: new Date().toISOString(),
+        package_name: "None",
+        freeze_days_used: 0,
+        freeze_days_total: 7,
+      }, {
+        onSuccess: () => {
+          toast.success(`Member ${form.name} created`);
+          closeDialogs();
+        },
+        onError: (err) => toast.error(`Error creating: ${err.message}`)
+      });
     }
-    closeDialogs();
   };
 
   const f = (key: keyof MemberForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -135,7 +147,7 @@ export default function Members() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Members</h1>
-          <p className="text-sm text-muted-foreground">{state.members.length} total members</p>
+          <p className="text-sm text-muted-foreground">{members.length} total members</p>
         </div>
         <Button data-testid="btn-add-member" onClick={openAdd} className="gap-2">
           <Plus className="w-4 h-4" /> New Member
@@ -175,7 +187,7 @@ export default function Members() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {filtered.map(m => {
-            const age = calcAge(m.birthDate);
+            const age = calcAge(m.birth_date);
             return (
               <Card key={m.id} data-testid={`member-card-${m.id}`} className="hover:shadow-md transition-shadow">
                 <CardContent className="p-4">
@@ -189,7 +201,7 @@ export default function Members() {
                         <StatusBadge status={m.status} />
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {m.id}
+                        {m.display_id}
                         {m.gender && ` · ${m.gender}`}
                         {age !== null && ` · ${age}y`}
                       </p>
@@ -206,16 +218,16 @@ export default function Members() {
                   <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                     <div className="p-1.5 rounded bg-muted/50">
                       <p className="text-sm font-bold text-foreground">
-                        {m.sessionsRemaining === 999 ? "∞" : m.sessionsRemaining}
+                        {m.sessions_remaining === 999 ? "∞" : m.sessions_remaining}
                       </p>
                       <p className="text-xs text-muted-foreground leading-tight">Sessions</p>
                     </div>
                     <div className="p-1.5 rounded bg-muted/50">
-                      <p className="text-sm font-bold text-foreground truncate">{m.packageName.split(' ')[0]}</p>
+                      <p className="text-sm font-bold text-foreground truncate">{m.package_name?.split(' ')[0]}</p>
                       <p className="text-xs text-muted-foreground leading-tight">Package</p>
                     </div>
                     <div className="p-1.5 rounded bg-muted/50">
-                      <p className="text-sm font-bold text-foreground">{format(new Date(m.expiresAt), "dd MMM")}</p>
+                      <p className="text-sm font-bold text-foreground">{format(new Date(m.expires_at), "dd MMM")}</p>
                       <p className="text-xs text-muted-foreground leading-tight">Expires</p>
                     </div>
                   </div>
@@ -223,28 +235,28 @@ export default function Members() {
                   <div className="mt-3 space-y-1">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Phone className="w-3 h-3" /> {m.phone}
-                      {m.parentPhone && (
-                        <span className="text-xs text-muted-foreground/70">· P: {m.parentPhone}</span>
+                      {m.parent_phone && (
+                        <span className="text-xs text-muted-foreground/70">· P: {m.parent_phone}</span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Calendar className="w-3 h-3" /> Since {format(new Date(m.memberSince), "MMM yyyy")}
-                      {m.assignedCoach && (
-                        <span className="ml-1">· {m.assignedCoach.split(' ')[0]}</span>
+                      <Calendar className="w-3 h-3" /> Since {format(new Date(m.member_since), "MMM yyyy")}
+                      {m.coach_name && (
+                        <span className="ml-1">· {m.coach_name.split(' ')[0]}</span>
                       )}
                     </div>
                   </div>
 
-                  {m.freezeDaysTotal && m.freezeDaysTotal > 0 && (
+                  {m.freeze_days_total && m.freeze_days_total > 0 && (
                     <div className="mt-2">
                       <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
                         <span>Freeze days</span>
-                        <span>{m.freezeDaysUsed ?? 0}/{m.freezeDaysTotal}</span>
+                        <span>{m.freeze_days_used ?? 0}/{m.freeze_days_total}</span>
                       </div>
                       <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                         <div
                           className="h-full bg-blue-400 rounded-full"
-                          style={{ width: `${((m.freezeDaysUsed ?? 0) / m.freezeDaysTotal) * 100}%` }}
+                          style={{ width: `${((m.freeze_days_used ?? 0) / m.freeze_days_total) * 100}%` }}
                         />
                       </div>
                     </div>
@@ -340,13 +352,13 @@ export default function Members() {
             {/* Assigned Coach */}
             <div className="space-y-1.5">
               <Label>Assigned Coach</Label>
-              <Select value={form.assignedCoach} onValueChange={v => setForm(p => ({ ...p, assignedCoach: v }))}>
+              <Select value={form.assignedCoachId} onValueChange={v => setForm(p => ({ ...p, assignedCoachId: v }))}>
                 <SelectTrigger data-testid="select-member-coach">
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">None</SelectItem>
-                  {coachNames.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  {coaches.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

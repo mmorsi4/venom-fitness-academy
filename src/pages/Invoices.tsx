@@ -13,8 +13,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useAppState } from "@/lib/store";
-import { Invoice } from "@/lib/mock-data";
+import { useInvoices, usePackages, useMembers, useDiscounts, useCreateInvoice } from "@/hooks/use-data";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -39,21 +38,26 @@ const emptyForm = {
 };
 
 export default function Invoices() {
-  const { state, dispatch } = useAppState();
+  const { data: invoices = [] } = useInvoices();
+  const { data: members = [] } = useMembers();
+  const { data: packages = [] } = usePackages();
+  const { data: discounts = [] } = useDiscounts();
+  const createInvoice = useCreateInvoice();
+
   const [tab, setTab] = useState("all");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
-  const filtered = state.invoices.filter(i => tab === "all" || i.status === tab);
-  const selectedPackage = state.packages.find(p => p.id === form.packageId);
-  const selectedMember = state.members.find(m => m.id === form.memberId);
-  const activeDiscounts = state.discounts.filter(d => d.active);
+  const filtered = invoices.filter(i => tab === "all" || i.status === tab);
+  const selectedPackage = packages.find(p => p.id === form.packageId);
+  const selectedMember = members.find(m => m.id === form.memberId);
+  const activeDiscounts = discounts.filter(d => d.active);
   const selectedGroup = activeDiscounts.find(d => d.id === form.discountGroupId);
 
   // Compute discount amount
   let discountAmount = 0;
   if (form.discountMode === 'group' && selectedGroup && selectedPackage) {
-    discountAmount = selectedGroup.discountType === 'fixed'
+    discountAmount = selectedGroup.discount_type === 'fixed'
       ? selectedGroup.value
       : Math.round(selectedPackage.price * selectedGroup.value / 100);
   } else if (form.discountMode === 'custom' && form.customDiscountValue) {
@@ -76,48 +80,38 @@ export default function Invoices() {
 
     const invStatus: 'paid' | 'partial' | 'unpaid' =
       paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
-    const newInv: Invoice = {
-      id: `INV-${1000 + state.invoices.length + 1}`,
-      memberId: form.memberId, memberName: selectedMember?.name ?? "",
-      packageId: form.packageId, packageName: selectedPackage?.name ?? "",
-      discountGroupId: form.discountMode === 'group' ? form.discountGroupId : undefined,
-      discountDescription: form.discountMode === 'custom'
+
+    createInvoice.mutate({
+      member_id: form.memberId,
+      member_name: selectedMember?.name ?? "",
+      package_id: form.packageId,
+      package_name: selectedPackage?.name ?? "",
+      discount_group_id: form.discountMode === 'group' ? form.discountGroupId : null,
+      discount_description: form.discountMode === 'custom'
         ? form.customDiscountDescription.trim()
-        : (selectedGroup?.name ?? undefined),
-      discountAmount, totalAmount: total,
-      paidAmount: paid, status: invStatus,
-      paymentMethod: form.paymentMethod, createdAt: new Date().toISOString(),
-    };
-    dispatch({ type: 'ADD_INVOICE', payload: newInv });
-
-    if (form.discountMode === 'group' && selectedGroup) {
-      const updatedGroup = {
-        ...selectedGroup,
-        memberIds: selectedGroup.memberIds.includes(form.memberId) ? selectedGroup.memberIds : [...selectedGroup.memberIds, form.memberId],
-        invoiceIds: [...selectedGroup.invoiceIds, newInv.id],
-      };
-      dispatch({ type: 'UPDATE_DISCOUNT', payload: updatedGroup });
-    }
-
-    dispatch({ type: 'UPDATE_MEMBER', payload: {
-      ...selectedMember!,
-      sessionsRemaining: selectedPackage!.sessions,
-      totalSessions: selectedPackage!.sessions,
-      packageName: selectedPackage!.name,
-      status: invStatus === 'unpaid' || invStatus === 'partial' ? 'has_debt' : 'active',
-      expiresAt: new Date(Date.now() + selectedPackage!.validityDays * 86400000).toISOString(),
-    }});
-
-    toast.success(`Invoice ${newInv.id} created`);
-    resetForm();
-    setShowCreate(false);
+        : (selectedGroup?.name ?? null),
+      discount_amount: discountAmount,
+      total_amount: total,
+      paid_amount: paid,
+      status: invStatus,
+      payment_method: form.paymentMethod,
+    }, {
+      onSuccess: () => {
+        toast.success(`Invoice created`);
+        resetForm();
+        setShowCreate(false);
+      },
+      onError: (err) => {
+        toast.error(`Error creating invoice: ${err.message}`);
+      }
+    });
   };
 
   const counts = {
-    all: state.invoices.length,
-    paid: state.invoices.filter(i => i.status === 'paid').length,
-    partial: state.invoices.filter(i => i.status === 'partial').length,
-    unpaid: state.invoices.filter(i => i.status === 'unpaid').length,
+    all: invoices.length,
+    paid: invoices.filter(i => i.status === 'paid').length,
+    partial: invoices.filter(i => i.status === 'partial').length,
+    unpaid: invoices.filter(i => i.status === 'unpaid').length,
   };
 
   return (
@@ -125,7 +119,7 @@ export default function Invoices() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Invoices</h1>
-          <p className="text-sm text-muted-foreground">{state.invoices.length} total invoices</p>
+          <p className="text-sm text-muted-foreground">{invoices.length} total invoices</p>
         </div>
         <Button data-testid="btn-create-invoice" onClick={() => setShowCreate(true)} className="gap-2">
           <Plus className="w-4 h-4" /> New Invoice
@@ -153,28 +147,28 @@ export default function Invoices() {
                     <FileText className="w-4 h-4 text-primary" />
                   </div>
                   <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2 items-center">
-                    <div><p className="text-xs text-muted-foreground">Invoice</p><p className="text-sm font-bold">{inv.id}</p></div>
-                    <div><p className="text-xs text-muted-foreground">Member</p><p className="text-sm font-medium">{inv.memberName}</p></div>
-                    <div><p className="text-xs text-muted-foreground">Package</p><p className="text-sm">{inv.packageName}</p></div>
-                    <div><p className="text-xs text-muted-foreground">Date</p><p className="text-sm">{format(new Date(inv.createdAt), "dd MMM yyyy")}</p></div>
+                    <div><p className="text-xs text-muted-foreground">Invoice</p><p className="text-sm font-bold">{inv.display_id}</p></div>
+                    <div><p className="text-xs text-muted-foreground">Member</p><p className="text-sm font-medium">{inv.member_name}</p></div>
+                    <div><p className="text-xs text-muted-foreground">Package</p><p className="text-sm">{inv.package_name}</p></div>
+                    <div><p className="text-xs text-muted-foreground">Date</p><p className="text-sm">{format(new Date(inv.created_at), "dd MMM yyyy")}</p></div>
                   </div>
                   <div className="text-right flex-shrink-0 space-y-1">
-                    <p className="text-base font-bold">{inv.totalAmount.toLocaleString()} EGP</p>
-                    {inv.discountAmount > 0 && (
+                    <p className="text-base font-bold">{inv.total_amount.toLocaleString()} EGP</p>
+                    {inv.discount_amount > 0 && (
                       <div className="flex items-center gap-1 justify-end">
                         <Tag className="w-3 h-3 text-muted-foreground" />
                         <p className="text-xs text-muted-foreground">
-                          -{inv.discountAmount} EGP
-                          {inv.discountDescription && ` · ${inv.discountDescription}`}
+                          -{inv.discount_amount} EGP
+                          {inv.discount_description && ` · ${inv.discount_description}`}
                         </p>
                       </div>
                     )}
                     <div className="flex items-center gap-1.5 justify-end">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${paymentStatuses[inv.status]}`}>{inv.status}</span>
-                      <Badge variant="outline" className="text-xs gap-1"><CreditCard className="w-3 h-3" />{inv.paymentMethod}</Badge>
+                      <Badge variant="outline" className="text-xs gap-1"><CreditCard className="w-3 h-3" />{inv.payment_method}</Badge>
                     </div>
                     {inv.status === 'partial' && (
-                      <p className="text-xs text-muted-foreground">Paid: {inv.paidAmount} / {inv.totalAmount}</p>
+                      <p className="text-xs text-muted-foreground">Paid: {inv.paid_amount} / {inv.total_amount}</p>
                     )}
                   </div>
                 </div>
@@ -194,7 +188,7 @@ export default function Invoices() {
               <Label>Member</Label>
               <Select value={form.memberId} onValueChange={v => setForm(p => ({ ...p, memberId: v }))}>
                 <SelectTrigger data-testid="select-invoice-member"><SelectValue placeholder="Select member..." /></SelectTrigger>
-                <SelectContent>{state.members.map(m => <SelectItem key={m.id} value={m.id}>{m.name} ({m.id})</SelectItem>)}</SelectContent>
+                <SelectContent>{members.map(m => <SelectItem key={m.id} value={m.id}>{m.name} ({m.display_id})</SelectItem>)}</SelectContent>
               </Select>
             </div>
 
@@ -202,7 +196,7 @@ export default function Invoices() {
               <Label>Package</Label>
               <Select value={form.packageId} onValueChange={v => setForm(p => ({ ...p, packageId: v }))}>
                 <SelectTrigger data-testid="select-invoice-package"><SelectValue placeholder="Select package..." /></SelectTrigger>
-                <SelectContent>{state.packages.map(p => <SelectItem key={p.id} value={p.id}>{p.name} — {p.price} EGP</SelectItem>)}</SelectContent>
+                <SelectContent>{packages.map(p => <SelectItem key={p.id} value={p.id}>{p.name} — {p.price} EGP</SelectItem>)}</SelectContent>
               </Select>
             </div>
 
@@ -230,7 +224,7 @@ export default function Invoices() {
                         ? <SelectItem value="__none__" disabled>No active groups</SelectItem>
                         : activeDiscounts.map(d => (
                           <SelectItem key={d.id} value={d.id}>
-                            {d.name} ({d.discountType === 'fixed' ? `${d.value} EGP` : `${d.value}%`})
+                            {d.name} ({d.discount_type === 'fixed' ? `${d.value} EGP` : `${d.value}%`})
                           </SelectItem>
                         ))}
                     </SelectContent>
@@ -321,7 +315,7 @@ export default function Invoices() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { resetForm(); setShowCreate(false); }}>Cancel</Button>
-            <Button data-testid="btn-save-invoice" onClick={handleCreate}>Create Invoice</Button>
+            <Button data-testid="btn-save-invoice" onClick={handleCreate} disabled={createInvoice.isPending}>Create Invoice</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

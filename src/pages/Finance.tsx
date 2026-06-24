@@ -14,8 +14,7 @@ import {
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from "recharts";
-import { useAppState } from "@/lib/store";
-import { Expense } from "@/lib/mock-data";
+import { useInvoices, useExpenses, useLiabilities, useCreateExpense } from "@/hooks/use-data";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -46,27 +45,31 @@ const emptyForm = {
 };
 
 export default function Finance() {
-  const { state, dispatch } = useAppState();
+  const { data: invoices = [] } = useInvoices();
+  const { data: expenses = [] } = useExpenses();
+  const { data: liabilities = [] } = useLiabilities();
+  const createExpense = useCreateExpense();
+
   const [period, setPeriod] = useState("monthly");
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
   const isLiabilityPayment = form.category === LIABILITY_CATEGORY;
-  const activeLiabilities = state.liabilities.filter(l => !l.isComplete);
+  const activeLiabilities = liabilities.filter(l => !l.is_complete);
   const selectedLiability = activeLiabilities.find(l => l.id === form.liabilityId);
 
-  const totalIncome = state.invoices.reduce((s, i) => s + i.paidAmount, 0);
-  const totalExpenses = state.expenses.reduce((s, e) => s + e.amount, 0);
+  const totalIncome = invoices.reduce((s, i) => s + i.paid_amount, 0);
+  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
   const netBalance = totalIncome - totalExpenses;
 
-  const cashIncome = state.invoices.filter(i => i.paymentMethod === 'Cash').reduce((s, i) => s + i.paidAmount, 0);
-  const visaIncome = state.invoices.filter(i => i.paymentMethod === 'Visa').reduce((s, i) => s + i.paidAmount, 0);
-  const instapayIncome = state.invoices.filter(i => i.paymentMethod === 'InstaPay').reduce((s, i) => s + i.paidAmount, 0);
+  const cashIncome = invoices.filter(i => i.payment_method === 'Cash').reduce((s, i) => s + i.paid_amount, 0);
+  const visaIncome = invoices.filter(i => i.payment_method === 'Visa').reduce((s, i) => s + i.paid_amount, 0);
+  const instapayIncome = invoices.filter(i => i.payment_method === 'InstaPay').reduce((s, i) => s + i.paid_amount, 0);
 
   const allCategories = [...BASE_CATEGORIES, LIABILITY_CATEGORY];
   const expenseByCategory = allCategories.map(cat => ({
     category: cat,
-    amount: state.expenses.filter(e => e.category === cat).reduce((s, e) => s + e.amount, 0),
+    amount: expenses.filter(e => e.category === cat).reduce((s, e) => s + e.amount, 0),
   })).filter(c => c.amount > 0);
 
   const handleCategoryChange = (cat: string) => {
@@ -81,7 +84,7 @@ export default function Finance() {
     const l = activeLiabilities.find(x => x.id === id);
     setForm(p => ({
       ...p, liabilityId: id,
-      amount: l ? String(l.installmentAmount) : "",
+      amount: l ? String(l.installment_amount) : "",
       description: l ? `${l.type === 'one_time' ? 'Payment' : 'Installment'} — ${l.name}` : "",
     }));
   };
@@ -90,28 +93,30 @@ export default function Finance() {
     if (!form.amount || Number(form.amount) <= 0) { toast.error("Enter a valid amount"); return; }
     if (isLiabilityPayment && !form.liabilityId) { toast.error("Select a liability to pay"); return; }
 
-    const expense: Expense = {
-      id: `E${Date.now()}`, category: form.category,
+    createExpense.mutate({
+      category: form.category,
       amount: Number(form.amount),
       description: form.description || form.category,
       date: new Date().toISOString(),
-      liabilityId: isLiabilityPayment ? form.liabilityId : undefined,
-    };
-    dispatch({ type: 'ADD_EXPENSE', payload: expense });
-
-    if (isLiabilityPayment && selectedLiability) {
-      const newPaid = selectedLiability.paidAmount + expense.amount;
-      const complete = newPaid >= selectedLiability.totalAmount;
-      toast.success(`Payment recorded for "${selectedLiability.name}"`, {
-        description: complete
-          ? "Liability fully paid off! 🎉"
-          : `${Math.round((newPaid / selectedLiability.totalAmount) * 100)}% of total paid`,
-      });
-    } else {
-      toast.success(`Expense recorded: ${form.category}`, { description: `${Number(form.amount).toLocaleString()} EGP` });
-    }
-    setForm(emptyForm);
-    setShowAddExpense(false);
+      liability_id: isLiabilityPayment ? form.liabilityId : null,
+    }, {
+      onSuccess: () => {
+        if (isLiabilityPayment && selectedLiability) {
+          const newPaid = selectedLiability.paid_amount + Number(form.amount);
+          const complete = newPaid >= selectedLiability.total_amount;
+          toast.success(`Payment recorded for "${selectedLiability.name}"`, {
+            description: complete
+              ? "Liability fully paid off! 🎉"
+              : `${Math.round((newPaid / selectedLiability.total_amount) * 100)}% of total paid`,
+          });
+        } else {
+          toast.success(`Expense recorded: ${form.category}`, { description: `${Number(form.amount).toLocaleString()} EGP` });
+        }
+        setForm(emptyForm);
+        setShowAddExpense(false);
+      },
+      onError: (err) => toast.error(`Error recording expense: ${err.message}`)
+    });
   };
 
   const chartDataToShow = period === "monthly" ? monthlyData : chartData;
@@ -199,7 +204,7 @@ export default function Finance() {
               <YAxis tick={{ fontSize: 11 }} />
               <Tooltip formatter={(v: number) => [`${v.toLocaleString()} EGP`]} />
               <Legend />
-              <Bar dataKey="Income" fill="#ffc700" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Income" fill="#007c00ff" radius={[4, 4, 0, 0]} />
               <Bar dataKey="Expenses" fill="hsl(0 84% 60%)" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -245,9 +250,9 @@ export default function Finance() {
             <CardTitle className="text-sm font-semibold">Recent Expenses</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {state.expenses.slice().reverse().slice(0, 8).map(e => (
+            {expenses.slice().reverse().slice(0, 8).map(e => (
               <div key={e.id} data-testid={`expense-${e.id}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
-                {e.liabilityId && <Landmark className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />}
+                {e.liability_id && <Landmark className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">{e.description || e.category}</p>
                   <p className="text-xs text-muted-foreground">{e.category} · {format(new Date(e.date), 'dd MMM')}</p>
@@ -289,7 +294,7 @@ export default function Finance() {
                     <SelectContent>
                       {activeLiabilities.map(l => (
                         <SelectItem key={l.id} value={l.id}>
-                          {l.name} — {l.installmentAmount.toLocaleString()} EGP {l.type === 'installment' ? 'installment' : 'one-time'}
+                          {l.name} — {l.installment_amount.toLocaleString()} EGP {l.type === 'installment' ? 'installment' : 'one-time'}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -299,15 +304,15 @@ export default function Finance() {
                   <div className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs space-y-1">
                     <div className="flex justify-between">
                       <span className="text-amber-700">Paid so far</span>
-                      <span className="font-medium">{selectedLiability.paidAmount.toLocaleString()} / {selectedLiability.totalAmount.toLocaleString()} EGP</span>
+                      <span className="font-medium">{selectedLiability.paid_amount.toLocaleString()} / {selectedLiability.total_amount.toLocaleString()} EGP</span>
                     </div>
                     <div className="h-1.5 bg-amber-100 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-amber-500 rounded-full"
-                        style={{ width: `${Math.round((selectedLiability.paidAmount / selectedLiability.totalAmount) * 100)}%` }}
+                        style={{ width: `${Math.round((selectedLiability.paid_amount / selectedLiability.total_amount) * 100)}%` }}
                       />
                     </div>
-                    <p className="text-amber-700">{Math.round((selectedLiability.paidAmount / selectedLiability.totalAmount) * 100)}% paid</p>
+                    <p className="text-amber-700">{Math.round((selectedLiability.paid_amount / selectedLiability.total_amount) * 100)}% paid</p>
                   </div>
                 )}
               </div>
@@ -323,7 +328,7 @@ export default function Finance() {
               />
               {isLiabilityPayment && selectedLiability && (
                 <p className="text-xs text-muted-foreground">
-                  Suggested: {selectedLiability.installmentAmount.toLocaleString()} EGP ({selectedLiability.type === 'one_time' ? 'full amount' : `${FREQUENCY_LABELS[selectedLiability.frequencyDays] ?? `${selectedLiability.frequencyDays}d`} installment`})
+                  Suggested: {selectedLiability.installment_amount.toLocaleString()} EGP ({selectedLiability.type === 'one_time' ? 'full amount' : `${FREQUENCY_LABELS[selectedLiability.frequency_days] ?? `${selectedLiability.frequency_days}d`} installment`})
                 </p>
               )}
             </div>
@@ -339,7 +344,7 @@ export default function Finance() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setForm(emptyForm); setShowAddExpense(false); }}>Cancel</Button>
-            <Button data-testid="btn-save-expense" onClick={handleAddExpense}>
+            <Button data-testid="btn-save-expense" onClick={handleAddExpense} disabled={createExpense.isPending}>
               {isLiabilityPayment ? 'Record Payment' : 'Record Expense'}
             </Button>
           </DialogFooter>

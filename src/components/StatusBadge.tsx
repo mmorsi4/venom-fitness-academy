@@ -1,4 +1,4 @@
-import { MemberStatus } from "@/lib/mock-data";
+import type { MemberStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface StatusBadgeProps {

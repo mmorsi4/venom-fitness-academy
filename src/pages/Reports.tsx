@@ -7,21 +7,22 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { useAppState } from "@/lib/store";
 import StatusBadge from "@/components/StatusBadge";
-import { MemberStatus } from "@/lib/mock-data";
+import type { MemberStatus } from "@/lib/types";
+import { useMembers } from "@/hooks/use-data";
 import { format, differenceInYears, parseISO } from "date-fns";
 
 const ALL_STATUSES: MemberStatus[] = ['active', 'expired', 'expiring_soon', 'has_debt'];
 const SOURCES = ["Walk-in", "Referral", "Facebook", "Instagram", "WhatsApp"];
 
-function calcAge(birthDate?: string) {
+function calcAge(birthDate?: string | null) {
   if (!birthDate) return null;
   try { return differenceInYears(new Date(), parseISO(birthDate)); } catch { return null; }
 }
 
 export default function Reports() {
-  const { state } = useAppState();
+  const { data: members = [] } = useMembers();
+
   const [filters, setFilters] = useState({
     status: "all", gender: "all", source: "all",
     package: "all", coach: "all", expiringWithin: "all",
@@ -31,32 +32,32 @@ export default function Reports() {
     setFilters(prev => ({ ...prev, [key]: value }));
 
   const filtered = useMemo(() => {
-    return state.members.filter(m => {
+    return members.filter(m => {
       if (filters.status !== 'all' && m.status !== filters.status) return false;
       if (filters.gender !== 'all' && m.gender !== filters.gender) return false;
       if (filters.source !== 'all' && m.source !== filters.source) return false;
-      if (filters.package !== 'all' && m.packageName !== filters.package) return false;
-      if (filters.coach !== 'all' && m.assignedCoach !== filters.coach) return false;
+      if (filters.package !== 'all' && m.package_name !== filters.package) return false;
+      if (filters.coach !== 'all' && m.coach_name !== filters.coach) return false;
       if (filters.expiringWithin !== 'all') {
         const days = Number(filters.expiringWithin);
-        const daysUntilExpiry = Math.ceil((new Date(m.expiresAt).getTime() - Date.now()) / 86400000);
+        const daysUntilExpiry = Math.ceil((new Date(m.expires_at).getTime() - Date.now()) / 86400000);
         if (daysUntilExpiry > days || daysUntilExpiry < 0) return false;
       }
       return true;
     });
-  }, [state.members, filters]);
+  }, [members, filters]);
 
-  const uniquePackages = [...new Set(state.members.map(m => m.packageName).filter(Boolean))];
-  const uniqueCoaches = [...new Set(state.members.map(m => m.assignedCoach).filter(Boolean) as string[])];
+  const uniquePackages = [...new Set(members.map(m => m.package_name).filter(Boolean))];
+  const uniqueCoaches = [...new Set(members.map(m => m.coach_name).filter(Boolean) as string[])];
 
   const statsForFiltered = {
     total: filtered.length,
     active: filtered.filter(m => m.status === 'active').length,
     male: filtered.filter(m => m.gender === 'male').length,
     female: filtered.filter(m => m.gender === 'female').length,
-    totalSessions: filtered.reduce((s, m) => s + (m.totalSessions === 999 ? 0 : m.totalSessions), 0),
+    totalSessions: filtered.reduce((s, m) => s + (m.total_sessions === 999 ? 0 : m.total_sessions), 0),
     avgSessionsLeft: filtered.length > 0
-      ? Math.round(filtered.reduce((s, m) => s + (m.sessionsRemaining === 999 ? 0 : m.sessionsRemaining), 0) / filtered.length)
+      ? Math.round(filtered.reduce((s, m) => s + (m.sessions_remaining === 999 ? 0 : m.sessions_remaining), 0) / filtered.length)
       : 0,
   };
 
@@ -68,20 +69,20 @@ export default function Reports() {
   const exportToExcel = async () => {
     const XLSX = await import('xlsx');
     const rows = filtered.map(m => ({
-      "ID": m.id,
+      "ID": m.display_id,
       "Name": m.name,
       "Phone": m.phone,
-      "Parent Phone": m.parentPhone ?? "",
-      "Birth Date": m.birthDate ?? "",
-      "Age": calcAge(m.birthDate) ?? "",
+      "Parent Phone": m.parent_phone ?? "",
+      "Birth Date": m.birth_date ?? "",
+      "Age": calcAge(m.birth_date) ?? "",
       "Gender": m.gender ?? "",
       "Status": m.status,
-      "Package": m.packageName,
-      "Sessions Remaining": m.sessionsRemaining === 999 ? "Unlimited" : m.sessionsRemaining,
-      "Total Sessions": m.totalSessions === 999 ? "Unlimited" : m.totalSessions,
-      "Expires": format(new Date(m.expiresAt), "dd MMM yyyy"),
-      "Member Since": format(new Date(m.memberSince), "dd MMM yyyy"),
-      "Coach": m.assignedCoach ?? "",
+      "Package": m.package_name,
+      "Sessions Remaining": m.sessions_remaining === 999 ? "Unlimited" : m.sessions_remaining,
+      "Total Sessions": m.total_sessions === 999 ? "Unlimited" : m.total_sessions,
+      "Expires": format(new Date(m.expires_at), "dd MMM yyyy"),
+      "Member Since": format(new Date(m.member_since), "dd MMM yyyy"),
+      "Coach": m.coach_name ?? "",
       "Source": m.source,
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -104,13 +105,13 @@ export default function Reports() {
       startY: 28,
       head: [['ID', 'Name', 'Phone', 'Gender', 'Status', 'Package', 'Sessions', 'Expires', 'Coach', 'Source']],
       body: filtered.map(m => [
-        m.id, m.name, m.phone,
+        m.display_id, m.name, m.phone,
         m.gender ?? '—',
         m.status.replace('_', ' '),
-        m.packageName,
-        m.sessionsRemaining === 999 ? '∞' : `${m.sessionsRemaining}/${m.totalSessions}`,
-        format(new Date(m.expiresAt), 'dd MMM yy'),
-        m.assignedCoach ?? '—',
+        m.package_name,
+        m.sessions_remaining === 999 ? '∞' : `${m.sessions_remaining}/${m.total_sessions}`,
+        format(new Date(m.expires_at), 'dd MMM yy'),
+        m.coach_name ?? '—',
         m.source,
       ]),
       styles: { fontSize: 8, cellPadding: 2 },
@@ -218,7 +219,7 @@ export default function Reports() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {filtered.map(m => {
-                    const age = calcAge(m.birthDate);
+                    const age = calcAge(m.birth_date);
                     return (
                       <tr key={m.id} data-testid={`report-row-${m.id}`} className="hover:bg-muted/30 transition-colors">
                         <td className="p-3">
@@ -228,24 +229,24 @@ export default function Reports() {
                             </div>
                             <div>
                               <p className="font-medium text-foreground">{m.name}</p>
-                              <p className="text-xs text-muted-foreground">{m.id}{age !== null && ` · ${age}y`}{m.gender && ` · ${m.gender}`}</p>
+                              <p className="text-xs text-muted-foreground">{m.display_id}{age !== null && ` · ${age}y`}{m.gender && ` · ${m.gender}`}</p>
                             </div>
                           </div>
                         </td>
                         <td className="p-3">
                           <p className="text-foreground">{m.phone}</p>
-                          {m.parentPhone && <p className="text-xs text-muted-foreground">Parent: {m.parentPhone}</p>}
+                          {m.parent_phone && <p className="text-xs text-muted-foreground">Parent: {m.parent_phone}</p>}
                         </td>
                         <td className="p-3"><StatusBadge status={m.status} /></td>
-                        <td className="p-3"><p className="text-foreground">{m.packageName}</p></td>
-                        <td className="p-3"><p className="text-foreground text-xs">{m.assignedCoach || '—'}</p></td>
+                        <td className="p-3"><p className="text-foreground">{m.package_name}</p></td>
+                        <td className="p-3"><p className="text-foreground text-xs">{m.coach_name || '—'}</p></td>
                         <td className="p-3">
                           <p className="font-medium text-foreground">
-                            {m.sessionsRemaining === 999 ? '∞' : m.sessionsRemaining}
-                            <span className="text-xs text-muted-foreground">/{m.totalSessions === 999 ? '∞' : m.totalSessions}</span>
+                            {m.sessions_remaining === 999 ? '∞' : m.sessions_remaining}
+                            <span className="text-xs text-muted-foreground">/{m.total_sessions === 999 ? '∞' : m.total_sessions}</span>
                           </p>
                         </td>
-                        <td className="p-3"><p className="text-foreground">{format(new Date(m.expiresAt), "dd MMM yyyy")}</p></td>
+                        <td className="p-3"><p className="text-foreground">{format(new Date(m.expires_at), "dd MMM yyyy")}</p></td>
                         <td className="p-3"><Badge variant="outline" className="text-xs">{m.source}</Badge></td>
                       </tr>
                     );

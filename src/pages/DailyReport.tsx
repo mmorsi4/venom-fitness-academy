@@ -6,8 +6,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useAppState } from "@/lib/store";
-import { MOCK_SESSIONS } from "@/lib/mock-data";
+import { useAuditLogs, useInvoices, useExpenses, useGymSessions } from "@/hooks/use-data";
 import { format, isSameDay, subDays, addDays, parseISO } from "date-fns";
 
 function isoToDate(s: string) {
@@ -17,46 +16,49 @@ function isoToDate(s: string) {
 const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export default function DailyReport() {
-  const { state } = useAppState();
+  const { data: auditLogs = [] } = useAuditLogs();
+  const { data: invoices = [] } = useInvoices();
+  const { data: expenses = [] } = useExpenses();
+  const { data: sessions = [] } = useGymSessions();
+
   const [selectedDate, setSelectedDate] = useState(new Date());
 
-  const dateStr = format(selectedDate, "yyyy-MM-dd");
   const dayOfWeek = DAYS_OF_WEEK[selectedDate.getDay()];
   const isToday = isSameDay(selectedDate, new Date());
 
   // Sessions for this day of week
-  const sessionsForDay = MOCK_SESSIONS.filter(s => s.dayOfWeek === dayOfWeek);
+  const sessionsForDay = sessions.filter(s => s.day_of_week === dayOfWeek);
 
   // Check-ins from audit log for selected date
   const checkIns = useMemo(() =>
-    state.auditLogs.filter(log =>
-      (log.actionType === 'checkin' || log.actionType === 'override_checkin') &&
+    auditLogs.filter(log =>
+      (log.action_type === 'checkin' || log.action_type === 'override_checkin') &&
       isSameDay(isoToDate(log.timestamp), selectedDate)
-    ), [state.auditLogs, selectedDate]);
+    ), [auditLogs, selectedDate]);
 
   // Overrides for selected date
-  const overrides = checkIns.filter(l => l.actionType === 'override_checkin');
+  const overrides = checkIns.filter(l => l.action_type === 'override_checkin');
 
   // Invoices created on this date
   const invoicesForDay = useMemo(() =>
-    state.invoices.filter(i => isSameDay(isoToDate(i.createdAt), selectedDate)),
-    [state.invoices, selectedDate]
+    invoices.filter(i => isSameDay(isoToDate(i.created_at), selectedDate)),
+    [invoices, selectedDate]
   );
 
   // Expenses for this date
   const expensesForDay = useMemo(() =>
-    state.expenses.filter(e => isSameDay(isoToDate(e.date), selectedDate)),
-    [state.expenses, selectedDate]
+    expenses.filter(e => isSameDay(isoToDate(e.date), selectedDate)),
+    [expenses, selectedDate]
   );
 
-  const totalIncome = invoicesForDay.reduce((s, i) => s + i.paidAmount, 0);
+  const totalIncome = invoicesForDay.reduce((s, i) => s + i.paid_amount, 0);
   const totalExpenses = expensesForDay.reduce((s, e) => s + e.amount, 0);
   const netBalance = totalIncome - totalExpenses;
-  const totalAttendance = sessionsForDay.reduce((s, s2) => s + (isToday ? s2.attendanceCount : s2.attendanceCount), 0);
+  const totalAttendance = sessionsForDay.reduce((s, s2) => s + (isToday ? s2.attendance_count : s2.attendance_count), 0);
 
-  const cashIncome = invoicesForDay.filter(i => i.paymentMethod === 'Cash').reduce((s, i) => s + i.paidAmount, 0);
-  const visaIncome = invoicesForDay.filter(i => i.paymentMethod === 'Visa').reduce((s, i) => s + i.paidAmount, 0);
-  const instapayIncome = invoicesForDay.filter(i => i.paymentMethod === 'InstaPay').reduce((s, i) => s + i.paidAmount, 0);
+  const cashIncome = invoicesForDay.filter(i => i.payment_method === 'Cash').reduce((s, i) => s + i.paid_amount, 0);
+  const visaIncome = invoicesForDay.filter(i => i.payment_method === 'Visa').reduce((s, i) => s + i.paid_amount, 0);
+  const instapayIncome = invoicesForDay.filter(i => i.payment_method === 'InstaPay').reduce((s, i) => s + i.paid_amount, 0);
 
   const prevDay = () => setSelectedDate(d => subDays(d, 1));
   const nextDay = () => setSelectedDate(d => {
@@ -172,7 +174,7 @@ export default function DailyReport() {
             ) : (
               <div className="space-y-2">
                 {sessionsForDay.map(session => {
-                  const pct = Math.round((session.attendanceCount / session.capacity) * 100);
+                  const pct = Math.round((session.attendance_count / session.capacity) * 100);
                   return (
                     <div key={session.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border">
                       <div className="text-center min-w-[44px]">
@@ -180,13 +182,13 @@ export default function DailyReport() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-foreground">{session.name}</p>
-                        <p className="text-xs text-muted-foreground">{session.coachName}</p>
+                        <p className="text-xs text-muted-foreground">{session.coach_name ?? 'Unassigned'}</p>
                         <div className="mt-1.5 h-1.5 bg-muted rounded-full overflow-hidden">
                           <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(pct, 100)}%` }} />
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <p className="text-sm font-bold text-foreground">{session.attendanceCount}</p>
+                        <p className="text-sm font-bold text-foreground">{session.attendance_count}</p>
                         <p className="text-xs text-muted-foreground">/{session.capacity}</p>
                       </div>
                     </div>
@@ -213,15 +215,15 @@ export default function DailyReport() {
             ) : (
               <div className="space-y-2">
                 {checkIns.map(log => (
-                  <div key={log.id} className={`flex items-center gap-3 p-2.5 rounded-lg border ${log.actionType === 'override_checkin' ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${log.actionType === 'override_checkin' ? 'bg-red-100' : 'bg-emerald-100'}`}>
-                      {log.actionType === 'override_checkin'
+                  <div key={log.id} className={`flex items-center gap-3 p-2.5 rounded-lg border ${log.action_type === 'override_checkin' ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${log.action_type === 'override_checkin' ? 'bg-red-100' : 'bg-emerald-100'}`}>
+                      {log.action_type === 'override_checkin'
                         ? <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
                         : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground">{log.memberName || log.details.split('(')[1]?.split(')')[0] || 'Member'}</p>
-                      {log.actionType === 'override_checkin' && (
+                      <p className="text-sm font-medium text-foreground">{log.member_name || log.details.split('(')[1]?.split(')')[0] || 'Member'}</p>
+                      {log.action_type === 'override_checkin' && (
                         <p className="text-xs text-red-600">Override — expired member</p>
                       )}
                     </div>
@@ -251,12 +253,12 @@ export default function DailyReport() {
                 {invoicesForDay.map(inv => (
                   <div key={inv.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground">{inv.memberName}</p>
-                      <p className="text-xs text-muted-foreground">{inv.id} · {inv.packageName}</p>
-                      <p className="text-xs text-muted-foreground">{inv.paymentMethod}</p>
+                      <p className="text-sm font-semibold text-foreground">{inv.member_name}</p>
+                      <p className="text-xs text-muted-foreground">{inv.display_id} · {inv.package_name}</p>
+                      <p className="text-xs text-muted-foreground">{inv.payment_method}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="text-sm font-bold text-foreground">{inv.paidAmount.toLocaleString()} EGP</p>
+                      <p className="text-sm font-bold text-foreground">{inv.paid_amount.toLocaleString()} EGP</p>
                       <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
                         inv.status === 'paid' ? 'bg-emerald-100 text-emerald-700' :
                         inv.status === 'partial' ? 'bg-amber-100 text-amber-700' :

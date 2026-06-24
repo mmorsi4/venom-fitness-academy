@@ -13,8 +13,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useAppState } from "@/lib/store";
-import { Lead } from "@/lib/mock-data";
+import { useLeads, useCreateLead, useUpdateLead } from "@/hooks/use-data";
+import type { Lead } from "@/lib/types";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -30,51 +30,76 @@ const statusColors: Record<string, string> = {
 };
 
 export default function Leads() {
-  const { state, dispatch } = useAppState();
+  const { data: leads = [] } = useLeads();
+  const createLead = useCreateLead();
+  const updateLead = useUpdateLead();
+
   const [tab, setTab] = useState("all");
   const [showAdd, setShowAdd] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [newNote, setNewNote] = useState("");
   const [form, setForm] = useState({ name: "", phone: "", source: "Walk-in" });
 
-  const filtered = state.leads.filter(l => tab === "all" || l.status === tab);
+  const filtered = leads.filter(l => tab === "all" || l.status === tab);
 
   const counts = STATUSES.reduce((acc, s) => {
-    acc[s] = state.leads.filter(l => l.status === s).length;
+    acc[s] = leads.filter(l => l.status === s).length;
     return acc;
   }, {} as Record<string, number>);
 
-  const totalCalls = state.leads.reduce((s, l) => s + l.callsMade, 0);
-  const converted = state.leads.filter(l => l.status === 'Converted').length;
-  const conversionRate = state.leads.length > 0 ? Math.round((converted / state.leads.length) * 100) : 0;
+  const totalCalls = leads.reduce((s, l) => s + l.calls_made, 0);
+  const converted = leads.filter(l => l.status === 'Converted').length;
+  const conversionRate = leads.length > 0 ? Math.round((converted / leads.length) * 100) : 0;
 
   const handleAddLead = () => {
     if (!form.name.trim() || !form.phone.trim()) { toast.error("Name and phone required"); return; }
-    const lead: Lead = {
-      id: `L${Date.now()}`, name: form.name.trim(), phone: form.phone.trim(),
-      source: form.source, status: 'New', notes: [], callsMade: 0,
-      followUpDate: new Date(Date.now() + 86400000).toISOString(), assignedTo: "Reception",
-    };
-    dispatch({ type: 'ADD_LEAD', payload: lead });
-    toast.success(`Lead added: ${form.name}`);
-    setForm({ name: "", phone: "", source: "Walk-in" });
-    setShowAdd(false);
+    createLead.mutate({
+      name: form.name.trim(), 
+      phone: form.phone.trim(),
+      source: form.source, 
+      status: 'New', 
+      notes: [], 
+      calls_made: 0,
+      follow_up_date: new Date(Date.now() + 86400000).toISOString(), 
+      assigned_to: "Reception",
+    }, {
+      onSuccess: () => {
+        toast.success(`Lead added: ${form.name}`);
+        setForm({ name: "", phone: "", source: "Walk-in" });
+        setShowAdd(false);
+      },
+      onError: (err) => toast.error(`Error adding lead: ${err.message}`)
+    });
   };
 
   const handleAddNote = (lead: Lead) => {
     if (!newNote.trim()) return;
-    const updated = { ...lead, notes: [...lead.notes, newNote.trim()] };
-    dispatch({ type: 'UPDATE_LEAD', payload: updated });
-    setSelectedLead(updated);
-    setNewNote("");
-    toast.success("Note added");
+    const updatedNotes = [...lead.notes, newNote.trim()];
+    updateLead.mutate({
+      id: lead.id,
+      updates: { notes: updatedNotes }
+    }, {
+      onSuccess: () => {
+        setSelectedLead(prev => prev ? { ...prev, notes: updatedNotes } : null);
+        setNewNote("");
+        toast.success("Note added");
+      },
+      onError: (err) => toast.error(`Error adding note: ${err.message}`)
+    });
   };
 
   const handleUpdateStatus = (lead: Lead, status: Lead['status']) => {
-    const updated = { ...lead, status, callsMade: lead.callsMade + (status === 'Contacted' ? 1 : 0) };
-    dispatch({ type: 'UPDATE_LEAD', payload: updated });
-    if (selectedLead?.id === lead.id) setSelectedLead(updated);
-    toast.success(`Status updated to ${status}`);
+    const updatedCalls = lead.calls_made + (status === 'Contacted' ? 1 : 0);
+    updateLead.mutate({
+      id: lead.id,
+      updates: { status, calls_made: updatedCalls }
+    }, {
+      onSuccess: () => {
+        if (selectedLead?.id === lead.id) setSelectedLead(prev => prev ? { ...prev, status, calls_made: updatedCalls } : null);
+        toast.success(`Status updated to ${status}`);
+      },
+      onError: (err) => toast.error(`Error updating status: ${err.message}`)
+    });
   };
 
   return (
@@ -82,7 +107,7 @@ export default function Leads() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Leads (CRM)</h1>
-          <p className="text-sm text-muted-foreground">{state.leads.length} total leads</p>
+          <p className="text-sm text-muted-foreground">{leads.length} total leads</p>
         </div>
         <Button data-testid="btn-add-lead" onClick={() => setShowAdd(true)} className="gap-2">
           <Plus className="w-4 h-4" /> New Lead
@@ -92,7 +117,7 @@ export default function Leads() {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="p-3 rounded-xl border bg-card text-center">
-          <p className="text-2xl font-bold text-foreground">{state.leads.length}</p>
+          <p className="text-2xl font-bold text-foreground">{leads.length}</p>
           <p className="text-xs text-muted-foreground">Total Leads</p>
         </div>
         <div className="p-3 rounded-xl border bg-card text-center">
@@ -112,7 +137,7 @@ export default function Leads() {
       {/* Source breakdown */}
       <div className="flex flex-wrap gap-2">
         {SOURCES.map(source => {
-          const count = state.leads.filter(l => l.source === source).length;
+          const count = leads.filter(l => l.source === source).length;
           if (count === 0) return null;
           return (
             <div key={source} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border bg-card text-sm">
@@ -126,7 +151,7 @@ export default function Leads() {
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="all" className="text-xs">All ({state.leads.length})</TabsTrigger>
+          <TabsTrigger value="all" className="text-xs">All ({leads.length})</TabsTrigger>
           {STATUSES.map(s => <TabsTrigger key={s} value={s} className="text-xs">{s} ({counts[s] || 0})</TabsTrigger>)}
         </TabsList>
       </Tabs>
@@ -162,11 +187,11 @@ export default function Leads() {
                     <div>
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Calendar className="w-3 h-3" />
-                        <span>Follow-up: {format(new Date(lead.followUpDate), "dd MMM")}</span>
+                        <span>Follow-up: {format(new Date(lead.follow_up_date), "dd MMM")}</span>
                       </div>
                       <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
                         <Phone className="w-3 h-3" />
-                        <span>{lead.callsMade} calls</span>
+                        <span>{lead.calls_made} calls</span>
                       </div>
                     </div>
                     <div>
@@ -211,7 +236,7 @@ export default function Leads() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
-            <Button data-testid="btn-save-lead" onClick={handleAddLead}>Create Lead</Button>
+            <Button data-testid="btn-save-lead" onClick={handleAddLead} disabled={createLead.isPending}>Create Lead</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -232,7 +257,7 @@ export default function Leads() {
               <div className="flex gap-2 flex-wrap">
                 <p className="text-sm text-muted-foreground"><Phone className="w-3.5 h-3.5 inline mr-1" />{selectedLead.phone}</p>
                 <p className="text-sm text-muted-foreground">{selectedLead.source}</p>
-                <p className="text-sm text-muted-foreground">{selectedLead.callsMade} calls</p>
+                <p className="text-sm text-muted-foreground">{selectedLead.calls_made} calls</p>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Update Status</Label>
@@ -272,6 +297,7 @@ export default function Leads() {
                   size="sm"
                   className="self-end"
                   onClick={() => handleAddNote(selectedLead)}
+                  disabled={updateLead.isPending}
                 >
                   Add
                 </Button>

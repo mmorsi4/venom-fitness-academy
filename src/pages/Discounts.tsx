@@ -11,8 +11,8 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
-import { useAppState } from "@/lib/store";
-import { Discount } from "@/lib/mock-data";
+import { useDiscounts, useMembers, useInvoices, useCreateDiscount, useUpdateDiscount, useRemoveDiscountMember } from "@/hooks/use-data";
+import type { Discount } from "@/lib/types";
 import { toast } from "sonner";
 
 interface DiscountForm {
@@ -28,11 +28,17 @@ const emptyForm: DiscountForm = {
 };
 
 function discountToForm(d: Discount): DiscountForm {
-  return { name: d.name, type: d.type, discountType: d.discountType, value: String(d.value), memberIds: [...d.memberIds] };
+  return { name: d.name, type: d.type, discountType: d.discount_type, value: String(d.value), memberIds: [...d.member_ids] };
 }
 
 export default function Discounts() {
-  const { state, dispatch } = useAppState();
+  const { data: discounts = [] } = useDiscounts();
+  const { data: members = [] } = useMembers();
+  const { data: invoices = [] } = useInvoices();
+  const createDiscount = useCreateDiscount();
+  const updateDiscount = useUpdateDiscount();
+  const removeDiscountMember = useRemoveDiscountMember();
+
   const [showCreate, setShowCreate] = useState(false);
   const [editDiscount, setEditDiscount] = useState<Discount | null>(null);
   const [form, setForm] = useState<DiscountForm>(emptyForm);
@@ -56,41 +62,69 @@ export default function Discounts() {
       toast.error("Select at least one member");
       return;
     }
+    
     if (editDiscount) {
-      const updated: Discount = {
-        ...editDiscount,
-        name: form.name.trim(), type: form.type,
-        discountType: form.discountType, value: Number(form.value),
+      updateDiscount.mutate({
+        id: editDiscount.id,
+        updates: {
+          name: form.name.trim(),
+          type: form.type,
+          discount_type: form.discountType,
+          value: Number(form.value),
+        },
         memberIds: form.memberIds,
-      };
-      dispatch({ type: 'UPDATE_DISCOUNT', payload: updated });
-      toast.success(`Discount group updated: ${form.name}`);
+      }, {
+        onSuccess: () => {
+          toast.success(`Discount group updated: ${form.name}`);
+          closeDialog();
+        },
+        onError: (err) => toast.error(`Error updating: ${err.message}`)
+      });
     } else {
-      const discount: Discount = {
-        id: `D${Date.now()}`, name: form.name.trim(), type: form.type,
-        discountType: form.discountType, value: Number(form.value),
-        memberIds: form.memberIds, invoiceIds: [], active: true,
-      };
-      dispatch({ type: 'ADD_DISCOUNT', payload: discount });
-      toast.success(`Discount group created: ${form.name}`);
+      createDiscount.mutate({
+        discount: {
+          name: form.name.trim(),
+          type: form.type,
+          discount_type: form.discountType,
+          value: Number(form.value),
+          active: true,
+        },
+        memberIds: form.memberIds,
+      }, {
+        onSuccess: () => {
+          toast.success(`Discount group created: ${form.name}`);
+          closeDialog();
+        },
+        onError: (err) => toast.error(`Error creating: ${err.message}`)
+      });
     }
-    closeDialog();
   };
 
   const handleRemoveMemberFromDiscount = (discount: Discount, memberId: string) => {
-    const updated = { ...discount, memberIds: discount.memberIds.filter(id => id !== memberId) };
-    if (updated.memberIds.length === 0) {
-      dispatch({ type: 'UPDATE_DISCOUNT', payload: { ...updated, active: false } });
-      toast.warning("Discount deactivated — no remaining participants");
-    } else {
-      dispatch({ type: 'UPDATE_DISCOUNT', payload: updated });
-      toast.success("Member removed from discount group");
-    }
+    removeDiscountMember.mutate({
+      discountId: discount.id,
+      memberId,
+    }, {
+      onSuccess: () => {
+        toast.success("Member removed from discount group");
+        if (discount.member_ids.length <= 1) {
+          toast.warning("Discount deactivated — no remaining participants");
+        }
+      },
+      onError: (err) => toast.error(`Error removing member: ${err.message}`)
+    });
   };
 
   const handleToggleActive = (discount: Discount) => {
-    dispatch({ type: 'UPDATE_DISCOUNT', payload: { ...discount, active: !discount.active } });
-    toast.success(discount.active ? `Deactivated: ${discount.name}` : `Activated: ${discount.name}`);
+    updateDiscount.mutate({
+      id: discount.id,
+      updates: { active: !discount.active },
+    }, {
+      onSuccess: () => {
+        toast.success(discount.active ? `Deactivated: ${discount.name}` : `Activated: ${discount.name}`);
+      },
+      onError: (err) => toast.error(`Error toggling status: ${err.message}`)
+    });
   };
 
   const isDialogOpen = showCreate || !!editDiscount;
@@ -107,14 +141,14 @@ export default function Discounts() {
         </Button>
       </div>
 
-      {state.discounts.length === 0 ? (
+      {discounts.length === 0 ? (
         <Card><CardContent className="py-12 text-center"><p className="text-muted-foreground">No discount groups created</p></CardContent></Card>
       ) : (
         <div className="space-y-4">
-          {state.discounts.map(discount => {
-            const members = state.members.filter(m => discount.memberIds.includes(m.id));
-            const relatedInvoices = state.invoices.filter(i => discount.invoiceIds.includes(i.id));
-            const conditionsMet = discount.memberIds.length >= 2;
+          {discounts.map(discount => {
+            const discountMembers = members.filter(m => discount.member_ids.includes(m.id));
+            const relatedInvoices = invoices.filter(i => discount.invoice_ids.includes(i.id));
+            const conditionsMet = discount.member_ids.length >= 2;
 
             return (
               <Card key={discount.id} data-testid={`discount-${discount.id}`} className={discount.active ? "" : "opacity-60"}>
@@ -129,7 +163,7 @@ export default function Discounts() {
                         <div className="flex items-center gap-2 mt-1">
                           <Badge variant="outline" className="text-xs capitalize">{discount.type}</Badge>
                           <Badge variant="secondary" className="text-xs">
-                            {discount.discountType === 'fixed' ? `${discount.value} EGP off` : `${discount.value}% off`}
+                            {discount.discount_type === 'fixed' ? `${discount.value} EGP off` : `${discount.value}% off`}
                           </Badge>
                         </div>
                       </div>
@@ -170,17 +204,17 @@ export default function Discounts() {
                     <div className="flex items-center gap-2 mb-2">
                       <Users className="w-3.5 h-3.5 text-muted-foreground" />
                       <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                        Participants ({members.length})
+                        Participants ({discountMembers.length})
                       </span>
                     </div>
-                    {members.length === 0 ? (
+                    {discountMembers.length === 0 ? (
                       <p className="text-xs text-muted-foreground">No participants</p>
                     ) : (
                       <div className="flex flex-wrap gap-2">
-                        {members.map(m => (
+                        {discountMembers.map(m => (
                           <div key={m.id} data-testid={`discount-member-${m.id}`} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border bg-muted/50 text-xs">
                             <span className="font-medium text-foreground">{m.name}</span>
-                            <span className="text-muted-foreground">({m.id})</span>
+                            <span className="text-muted-foreground">({m.display_id})</span>
                             <button
                               data-testid={`btn-remove-member-${m.id}`}
                               onClick={() => handleRemoveMemberFromDiscount(discount, m.id)}
@@ -198,8 +232,8 @@ export default function Discounts() {
                       <div className="flex flex-wrap gap-2">
                         {relatedInvoices.map(inv => (
                           <div key={inv.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs bg-card">
-                            <span className="font-mono font-medium text-foreground">{inv.id}</span>
-                            <span className="text-muted-foreground">{inv.memberName}</span>
+                            <span className="font-mono font-medium text-foreground">{inv.display_id}</span>
+                            <span className="text-muted-foreground">{inv.member_name}</span>
                             <span className={`px-1.5 py-0.5 rounded text-xs ${
                               inv.status === 'paid' ? 'bg-emerald-100 text-emerald-700' :
                               inv.status === 'partial' ? 'bg-amber-100 text-amber-700' :
@@ -256,7 +290,7 @@ export default function Discounts() {
             <div className="space-y-2">
               <Label>{editDiscount ? 'Members' : 'Select Members (min. 2 for linked discount)'}</Label>
               <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                {state.members.map(m => (
+                {members.map(m => (
                   <button
                     key={m.id}
                     data-testid={`select-discount-member-${m.id}`}
@@ -268,7 +302,7 @@ export default function Discounts() {
                       {form.memberIds.includes(m.id) && <span className="text-white text-xs">✓</span>}
                     </div>
                     <span className="text-sm font-medium text-foreground">{m.name}</span>
-                    <span className="text-xs text-muted-foreground ml-auto">{m.id}</span>
+                    <span className="text-xs text-muted-foreground ml-auto">{m.display_id}</span>
                   </button>
                 ))}
               </div>

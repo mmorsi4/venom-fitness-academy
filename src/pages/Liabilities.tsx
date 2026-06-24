@@ -12,8 +12,8 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { useAppState } from "@/lib/store";
-import { Liability } from "@/lib/mock-data";
+import { useLiabilities, useCreateLiability, useUpdateLiability } from "@/hooks/use-data";
+import type { Liability } from "@/lib/types";
 import { toast } from "sonner";
 import { format, differenceInDays, parseISO } from "date-fns";
 import { Link } from "wouter";
@@ -26,7 +26,10 @@ const FREQUENCY_OPTIONS = [
 ];
 
 export default function Liabilities() {
-  const { state, dispatch } = useAppState();
+  const { data: liabilities = [] } = useLiabilities();
+  const createLiability = useCreateLiability();
+  const updateLiability = useUpdateLiability();
+
   const [showCreate, setShowCreate] = useState(false);
   const [editLiability, setEditLiability] = useState<Liability | null>(null);
   const [form, setForm] = useState({
@@ -49,11 +52,12 @@ export default function Liabilities() {
   const openEdit = (l: Liability) => {
     setEditLiability(l);
     setForm({
-      name: l.name, description: l.description, type: l.type,
-      totalAmount: String(l.totalAmount), installmentAmount: String(l.installmentAmount),
-      frequencyDays: String(l.frequencyDays), nextDueDate: l.nextDueDate.split('T')[0],
-      notifyDaysBefore: String(l.notifyDaysBefore),
+      name: l.name, description: l.description ?? "", type: l.type,
+      totalAmount: String(l.total_amount), installmentAmount: String(l.installment_amount),
+      frequencyDays: String(l.frequency_days), nextDueDate: l.next_due_date.split('T')[0],
+      notifyDaysBefore: String(l.notify_days_before),
     });
+    setShowCreate(true);
   };
 
   const closeDialog = () => { setShowCreate(false); setEditLiability(null); };
@@ -69,36 +73,55 @@ export default function Liabilities() {
       toast.error("Installment amount is required");
       return;
     }
+    
     if (editLiability) {
-      dispatch({ type: 'UPDATE_LIABILITY', payload: {
-        ...editLiability, name: form.name.trim(), description: form.description.trim(),
-        type: form.type, totalAmount: total, installmentAmount: installment,
-        frequencyDays: form.type === 'one_time' ? 0 : Number(form.frequencyDays),
-        nextDueDate: new Date(form.nextDueDate).toISOString(),
-        notifyDaysBefore: Number(form.notifyDaysBefore) || 5,
-      }});
-      toast.success("Liability updated");
+      updateLiability.mutate({
+        id: editLiability.id,
+        updates: {
+          name: form.name.trim(),
+          description: form.description.trim(),
+          type: form.type,
+          total_amount: total,
+          installment_amount: installment,
+          frequency_days: form.type === 'one_time' ? 0 : Number(form.frequencyDays),
+          next_due_date: new Date(form.nextDueDate).toISOString(),
+          notify_days_before: Number(form.notifyDaysBefore) || 5,
+        }
+      }, {
+        onSuccess: () => {
+          toast.success("Liability updated");
+          closeDialog();
+        },
+        onError: (err) => toast.error(`Error updating: ${err.message}`)
+      });
     } else {
-      dispatch({ type: 'ADD_LIABILITY', payload: {
-        id: `LB${Date.now()}`, name: form.name.trim(), description: form.description.trim(),
-        type: form.type, totalAmount: total, paidAmount: 0,
-        installmentAmount: installment,
-        frequencyDays: form.type === 'one_time' ? 0 : Number(form.frequencyDays),
-        nextDueDate: new Date(form.nextDueDate).toISOString(),
-        notifyDaysBefore: Number(form.notifyDaysBefore) || 5,
-        isComplete: false, createdAt: new Date().toISOString(),
-      }});
-      toast.success(`Liability created: ${form.name}`);
+      createLiability.mutate({
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+        type: form.type,
+        total_amount: total,
+        paid_amount: 0,
+        installment_amount: installment,
+        frequency_days: form.type === 'one_time' ? 0 : Number(form.frequencyDays),
+        next_due_date: new Date(form.nextDueDate).toISOString(),
+        notify_days_before: Number(form.notifyDaysBefore) || 5,
+        is_complete: false,
+      }, {
+        onSuccess: () => {
+          toast.success(`Liability created: ${form.name}`);
+          closeDialog();
+        },
+        onError: (err) => toast.error(`Error creating: ${err.message}`)
+      });
     }
-    closeDialog();
   };
 
-  const activeLiabilities = state.liabilities.filter(l => !l.isComplete);
-  const completedLiabilities = state.liabilities.filter(l => l.isComplete);
-  const totalOutstanding = activeLiabilities.reduce((s, l) => s + (l.totalAmount - l.paidAmount), 0);
+  const activeLiabilities = liabilities.filter(l => !l.is_complete);
+  const completedLiabilities = liabilities.filter(l => l.is_complete);
+  const totalOutstanding = activeLiabilities.reduce((s, l) => s + (l.total_amount - l.paid_amount), 0);
   const nextDue = activeLiabilities
-    .filter(l => differenceInDays(parseISO(l.nextDueDate), new Date()) >= 0)
-    .sort((a, b) => parseISO(a.nextDueDate).getTime() - parseISO(b.nextDueDate).getTime())[0];
+    .filter(l => differenceInDays(parseISO(l.next_due_date), new Date()) >= 0)
+    .sort((a, b) => parseISO(a.next_due_date).getTime() - parseISO(b.next_due_date).getTime())[0];
 
   return (
     <div className="p-6 space-y-6">
@@ -146,7 +169,7 @@ export default function Liabilities() {
               <div>
                 <p className="text-sm font-bold text-foreground">{nextDue ? nextDue.name : '—'}</p>
                 <p className="text-xs text-muted-foreground">
-                  {nextDue ? `Next: ${format(parseISO(nextDue.nextDueDate), 'dd MMM yyyy')}` : 'No upcoming payments'}
+                  {nextDue ? `Next: ${format(parseISO(nextDue.next_due_date), 'dd MMM yyyy')}` : 'No upcoming payments'}
                 </p>
               </div>
             </div>
@@ -172,10 +195,10 @@ export default function Liabilities() {
         <div className="space-y-4">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Active</h2>
           {activeLiabilities.map(l => {
-            const pct = Math.round((l.paidAmount / l.totalAmount) * 100);
-            const remaining = l.totalAmount - l.paidAmount;
-            const daysUntil = differenceInDays(parseISO(l.nextDueDate), new Date());
-            const isDueSoon = daysUntil <= l.notifyDaysBefore && daysUntil >= 0;
+            const pct = Math.round((l.paid_amount / l.total_amount) * 100);
+            const remaining = l.total_amount - l.paid_amount;
+            const daysUntil = differenceInDays(parseISO(l.next_due_date), new Date());
+            const isDueSoon = daysUntil <= l.notify_days_before && daysUntil >= 0;
             const isOverdue = daysUntil < 0;
 
             return (
@@ -202,7 +225,7 @@ export default function Liabilities() {
                   {/* Progress bar */}
                   <div>
                     <div className="flex items-center justify-between text-sm mb-1.5">
-                      <span className="text-muted-foreground">Paid: <span className="font-semibold text-foreground">{l.paidAmount.toLocaleString()} EGP</span></span>
+                      <span className="text-muted-foreground">Paid: <span className="font-semibold text-foreground">{l.paid_amount.toLocaleString()} EGP</span></span>
                       <span className="text-muted-foreground">Remaining: <span className="font-semibold text-red-600">{remaining.toLocaleString()} EGP</span></span>
                     </div>
                     <div className="h-3 bg-muted rounded-full overflow-hidden">
@@ -212,9 +235,9 @@ export default function Liabilities() {
                       />
                     </div>
                     <div className="flex items-center justify-between mt-1">
-                      <span className="text-xs text-muted-foreground">{pct}% of {l.totalAmount.toLocaleString()} EGP total</span>
+                      <span className="text-xs text-muted-foreground">{pct}% of {l.total_amount.toLocaleString()} EGP total</span>
                       {l.type === 'installment' && (
-                        <span className="text-xs text-muted-foreground">{l.installmentAmount.toLocaleString()} EGP / {FREQUENCY_OPTIONS.find(f => f.value === String(l.frequencyDays))?.label ?? `${l.frequencyDays}d`}</span>
+                        <span className="text-xs text-muted-foreground">{l.installment_amount.toLocaleString()} EGP / {FREQUENCY_OPTIONS.find(f => f.value === String(l.frequency_days))?.label ?? `${l.frequency_days}d`}</span>
                       )}
                     </div>
                   </div>
@@ -223,14 +246,14 @@ export default function Liabilities() {
                   <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${isOverdue ? 'bg-red-50 border border-red-200 text-red-700' : isDueSoon ? 'bg-amber-50 border border-amber-200 text-amber-700' : 'bg-muted/50 text-muted-foreground'}`}>
                     <CalendarDays className="w-3.5 h-3.5 flex-shrink-0" />
                     {l.type === 'one_time' ? 'Due on' : 'Next installment'}:{' '}
-                    <strong>{format(parseISO(l.nextDueDate), 'EEEE, dd MMM yyyy')}</strong>
+                    <strong>{format(parseISO(l.next_due_date), 'EEEE, dd MMM yyyy')}</strong>
                     {isOverdue && ' (overdue)'}
                     {isDueSoon && !isOverdue && ` (in ${daysUntil} day${daysUntil !== 1 ? 's' : ''})`}
                     {l.type === 'installment' && (
-                      <span className="ml-auto">Amount: <strong>{l.installmentAmount.toLocaleString()} EGP</strong></span>
+                      <span className="ml-auto">Amount: <strong>{l.installment_amount.toLocaleString()} EGP</strong></span>
                     )}
                     <span className="ml-auto flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" /> Notify {l.notifyDaysBefore}d before
+                      <AlertCircle className="w-3 h-3" /> Notify {l.notify_days_before}d before
                     </span>
                   </div>
                 </CardContent>
@@ -252,7 +275,7 @@ export default function Liabilities() {
                     <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
                     <div>
                       <p className="font-medium text-foreground">{l.name}</p>
-                      <p className="text-xs text-muted-foreground">{l.totalAmount.toLocaleString()} EGP — fully paid</p>
+                      <p className="text-xs text-muted-foreground">{l.total_amount.toLocaleString()} EGP — fully paid</p>
                     </div>
                   </div>
                   <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Complete</Badge>
@@ -266,7 +289,7 @@ export default function Liabilities() {
         </div>
       )}
 
-      {state.liabilities.length === 0 && (
+      {liabilities.length === 0 && (
         <Card>
           <CardContent className="py-16 text-center">
             <Landmark className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
@@ -344,7 +367,7 @@ export default function Liabilities() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>Cancel</Button>
-            <Button onClick={handleSave}>{editLiability ? 'Save Changes' : 'Create Liability'}</Button>
+            <Button onClick={handleSave} disabled={createLiability.isPending || updateLiability.isPending}>{editLiability ? 'Save Changes' : 'Create Liability'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

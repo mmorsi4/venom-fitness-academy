@@ -10,8 +10,12 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
-import { useAppState } from "@/lib/store";
-import { Coach } from "@/lib/mock-data";
+import { 
+  useCoaches, useInvoices, useMembers, 
+  useCreateCoach, useUpdateCoach, 
+  useCoachCheckInsToday, useCheckInCoach 
+} from "@/hooks/use-data";
+import type { Coach } from "@/lib/types";
 import { toast } from "sonner";
 
 const paymentTypeColors: Record<string, string> = {
@@ -36,42 +40,51 @@ interface CoachForm {
 const emptyForm: CoachForm = { name: "", paymentType: "salary", rate: "", commissionBase: "revenue" };
 
 export default function Coaches() {
-  const { state, dispatch } = useAppState();
+  const { data: coaches = [] } = useCoaches();
+  const { data: invoices = [] } = useInvoices();
+  const { data: members = [] } = useMembers();
+  const { data: checkIns = [] } = useCoachCheckInsToday();
+  const createCoach = useCreateCoach();
+  const updateCoach = useUpdateCoach();
+  const checkInMutation = useCheckInCoach();
+
   const [checkInModal, setCheckInModal] = useState(false);
   const [showCoachDialog, setShowCoachDialog] = useState(false);
   const [editCoach, setEditCoach] = useState<Coach | null>(null);
   const [form, setForm] = useState<CoachForm>(emptyForm);
 
-  const checkedIn = state.coaches.filter(c => c.checkedInToday).length;
+  const checkedInCount = coaches.filter(c => checkIns.some(ci => ci.coach_id === c.id)).length;
 
-  const monthlyRevenue = state.invoices
+  const monthlyRevenue = invoices
     .filter(i => {
-      const d = new Date(i.createdAt); const now = new Date();
+      const d = new Date(i.created_at); const now = new Date();
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     })
-    .reduce((s, i) => s + i.paidAmount, 0);
+    .reduce((s, i) => s + i.paid_amount, 0);
 
-  const newMembersThisMonth = state.members.filter(m => {
-    const d = new Date(m.memberSince); const now = new Date();
+  const newMembersThisMonth = members.filter(m => {
+    const d = new Date(m.member_since); const now = new Date();
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   }).length;
 
   const calcEarnings = (coach: Coach) => {
-    if (coach.paymentType === 'salary') return coach.rate;
-    if (coach.paymentType === 'per_session') return coach.rate * coach.sessionsThisMonth;
-    const base = coach.commissionBase === 'members' ? newMembersThisMonth * 1000 : monthlyRevenue;
+    if (coach.payment_type === 'salary') return coach.rate;
+    if (coach.payment_type === 'per_session') return coach.rate * coach.sessions_this_month;
+    const base = coach.commission_base === 'members' ? newMembersThisMonth * 1000 : monthlyRevenue;
     return Math.round((coach.rate / 100) * base);
   };
 
   const handleCoachCheckIn = (coachId: string, name: string) => {
-    dispatch({ type: 'CHECK_IN_COACH', payload: coachId });
-    toast.success(`${name} checked in for session`);
+    checkInMutation.mutate({ coachId }, {
+      onSuccess: () => toast.success(`${name} checked in for session`),
+      onError: (err) => toast.error(`Failed to check in: ${err.message}`)
+    });
   };
 
   const openAdd = () => { setForm(emptyForm); setEditCoach(null); setShowCoachDialog(true); };
   const openEdit = (c: Coach) => {
     setEditCoach(c);
-    setForm({ name: c.name, paymentType: c.paymentType, rate: String(c.rate), commissionBase: c.commissionBase ?? 'revenue' });
+    setForm({ name: c.name, paymentType: c.payment_type, rate: String(c.rate), commissionBase: c.commission_base ?? 'revenue' });
     setShowCoachDialog(true);
   };
   const closeDialog = () => { setShowCoachDialog(false); setEditCoach(null); };
@@ -79,19 +92,36 @@ export default function Coaches() {
   const handleSave = () => {
     if (!form.name.trim() || !form.rate) { toast.error("Name and rate are required"); return; }
     if (editCoach) {
-      const updated: Coach = { ...editCoach, name: form.name.trim(), paymentType: form.paymentType, rate: Number(form.rate), commissionBase: form.commissionBase };
-      dispatch({ type: 'UPDATE_COACH', payload: updated });
-      toast.success(`Coach updated: ${form.name}`);
+      updateCoach.mutate({
+        id: editCoach.id,
+        updates: {
+          name: form.name.trim(),
+          payment_type: form.paymentType,
+          rate: Number(form.rate),
+          commission_base: form.commissionBase
+        }
+      }, {
+        onSuccess: () => {
+          toast.success(`Coach updated: ${form.name}`);
+          closeDialog();
+        },
+        onError: (err) => toast.error(`Error updating: ${err.message}`)
+      });
     } else {
-      const newCoach: Coach = {
-        id: `C${Date.now()}`, name: form.name.trim(), paymentType: form.paymentType,
-        rate: Number(form.rate), commissionBase: form.commissionBase,
-        checkedInToday: false, sessionsThisMonth: 0,
-      };
-      dispatch({ type: 'ADD_COACH', payload: newCoach });
-      toast.success(`Coach added: ${form.name}`);
+      createCoach.mutate({
+        name: form.name.trim(),
+        payment_type: form.paymentType,
+        rate: Number(form.rate),
+        commission_base: form.commissionBase,
+        sessions_this_month: 0,
+      }, {
+        onSuccess: () => {
+          toast.success(`Coach added: ${form.name}`);
+          closeDialog();
+        },
+        onError: (err) => toast.error(`Error adding: ${err.message}`)
+      });
     }
-    closeDialog();
   };
 
   return (
@@ -99,7 +129,7 @@ export default function Coaches() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Coaches</h1>
-          <p className="text-sm text-muted-foreground">{checkedIn} of {state.coaches.length} checked in today</p>
+          <p className="text-sm text-muted-foreground">{checkedInCount} of {coaches.length} checked in today</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={openAdd} className="gap-2">
@@ -119,20 +149,24 @@ export default function Coaches() {
           </div>
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Today's Check-In Status</p>
           <div className="flex flex-wrap gap-3">
-            {state.coaches.map(c => (
-              <div key={c.id} data-testid={`coach-status-${c.id}`} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${c.checkedInToday ? 'bg-emerald-50 border-emerald-200' : 'bg-card border-border'}`}>
-                <div className={`w-2 h-2 rounded-full ${c.checkedInToday ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-                <span className="text-sm font-medium">{c.name}</span>
-                {c.checkedInToday ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <Clock className="w-3.5 h-3.5 text-muted-foreground" />}
-              </div>
-            ))}
+            {coaches.map(c => {
+              const isCheckedIn = checkIns.some(ci => ci.coach_id === c.id);
+              return (
+                <div key={c.id} data-testid={`coach-status-${c.id}`} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${isCheckedIn ? 'bg-emerald-50 border-emerald-200' : 'bg-card border-border'}`}>
+                  <div className={`w-2 h-2 rounded-full ${isCheckedIn ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                  <span className="text-sm font-medium">{c.name}</span>
+                  {isCheckedIn ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <Clock className="w-3.5 h-3.5 text-muted-foreground" />}
+                </div>
+              );
+            })}
           </div>
         </CardContent>
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {state.coaches.map(coach => {
+        {coaches.map(coach => {
           const earnings = calcEarnings(coach);
+          const isCheckedIn = checkIns.some(ci => ci.coach_id === coach.id);
           return (
             <Card key={coach.id} data-testid={`coach-card-${coach.id}`} className="hover:shadow-md transition-shadow">
               <CardContent className="p-5 space-y-4">
@@ -143,16 +177,16 @@ export default function Coaches() {
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold">{coach.name}</p>
                     <div className="flex items-center gap-1 flex-wrap mt-1">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${paymentTypeColors[coach.paymentType]}`}>
-                        {paymentTypeLabels[coach.paymentType]}
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${paymentTypeColors[coach.payment_type]}`}>
+                        {paymentTypeLabels[coach.payment_type]}
                       </span>
-                      {coach.paymentType === 'commission' && coach.commissionBase && (
-                        <span className="text-xs text-muted-foreground">on {commissionBaseLabels[coach.commissionBase]}</span>
+                      {coach.payment_type === 'commission' && coach.commission_base && (
+                        <span className="text-xs text-muted-foreground">on {commissionBaseLabels[coach.commission_base]}</span>
                       )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
-                    <div className={`w-2.5 h-2.5 rounded-full ${coach.checkedInToday ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                    <div className={`w-2.5 h-2.5 rounded-full ${isCheckedIn ? 'bg-emerald-500' : 'bg-gray-300'}`} />
                     <button onClick={() => openEdit(coach)} className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground">
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
@@ -160,13 +194,13 @@ export default function Coaches() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="p-2.5 rounded-lg bg-muted/50 text-center">
-                    <p className="text-lg font-bold">{coach.sessionsThisMonth}</p>
+                    <p className="text-lg font-bold">{coach.sessions_this_month}</p>
                     <p className="text-xs text-muted-foreground">Sessions (Month)</p>
                   </div>
                   <div className="p-2.5 rounded-lg bg-muted/50 text-center">
                     <p className="text-lg font-bold">
-                      {coach.paymentType === 'salary' ? `${coach.rate.toLocaleString()}` :
-                       coach.paymentType === 'per_session' ? `${coach.rate}/ses` : `${coach.rate}%`}
+                      {coach.payment_type === 'salary' ? `${coach.rate.toLocaleString()}` :
+                       coach.payment_type === 'per_session' ? `${coach.rate}/ses` : `${coach.rate}%`}
                     </p>
                     <p className="text-xs text-muted-foreground">Rate</p>
                   </div>
@@ -176,15 +210,15 @@ export default function Coaches() {
                     <div className="flex items-center gap-2"><DollarSign className="w-4 h-4 text-primary" /><span className="text-sm font-medium">Monthly Payroll</span></div>
                     <span className="text-base font-bold">{earnings.toLocaleString()} EGP</span>
                   </div>
-                  {coach.paymentType === 'per_session' && <p className="text-xs text-muted-foreground mt-1">{coach.sessionsThisMonth} × {coach.rate} EGP</p>}
-                  {coach.paymentType === 'commission' && (
+                  {coach.payment_type === 'per_session' && <p className="text-xs text-muted-foreground mt-1">{coach.sessions_this_month} × {coach.rate} EGP</p>}
+                  {coach.payment_type === 'commission' && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      {coach.rate}% of {coach.commissionBase === 'members' ? `${newMembersThisMonth} new members (×1000)` : `${monthlyRevenue.toLocaleString()} EGP revenue`}
+                      {coach.rate}% of {coach.commission_base === 'members' ? `${newMembersThisMonth} new members (×1000)` : `${monthlyRevenue.toLocaleString()} EGP revenue`}
                     </p>
                   )}
                 </div>
-                {!coach.checkedInToday && (
-                  <Button data-testid={`btn-checkin-coach-${coach.id}`} variant="outline" size="sm" className="w-full gap-2" onClick={() => handleCoachCheckIn(coach.id, coach.name)}>
+                {!isCheckedIn && (
+                  <Button data-testid={`btn-checkin-coach-${coach.id}`} variant="outline" size="sm" className="w-full gap-2" onClick={() => handleCoachCheckIn(coach.id, coach.name)} disabled={checkInMutation.isPending}>
                     <Dumbbell className="w-3.5 h-3.5" /> Check In for Today
                   </Button>
                 )}
@@ -198,13 +232,13 @@ export default function Coaches() {
         <CardHeader className="pb-3"><CardTitle className="text-sm font-semibold">Monthly Payroll Summary</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {state.coaches.map(coach => (
+            {coaches.map(coach => (
               <div key={coach.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-medium">{coach.name}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${paymentTypeColors[coach.paymentType]}`}>{paymentTypeLabels[coach.paymentType]}</span>
-                  {coach.paymentType === 'commission' && (
-                    <span className="text-xs text-muted-foreground">{coach.rate}% on {commissionBaseLabels[coach.commissionBase ?? 'revenue']}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${paymentTypeColors[coach.payment_type]}`}>{paymentTypeLabels[coach.payment_type]}</span>
+                  {coach.payment_type === 'commission' && (
+                    <span className="text-xs text-muted-foreground">{coach.rate}% on {commissionBaseLabels[coach.commission_base ?? 'revenue']}</span>
                   )}
                 </div>
                 <span className="text-sm font-bold">{calcEarnings(coach).toLocaleString()} EGP</span>
@@ -212,7 +246,7 @@ export default function Coaches() {
             ))}
             <div className="flex items-center justify-between py-2 pt-3">
               <span className="text-sm font-bold">Total Payroll</span>
-              <span className="text-base font-bold text-primary">{state.coaches.reduce((s, c) => s + calcEarnings(c), 0).toLocaleString()} EGP</span>
+              <span className="text-base font-bold text-primary">{coaches.reduce((s, c) => s + calcEarnings(c), 0).toLocaleString()} EGP</span>
             </div>
           </div>
         </CardContent>
@@ -222,16 +256,19 @@ export default function Coaches() {
         <DialogContent>
           <DialogHeader><DialogTitle>Coach Check-In</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
-            {state.coaches.map(c => (
-              <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border bg-card">
-                <div><p className="font-medium">{c.name}</p><p className="text-xs text-muted-foreground">{paymentTypeLabels[c.paymentType]}</p></div>
-                {c.checkedInToday ? (
-                  <span className="flex items-center gap-1 text-emerald-600 text-sm font-medium"><CheckCircle2 className="w-4 h-4" /> Checked In</span>
-                ) : (
-                  <Button data-testid={`btn-modal-checkin-coach-${c.id}`} size="sm" onClick={() => handleCoachCheckIn(c.id, c.name)}>Check In</Button>
-                )}
-              </div>
-            ))}
+            {coaches.map(c => {
+              const isCheckedIn = checkIns.some(ci => ci.coach_id === c.id);
+              return (
+                <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                  <div><p className="font-medium">{c.name}</p><p className="text-xs text-muted-foreground">{paymentTypeLabels[c.payment_type]}</p></div>
+                  {isCheckedIn ? (
+                    <span className="flex items-center gap-1 text-emerald-600 text-sm font-medium"><CheckCircle2 className="w-4 h-4" /> Checked In</span>
+                  ) : (
+                    <Button data-testid={`btn-modal-checkin-coach-${c.id}`} size="sm" onClick={() => handleCoachCheckIn(c.id, c.name)} disabled={checkInMutation.isPending}>Check In</Button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </DialogContent>
       </Dialog>
@@ -271,7 +308,7 @@ export default function Coaches() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>Cancel</Button>
-            <Button onClick={handleSave}>{editCoach ? 'Save Changes' : 'Add Coach'}</Button>
+            <Button onClick={handleSave} disabled={createCoach.isPending || updateCoach.isPending}>{editCoach ? 'Save Changes' : 'Add Coach'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
