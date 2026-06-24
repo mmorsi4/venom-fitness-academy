@@ -1,6 +1,6 @@
 # GymPro Management System Setup Guide
 
-This document explains how to set up, run, and connect the Venom Fitness Academy (GymPro) Management System to a fresh Supabase project.
+This document explains how to set up, run, and connect the Venom Fitness Academy Management System to a fresh Supabase project.
 
 ---
 
@@ -18,7 +18,7 @@ To run the app on your local machine for development:
    ```bash
    npm run dev
    ```
-   This will start the local server, usually accessible at `http://localhost:5001/` (check the terminal output for the exact port).
+   This will start the local server, usually accessible at `http://localhost:5000/` (check the terminal output for the exact port).
 
 ---
 
@@ -79,4 +79,4 @@ Open your local terminal and run:
 ---
 
 ## 3. You're Done!
-Go back to your local server (`http://localhost:5001/`), enter the admin email and password you created, and enjoy managing your gym!
+Go back to your local server (`http://localhost:5000/`), enter the admin email and password you created, and enjoy managing your gym!
