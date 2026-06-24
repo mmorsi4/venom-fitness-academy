@@ -1,10 +1,10 @@
-import { ReactNode } from "react";
+import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Users, LogIn, Package, FileText, DollarSign,
   Dumbbell, Calendar, UserPlus, ClipboardList, Tag,
   ChevronRight, CalendarDays, BarChart2, AlertCircle, Landmark,
-  UserCog, LogOut
+  UserCog, LogOut, Menu, X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth, ROLE_NAV } from "@/lib/auth";
@@ -34,6 +34,12 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const { currentUser, logout } = useAuth();
   const { data: liabilities = [] } = useLiabilities();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Close mobile menu when route changes
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [location]);
 
   if (!currentUser) return <>{children}</>;
 
@@ -54,11 +60,30 @@ export default function Layout({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex h-screen overflow-hidden bg-background w-full">
+      {/* Mobile Backdrop */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/80 z-40 md:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-60 flex-shrink-0 bg-sidebar flex flex-col">
+      <aside className={cn(
+        "fixed inset-y-0 left-0 z-50 w-64 bg-sidebar flex flex-col transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0",
+        isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
+        {/* Mobile close button */}
+        <button 
+          onClick={() => setIsMobileMenuOpen(false)}
+          className="md:hidden absolute top-4 right-4 p-2 text-sidebar-foreground hover:bg-sidebar-accent rounded-md"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
         {/* Logo */}
-        <div className="px-4 py-2">
+        <div className="px-4 py-2 mt-8 md:mt-0">
           <div className="flex flex-col items-center gap-2 py-2">
             <img src="/venom_logo.png" alt="Venom Logo" className="w-full h-18 object-contain" />
           </div>
@@ -114,39 +139,55 @@ export default function Layout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto flex flex-col">
+      <main className="flex-1 overflow-y-auto flex flex-col relative w-full min-w-0">
+        {/* Mobile Header */}
+        <div className="md:hidden flex items-center justify-between p-4 bg-sidebar border-b border-sidebar-border flex-shrink-0 sticky top-0 z-30">
+          <button 
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="p-2 -ml-2 text-sidebar-foreground hover:bg-sidebar-accent rounded-md transition-colors"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+          <img src="/venom_logo.png" alt="Venom Logo" className="h-8 object-contain" />
+        </div>
+
         {/* Liability due ribbons */}
         {canViewLiabilities && dueLiabilities.map(l => {
           const daysUntil = differenceInDays(parseISO(l.next_due_date), new Date());
           return (
             <div
               key={l.id}
-              className="flex items-center gap-3 px-4 py-2.5 bg-red-600 text-white text-sm flex-shrink-0"
+              className="flex flex-col md:flex-row md:items-center gap-3 px-4 py-3 bg-red-600 text-white text-sm flex-shrink-0"
               data-testid={`liability-ribbon-${l.id}`}
             >
-              <AlertCircle className="w-4 h-4 flex-shrink-0 animate-pulse" />
-              <span className="flex-1 font-medium">
-                <strong>{l.name}</strong> — {l.type === 'one_time' ? 'Payment' : 'Installment'} of{' '}
-                <strong>{l.installment_amount.toLocaleString()} EGP</strong> due{' '}
-                {daysUntil === 0 ? 'today' : `in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}`}
-                {' '}· Pay via Finance → Add Expense → Liability Payment
-              </span>
-              {allowedHrefs.includes('/liabilities') && (
-                <Link
-                  href="/liabilities"
-                  className="flex-shrink-0 px-3 py-1 rounded bg-white/20 hover:bg-white/30 text-white text-xs font-medium transition-colors border border-white/20"
-                >
-                  View Details
-                </Link>
-              )}
-              {allowedHrefs.includes('/finance') && (
-                <Link
-                  href="/finance"
-                  className="flex-shrink-0 px-3 py-1 rounded bg-white text-red-700 text-xs font-semibold hover:bg-white/90 transition-colors"
-                >
-                  Pay Now →
-                </Link>
-              )}
+              <div className="flex items-start md:items-center gap-3 flex-1">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 animate-pulse mt-0.5 md:mt-0" />
+                <span className="font-medium leading-tight">
+                  <strong>{l.name}</strong> — {l.type === 'one_time' ? 'Payment' : 'Installment'} of{' '}
+                  <strong>{l.installment_amount.toLocaleString()} EGP</strong> due{' '}
+                  {daysUntil === 0 ? 'today' : `in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}`}
+                  {' '}
+                  <span className="hidden md:inline">· Pay via Finance → Add Expense → Liability Payment</span>
+                </span>
+              </div>
+              <div className="flex items-center gap-2 md:pl-0 pl-8">
+                {allowedHrefs.includes('/liabilities') && (
+                  <Link
+                    href="/liabilities"
+                    className="flex-shrink-0 px-3 py-1.5 md:py-1 rounded bg-white/20 hover:bg-white/30 text-white text-xs font-medium transition-colors border border-white/20 text-center flex-1 md:flex-none"
+                  >
+                    View Details
+                  </Link>
+                )}
+                {allowedHrefs.includes('/finance') && (
+                  <Link
+                    href="/finance"
+                    className="flex-shrink-0 px-3 py-1.5 md:py-1 rounded bg-white text-red-700 text-xs font-semibold hover:bg-white/90 transition-colors text-center flex-1 md:flex-none"
+                  >
+                    Pay Now →
+                  </Link>
+                )}
+              </div>
             </div>
           );
         })}
