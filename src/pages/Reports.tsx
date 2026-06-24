@@ -88,7 +88,7 @@ export default function Reports() {
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Members");
-    XLSX.writeFile(wb, `GymPro_Members_${format(new Date(), 'yyyyMMdd')}.xlsx`);
+    XLSX.writeFile(wb, `venom_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
   };
 
   const exportToPDF = async () => {
@@ -97,7 +97,7 @@ export default function Reports() {
     const doc = new jsPDF({ orientation: 'landscape' });
 
     doc.setFontSize(16);
-    doc.text('GymPro Member Report', 14, 15);
+    doc.text('Venom Fitness Academy Member Report', 14, 15);
     doc.setFontSize(10);
     doc.text(`Generated: ${format(new Date(), 'dd MMM yyyy HH:mm')}  |  Filters: ${activeFiltersCount > 0 ? `${activeFiltersCount} active` : 'None'}  |  Total: ${filtered.length}`, 14, 22);
 
@@ -119,7 +119,7 @@ export default function Reports() {
       alternateRowStyles: { fillColor: [248, 250, 252] },
     });
 
-    doc.save(`GymPro_Members_${format(new Date(), 'yyyyMMdd')}.pdf`);
+    doc.save(`venom_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
   };
 
   return (

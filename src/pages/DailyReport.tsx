@@ -6,6 +6,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { useAuditLogs, useInvoices, useExpenses, useGymSessions } from "@/hooks/use-data";
 import { format, isSameDay, subDays, addDays, parseISO } from "date-fns";
 
@@ -83,10 +84,22 @@ export default function DailyReport() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={prevDay}>←</Button>
-          <div className="flex items-center gap-2 px-4 py-2 rounded-lg border bg-card min-w-[200px] justify-center">
-            <CalendarDays className="w-4 h-4 text-muted-foreground" />
-            <span className="font-semibold text-foreground">{format(selectedDate, "EEEE, MMMM d, yyyy")}</span>
-            {isToday && <Badge className="text-xs">Today</Badge>}
+          <div className="flex items-center gap-1 px-1 py-1 rounded-lg border bg-card justify-center">
+            <Input 
+              type="date"
+              className="h-8 w-[140px] border-none shadow-none focus-visible:ring-0 text-foreground font-semibold"
+              value={format(selectedDate, "yyyy-MM-dd")}
+              onChange={(e) => {
+                if (e.target.value) {
+                  const d = parseISO(e.target.value);
+                  if (!isNaN(d.getTime()) && d <= new Date()) {
+                    setSelectedDate(d);
+                  }
+                }
+              }}
+              max={format(new Date(), "yyyy-MM-dd")}
+            />
+            {isToday && <Badge className="text-xs mr-2">Today</Badge>}
           </div>
           <Button variant="outline" size="sm" onClick={nextDay} disabled={isToday}>→</Button>
           <Button variant="outline" size="sm" onClick={() => setSelectedDate(new Date())}>Today</Button>

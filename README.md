@@ -1,4 +1,4 @@
-# GymPro Management System Setup Guide
+# Venom Management System Setup Guide
 
 This document explains how to set up, run, and connect the Venom Fitness Academy Management System to a fresh Supabase project.
 
