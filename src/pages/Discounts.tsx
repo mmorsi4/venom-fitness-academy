@@ -277,14 +277,14 @@ export default function Discounts() {
                 <Select value={form.discountType} onValueChange={(v: "fixed" | "percentage") => setForm(p => ({ ...p, discountType: v }))}>
                   <SelectTrigger data-testid="select-discount-method"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="fixed">Fixed Amount (AED)</SelectItem>
+                    <SelectItem value="fixed">Fixed Amount (EGP)</SelectItem>
                     <SelectItem value="percentage">Percentage (%)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label>Value ({form.discountType === 'fixed' ? 'AED' : '%'})</Label>
+              <Label>Value ({form.discountType === 'fixed' ? 'EGP' : '%'})</Label>
               <Input data-testid="input-discount-value" type="number" placeholder="0" value={form.value} onChange={e => setForm(p => ({ ...p, value: e.target.value }))} />
             </div>
             <div className="space-y-2">

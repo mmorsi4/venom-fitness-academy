@@ -29,7 +29,7 @@ export default function Dashboard() {
     { label: "Active Members", value: activeMembers, icon: Users, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
     { label: "Expiring Soon", value: expiringSoon.length, icon: AlertTriangle, color: "text-amber-600", bg: "bg-amber-50", border: "border-amber-100" },
     { label: "Expired Members", value: expired.length, icon: AlertTriangle, color: "text-red-600", bg: "bg-red-50", border: "border-red-100" },
-    { label: "Outstanding (AED)", value: outstandingAmount.toLocaleString(), icon: DollarSign, color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
+    { label: "Outstanding (EGP)", value: outstandingAmount.toLocaleString(), icon: DollarSign, color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
     { label: "New Leads", value: newLeads.length, icon: TrendingUp, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
   ];
 

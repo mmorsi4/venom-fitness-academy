@@ -130,7 +130,7 @@ export default function DailyReport() {
               <TrendingUp className="w-4 h-4 text-emerald-500" />
             </div>
             <p className="text-3xl font-bold text-emerald-600">{totalIncome.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground mt-1">AED collected</p>
+            <p className="text-xs text-muted-foreground mt-1">EGP collected</p>
             <div className="flex flex-wrap gap-1.5 mt-3">
               {cashIncome > 0 && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Cash: {cashIncome}</span>
@@ -152,7 +152,7 @@ export default function DailyReport() {
               <TrendingDown className="w-4 h-4 text-red-500" />
             </div>
             <p className="text-3xl font-bold text-red-600">{totalExpenses.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground mt-1">AED spent</p>
+            <p className="text-xs text-muted-foreground mt-1">EGP spent</p>
             {expensesForDay.length > 0 && (
               <p className="text-xs text-muted-foreground mt-3">{expensesForDay.length} expense record{expensesForDay.length > 1 ? 's' : ''}</p>
             )}
@@ -167,7 +167,7 @@ export default function DailyReport() {
             <p className={`text-3xl font-bold ${netBalance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
               {netBalance >= 0 ? '' : '-'}{Math.abs(netBalance).toLocaleString()}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">AED net for the day</p>
+            <p className="text-xs text-muted-foreground mt-1">EGP net for the day</p>
           </CardContent>
         </Card>
       </div>
