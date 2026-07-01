@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { Plus, Search, Phone, Calendar, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useMembers, useCoaches, usePackages, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog } from "@/hooks/use-data";
+import { useMembers, useCoaches, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
 import type { Member, Gender } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
@@ -38,17 +39,13 @@ interface MemberForm {
   gender: Gender | "";
   source: string;
   assignedCoachId: string;
-  packageId: string;
   id: number;
   sport: string;
-  
-  
-  
 }
 
 const emptyForm: MemberForm = {
   name: "", phone: "", parentPhone: "", birthDate: "",
-  gender: "", source: "Walk-in", assignedCoachId: "", packageId: "",
+  gender: "", source: "Walk-in", assignedCoachId: "",
   sport: "", id: 0,
 };
 
@@ -57,9 +54,8 @@ function memberToForm(m: Member): MemberForm {
     name: m.name, phone: m.phone, parentPhone: m.parent_phone ?? "",
     birthDate: m.birth_date ?? "", gender: m.gender ?? "",
     source: m.source, assignedCoachId: m.assigned_coach_id ?? "",
-    packageId: "",
     id: m.id,
-    sport: m.sport ?? "", 
+    sport: m.sport ?? "",
   };
 }
 
@@ -71,12 +67,12 @@ function calcAge(birthDate?: string | null) {
 export default function Members() {
   const { data: members = [] } = useMembers();
   const { data: coaches = [] } = useCoaches();
-  const { data: packages = [] } = usePackages();
   const createMember = useCreateMember();
   const updateMember = useUpdateMember();
   const deleteMember = useDeleteMember();
   const createAuditLog = useCreateAuditLog();
   const { currentUser } = useAuth();
+  const [, navigate] = useLocation();
 
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -116,7 +112,6 @@ export default function Members() {
     }
 
     const assignedCoachId = (form.assignedCoachId && form.assignedCoachId !== '__none__') ? form.assignedCoachId : null;
-    const selectedPkg = form.packageId && form.packageId !== '__none__' ? packages.find(p => p.id === form.packageId) : null;
 
     if (editMember) {
       const updates: Partial<Member> = {
@@ -128,23 +123,7 @@ export default function Members() {
         source: form.source,
         assigned_coach_id: assignedCoachId,
         sport: form.sport.trim() || null,
-        
-        
-        
       };
-
-      // If a new package was selected, update subscription fields
-      if (selectedPkg) {
-        updates.package_name = selectedPkg.name;
-        updates.sessions_remaining = selectedPkg.sessions;
-        updates.total_sessions = selectedPkg.sessions;
-        updates.freeze_days_total = selectedPkg.freeze_days;
-        updates.freeze_days_used = 0;
-        const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + selectedPkg.validity_days);
-        updates.expires_at = expiresAt.toISOString();
-        updates.status = 'active';
-      }
 
       updateMember.mutate({ id: editMember.uuid, updates }, {
         onSuccess: () => {
@@ -154,9 +133,6 @@ export default function Members() {
         onError: (err) => toast.error(`Error updating: ${err.message}`)
       });
     } else {
-      const expiresAt = new Date();
-      if (selectedPkg) expiresAt.setDate(expiresAt.getDate() + selectedPkg.validity_days);
-
       createMember.mutate({
         name: form.name.trim(),
         phone: form.phone.trim(),
@@ -165,20 +141,16 @@ export default function Members() {
         gender: (form.gender as Gender) || null,
         source: form.source,
         assigned_coach_id: assignedCoachId,
-        status: 'active',
-        sessions_remaining: selectedPkg?.sessions ?? 0,
-        total_sessions: selectedPkg?.sessions ?? 0,
-        expires_at: expiresAt.toISOString(),
+        status: 'expired',
+        sessions_remaining: 0,
+        total_sessions: 0,
+        expires_at: new Date().toISOString(),
         member_since: new Date().toISOString(),
-        package_name: selectedPkg?.name ?? "None",
+        package_name: "None",
         freeze_days_used: 0,
-        freeze_days_total: selectedPkg?.freeze_days ?? 7,
+        freeze_days_total: 0,
         id: form.id,
-        
         sport: form.sport.trim() || null,
-        
-        
-        
       }, {
         onSuccess: () => {
           toast.success(`Member ${form.name} created`);
@@ -298,7 +270,7 @@ export default function Members() {
                     </div>
                   </div>
 
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                  <div className="mt-3 grid grid-cols-5 gap-1.5 text-center">
                     <div className="p-1.5 rounded bg-muted/50">
                       <p className="text-sm font-bold text-foreground">
                         {m.sessions_remaining === 999 ? "∞" : m.sessions_remaining}
@@ -306,8 +278,16 @@ export default function Members() {
                       <p className="text-xs text-muted-foreground leading-tight">Sessions</p>
                     </div>
                     <div className="p-1.5 rounded bg-muted/50">
-                      <p className="text-sm font-bold text-foreground truncate">{m.package_name?.split(' ')[0]}</p>
+                      <p className="text-sm font-bold text-foreground truncate">{m.package_name}</p>
                       <p className="text-xs text-muted-foreground leading-tight">Package</p>
+                    </div>
+                    <div className="p-1.5 rounded bg-muted/50">
+                      <p className="text-sm font-bold text-foreground">{m.invitations_remaining ?? 0}</p>
+                      <p className="text-xs text-muted-foreground leading-tight">Invites</p>
+                    </div>
+                    <div className="p-1.5 rounded bg-muted/50">
+                      <p className="text-sm font-bold text-foreground">{m.inbody_sessions_remaining ?? 0}</p>
+                      <p className="text-xs text-muted-foreground leading-tight">InBody</p>
                     </div>
                     <div className="p-1.5 rounded bg-muted/50">
                       <p className="text-sm font-bold text-foreground">{format(new Date(m.expires_at), "dd MMM")}</p>
@@ -446,32 +426,32 @@ export default function Members() {
               </Select>
             </div>
 
-            {/* Subscription Package */}
-            <div className="space-y-1.5">
-              <Label>Subscription Package {editMember && "(change)"}</Label>
-              <Select value={form.packageId} onValueChange={v => setForm(p => ({ ...p, packageId: v }))}>
-                <SelectTrigger data-testid="select-member-package">
-                  <SelectValue placeholder={editMember ? `Current: ${editMember.package_name}` : "Select package..."} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {packages.map(p => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name} — {p.price} EGP · {p.sessions === 999 ? '∞' : p.sessions} sessions
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {editMember && form.packageId && form.packageId !== '__none__' && (() => {
-                const pkg = packages.find(p => p.id === form.packageId);
-                return pkg ? (
-                  <p className="text-xs text-amber-600 font-medium">
-                    ⚠ This will reset sessions to {pkg.sessions === 999 ? '∞' : pkg.sessions},
-                    freeze days to {pkg.freeze_days}, and extend expiry by {pkg.validity_days} days
-                  </p>
-                ) : null;
-              })()}
-            </div>
+            {/* Subscription Package — read-only display + change via invoice */}
+            {editMember && (
+              <div className="space-y-1.5">
+                <Label>Subscription Package</Label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 px-3 py-2 rounded-md border bg-muted/50 text-sm text-foreground">
+                    {editMember.package_name || "None"}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => {
+                      closeDialogs();
+                      navigate(`/invoices?memberId=${editMember.uuid}`);
+                    }}
+                  >
+                    Change Subscription
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  To change the subscription, create a new invoice with the desired package.
+                </p>
+              </div>
+            )}
 
             {/* Preview age if birthdate set */}
             {form.birthDate && (

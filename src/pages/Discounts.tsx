@@ -147,7 +147,7 @@ export default function Discounts() {
         <div className="space-y-4">
           {discounts.map(discount => {
             const discountMembers = members.filter(m => discount.member_ids.includes(m.uuid));
-            const relatedInvoices = invoices.filter(i => discount.invoice_ids.includes(i.id));
+            const relatedInvoices = invoices.filter(i => discount.invoice_ids.includes(i.uuid));
             const conditionsMet = discount.member_ids.length >= 2;
 
             return (
@@ -231,8 +231,8 @@ export default function Discounts() {
                       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Related Invoices</p>
                       <div className="flex flex-wrap gap-2">
                         {relatedInvoices.map(inv => (
-                          <div key={inv.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs bg-card">
-                            <span className="font-mono font-medium text-foreground">{inv.display_id}</span>
+                          <div key={inv.uuid} className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs bg-card">
+                            <span className="font-mono font-medium text-foreground">{inv.id}</span>
                             <span className="text-muted-foreground">{inv.member_name}</span>
                             <span className={`px-1.5 py-0.5 rounded text-xs ${
                               inv.status === 'paid' ? 'bg-emerald-100 text-emerald-700' :

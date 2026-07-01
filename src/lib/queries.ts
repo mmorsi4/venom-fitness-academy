@@ -24,6 +24,9 @@ export async function getProfiles() {
 // ── Members ─────────────────────────────────────────────────
 
 export async function getMembers() {
+  // First, clean up any subscriptions that have expired
+  await supabase.rpc('cleanup_expired_subscriptions');
+
   const { data, error } = await supabase
     .from('members')
     .select('*, coaches(name)')
@@ -155,20 +158,20 @@ export async function getInvoices() {
   return data as Invoice[];
 }
 
-export async function createInvoice(inv: Omit<Invoice, 'id' | 'created_at' | 'display_id'>) {
+export async function createInvoice(inv: Omit<Invoice, 'uuid' | 'created_at' | 'id'>) {
   const { data, error } = await supabase.from('invoices').insert(inv).select().single();
   if (error) throw error;
   return data as Invoice;
 }
 
-export async function updateInvoice(id: string, updates: Partial<Invoice>) {
-  const { data, error } = await supabase.from('invoices').update(updates).eq('id', id).select().single();
+export async function updateInvoice(uuid: string, updates: Partial<Invoice>) {
+  const { data, error } = await supabase.from('invoices').update(updates).eq('uuid', uuid).select().single();
   if (error) throw error;
   return data as Invoice;
 }
 
-export async function deleteInvoice(id: string) {
-  const { error } = await supabase.from('invoices').delete().eq('id', id);
+export async function deleteInvoice(uuid: string) {
+  const { error } = await supabase.from('invoices').delete().eq('uuid', uuid);
   if (error) throw error;
 }
 

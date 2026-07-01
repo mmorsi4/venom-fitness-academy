@@ -136,10 +136,10 @@ export default function Dashboard() {
               <p className="text-sm text-muted-foreground text-center py-4">No outstanding payments</p>
             ) : (
               invoices.filter(i => i.status !== 'paid').map(inv => (
-                <div key={inv.id} data-testid={`outstanding-${inv.id}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
+                <div key={inv.uuid} data-testid={`outstanding-${inv.uuid}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{inv.member_name}</p>
-                    <p className="text-xs text-muted-foreground">{inv.display_id}</p>
+                    <p className="text-xs text-muted-foreground">{inv.id}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-bold text-foreground">{(inv.total_amount - inv.paid_amount).toLocaleString()} EGP</p>

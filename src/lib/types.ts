@@ -48,10 +48,13 @@ export interface Member {
   total_sessions: number;
   expires_at: string;
   member_since: string;
+  package_id: string | null;
   package_name: string;
   assigned_coach_id: string | null;
   freeze_days_used: number;
   freeze_days_total: number;
+  invitations_remaining: number;
+  inbody_sessions_remaining: number;
   sport: string | null;
   created_at: string;
   // Joined field (populated via query)
@@ -71,8 +74,8 @@ export interface SubscriptionPackage {
 }
 
 export interface Invoice {
+  uuid: string;
   id: string;
-  display_id: string;
   member_id: string;
   member_name: string;
   package_id: string | null;
@@ -206,7 +209,7 @@ export interface Database {
       profiles: { Row: Profile; Insert: Omit<Profile, 'created_at'>; Update: Partial<Omit<Profile, 'id' | 'created_at'>> };
       members: { Row: Member; Insert: Omit<Member, 'id' | 'created_at' | 'coach_name'>; Update: Partial<Omit<Member, 'id' | 'created_at' | 'coach_name'>> };
       packages: { Row: SubscriptionPackage; Insert: Omit<SubscriptionPackage, 'id' | 'created_at'>; Update: Partial<Omit<SubscriptionPackage, 'id' | 'created_at'>> };
-      invoices: { Row: Invoice; Insert: Omit<Invoice, 'id' | 'created_at'>; Update: Partial<Omit<Invoice, 'id' | 'created_at'>> };
+      invoices: { Row: Invoice; Insert: Omit<Invoice, 'uuid' | 'id' | 'created_at'>; Update: Partial<Omit<Invoice, 'uuid' | 'id' | 'created_at'>> };
       discounts: { Row: Discount; Insert: Omit<Discount, 'id' | 'created_at' | 'member_ids' | 'invoice_ids'>; Update: Partial<Omit<Discount, 'id' | 'created_at' | 'member_ids' | 'invoice_ids'>> };
       coaches: { Row: Coach; Insert: Omit<Coach, 'id' | 'created_at'>; Update: Partial<Omit<Coach, 'id' | 'created_at'>> };
       leads: { Row: Lead; Insert: Omit<Lead, 'id' | 'created_at'>; Update: Partial<Omit<Lead, 'id' | 'created_at'>> };
@@ -226,6 +229,10 @@ export interface Database {
       };
       pay_liability: {
         Args: { p_liability_id: string; p_amount: number };
+        Returns: void;
+      };
+      cleanup_expired_subscriptions: {
+        Args: Record<PropertyKey, never>;
         Returns: void;
       };
     };

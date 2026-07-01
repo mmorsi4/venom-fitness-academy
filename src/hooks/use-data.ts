@@ -34,7 +34,7 @@ export function useMembers() {
 export function useCreateMember() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (member: Omit<Member, 'id' | 'created_at' | 'display_id' | 'coach_name'>) =>
+    mutationFn: (member: Omit<Member, 'uuid' | 'created_at' | 'coach_name'>) =>
       q.createMember(member),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.members }),
   });
@@ -118,7 +118,7 @@ export function useInvoices() {
 export function useCreateInvoice() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (inv: Omit<Invoice, 'id' | 'created_at' | 'display_id'>) => q.createInvoice(inv),
+    mutationFn: (inv: Omit<Invoice, 'uuid' | 'created_at' | 'id'>) => q.createInvoice(inv),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.invoices });
       qc.invalidateQueries({ queryKey: queryKeys.members });
@@ -130,8 +130,8 @@ export function useCreateInvoice() {
 export function useUpdateInvoice() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, updates }: { id: string; updates: Partial<Invoice> }) =>
-      q.updateInvoice(id, updates),
+    mutationFn: ({ uuid, updates }: { uuid: string; updates: Partial<Invoice> }) =>
+      q.updateInvoice(uuid, updates),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.invoices }),
   });
 }

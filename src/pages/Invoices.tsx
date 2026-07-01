@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useLocation, useSearch } from "wouter";
 import { Plus, FileText, CreditCard, Tag, Trash2, Pencil, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -60,6 +61,28 @@ export default function Invoices() {
   const [tab, setTab] = useState("all");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [, navigate] = useLocation();
+  const searchString = useSearch();
+  const hasConsumedParams = useRef(false);
+
+  // Auto-open create dialog when navigating from Members with query params
+  useEffect(() => {
+    if (hasConsumedParams.current) return;
+    const params = new URLSearchParams(searchString);
+    const memberId = params.get('memberId');
+    const packageId = params.get('packageId');
+    if (memberId || packageId) {
+      hasConsumedParams.current = true;
+      setForm(prev => ({
+        ...prev,
+        memberId: memberId ?? prev.memberId,
+        packageId: packageId ?? prev.packageId,
+      }));
+      setShowCreate(true);
+      // Clean up query params from URL
+      navigate('/invoices', { replace: true });
+    }
+  }, [searchString, navigate]);
 
   // Edit invoice state
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null);
@@ -84,10 +107,10 @@ export default function Invoices() {
       const q = searchQuery.toLowerCase();
       const member = members.find(m => m.uuid === i.member_id);
       const matchesSearch =
-        i.display_id.toLowerCase().includes(q) ||
+        i.id.toLowerCase().includes(q) ||
         i.member_name.toLowerCase().includes(q) ||
         (member?.phone ?? "").includes(q) ||
-        (member?.display_id ?? "").toLowerCase().includes(q);
+        String(member?.id ?? "").includes(q);
       if (!matchesSearch) return false;
     }
 
@@ -186,7 +209,7 @@ export default function Invoices() {
       newPaid >= editInvoice.total_amount ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
 
     updateInvoice.mutate({
-      id: editInvoice.id,
+      uuid: editInvoice.uuid,
       updates: {
         paid_amount: newPaid,
         payment_method: editForm.paymentMethod as any,
@@ -202,9 +225,9 @@ export default function Invoices() {
           member_id: editInvoice.member_id,
           member_name: editInvoice.member_name,
           timestamp: new Date().toISOString(),
-          details: `Edited invoice ${editInvoice.display_id}: paid ${editInvoice.paid_amount} → ${newPaid} EGP, method: ${editForm.paymentMethod}`,
+          details: `Edited invoice ${editInvoice.id}: paid ${editInvoice.paid_amount} → ${newPaid} EGP, method: ${editForm.paymentMethod}`,
         });
-        toast.success(`Invoice ${editInvoice.display_id} updated`);
+        toast.success(`Invoice ${editInvoice.id} updated`);
         setEditInvoice(null);
       },
       onError: (err) => toast.error(`Error: ${err.message}`),
@@ -212,7 +235,7 @@ export default function Invoices() {
   };
 
   const handleDeleteInvoice = (inv: Invoice) => {
-    deleteInvoice.mutate(inv.id, {
+    deleteInvoice.mutate(inv.uuid, {
       onSuccess: () => {
         createAuditLog.mutate({
           action: 'Delete Invoice',
@@ -222,9 +245,9 @@ export default function Invoices() {
           member_id: null,
           member_name: inv.member_name,
           timestamp: new Date().toISOString(),
-          details: `Hard deleted invoice ${inv.display_id} for ${inv.member_name}, amount: ${inv.total_amount} EGP`,
+          details: `Hard deleted invoice ${inv.id} for ${inv.member_name}, amount: ${inv.total_amount} EGP`,
         });
-        toast.success(`Invoice ${inv.display_id} deleted`);
+        toast.success(`Invoice ${inv.id} deleted`);
         setConfirmDelete(null);
       },
       onError: (err) => toast.error(`Error deleting invoice: ${err.message}`),
@@ -312,14 +335,14 @@ export default function Invoices() {
       ) : (
         <div className="space-y-3">
           {filtered.map(inv => (
-            <Card key={inv.id} data-testid={`invoice-${inv.id}`} className="hover:shadow-sm transition-shadow">
+            <Card key={inv.uuid} data-testid={`invoice-${inv.uuid}`} className="hover:shadow-sm transition-shadow">
               <CardContent className="p-4">
                 <div className="flex items-center gap-4">
                   <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
                     <FileText className="w-4 h-4 text-primary" />
                   </div>
                   <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2 items-center">
-                    <div><p className="text-xs text-muted-foreground">Invoice</p><p className="text-sm font-bold">{inv.display_id}</p></div>
+                    <div><p className="text-xs text-muted-foreground">Invoice</p><p className="text-sm font-bold">{inv.id}</p></div>
                     <div><p className="text-xs text-muted-foreground">Member</p><p className="text-sm font-medium">{inv.member_name}</p></div>
                     <div><p className="text-xs text-muted-foreground">Package</p><p className="text-sm">{inv.package_name}</p></div>
                     <div><p className="text-xs text-muted-foreground">Date</p><p className="text-sm">{format(new Date(inv.created_at), "dd MMM yyyy")}</p></div>
@@ -344,14 +367,14 @@ export default function Invoices() {
                     )}
                     <div className="flex items-center gap-1 justify-end mt-1">
                       <button
-                        data-testid={`btn-edit-invoice-${inv.id}`}
+                        data-testid={`btn-edit-invoice-${inv.uuid}`}
                         onClick={() => openEditInvoice(inv)}
                         className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        data-testid={`btn-delete-invoice-${inv.id}`}
+                        data-testid={`btn-delete-invoice-${inv.uuid}`}
                         onClick={() => setConfirmDelete(inv)}
                         className="p-1 rounded hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
                       >
@@ -532,7 +555,7 @@ export default function Invoices() {
       {/* Edit Invoice Dialog */}
       <Dialog open={!!editInvoice} onOpenChange={o => !o && setEditInvoice(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Edit Invoice: {editInvoice?.display_id}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Edit Invoice: {editInvoice?.id}</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
             <div className="px-3 py-2 rounded-lg bg-muted/50 text-sm space-y-1">
               <div className="flex justify-between"><span className="text-muted-foreground">Member</span><span>{editInvoice?.member_name}</span></div>

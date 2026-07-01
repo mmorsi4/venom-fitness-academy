@@ -264,10 +264,10 @@ export default function DailyReport() {
             ) : (
               <div className="space-y-2">
                 {invoicesForDay.map(inv => (
-                  <div key={inv.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border">
+                  <div key={inv.uuid} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-foreground">{inv.member_name}</p>
-                      <p className="text-xs text-muted-foreground">{inv.display_id} · {inv.package_name}</p>
+                      <p className="text-xs text-muted-foreground">{inv.id} · {inv.package_name}</p>
                       <p className="text-xs text-muted-foreground">{inv.payment_method}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
