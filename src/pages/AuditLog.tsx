@@ -29,8 +29,15 @@ const actionTypeLabels: Record<string, string> = {
 export default function AuditLog() {
   const { data: auditLogs = [] } = useAuditLogs();
   const [filter, setFilter] = useState("all");
+  const [accountFilter, setAccountFilter] = useState("all");
 
-  const filtered = auditLogs.filter(l => filter === "all" || l.action_type === filter);
+  const filtered = auditLogs.filter(l => {
+    if (filter !== "all" && l.action_type !== filter) return false;
+    if (accountFilter !== "all" && l.performer_name !== accountFilter) return false;
+    return true;
+  });
+
+  const uniquePerformers = [...new Set(auditLogs.map(l => l.performer_name).filter(Boolean))];
 
   const userCounts = auditLogs.reduce((acc, log) => {
     const user = log.performer_name;
@@ -59,7 +66,7 @@ export default function AuditLog() {
       </div>
 
       {/* Filter */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <Filter className="w-4 h-4 text-muted-foreground" />
         <Select value={filter} onValueChange={setFilter}>
           <SelectTrigger data-testid="select-audit-filter" className="w-52">
@@ -72,6 +79,17 @@ export default function AuditLog() {
             <SelectItem value="apply_discount">Apply Discount</SelectItem>
             <SelectItem value="remove_discount">Remove Discount</SelectItem>
             <SelectItem value="checkin">Check-in</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={accountFilter} onValueChange={setAccountFilter}>
+          <SelectTrigger data-testid="select-audit-account" className="w-52">
+            <SelectValue placeholder="Filter by account..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Accounts</SelectItem>
+            {uniquePerformers.map(name => (
+              <SelectItem key={name} value={name}>{name}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <span className="text-sm text-muted-foreground">{filtered.length} result{filtered.length !== 1 ? 's' : ''}</span>

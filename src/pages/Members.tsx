@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Search, Phone, Calendar, Pencil } from "lucide-react";
+import { Plus, Search, Phone, Calendar, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,11 +7,17 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from "@/components/ui/dialog";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle
+} from "@/components/ui/alert-dialog";
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useMembers, useCoaches, useCreateMember, useUpdateMember } from "@/hooks/use-data";
+import { useMembers, useCoaches, usePackages, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog } from "@/hooks/use-data";
+import { useAuth } from "@/lib/auth";
 import type { Member, Gender } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import { toast } from "sonner";
@@ -32,11 +38,18 @@ interface MemberForm {
   gender: Gender | "";
   source: string;
   assignedCoachId: string;
+  packageId: string;
+  id: number;
+  sport: string;
+  
+  
+  
 }
 
 const emptyForm: MemberForm = {
   name: "", phone: "", parentPhone: "", birthDate: "",
-  gender: "", source: "Walk-in", assignedCoachId: "",
+  gender: "", source: "Walk-in", assignedCoachId: "", packageId: "",
+  sport: "", id: 0,
 };
 
 function memberToForm(m: Member): MemberForm {
@@ -44,6 +57,9 @@ function memberToForm(m: Member): MemberForm {
     name: m.name, phone: m.phone, parentPhone: m.parent_phone ?? "",
     birthDate: m.birth_date ?? "", gender: m.gender ?? "",
     source: m.source, assignedCoachId: m.assigned_coach_id ?? "",
+    packageId: "",
+    id: m.id,
+    sport: m.sport ?? "", 
   };
 }
 
@@ -55,20 +71,28 @@ function calcAge(birthDate?: string | null) {
 export default function Members() {
   const { data: members = [] } = useMembers();
   const { data: coaches = [] } = useCoaches();
+  const { data: packages = [] } = usePackages();
   const createMember = useCreateMember();
   const updateMember = useUpdateMember();
+  const deleteMember = useDeleteMember();
+  const createAuditLog = useCreateAuditLog();
+  const { currentUser } = useAuth();
 
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [showAdd, setShowAdd] = useState(false);
   const [editMember, setEditMember] = useState<Member | null>(null);
   const [form, setForm] = useState<MemberForm>(emptyForm);
+  const [confirmDelete, setConfirmDelete] = useState<Member | null>(null);
 
   const filtered = members.filter(m => {
-    const matchSearch =
-      m.name.toLowerCase().includes(query.toLowerCase()) ||
-      m.display_id.toLowerCase().includes(query.toLowerCase()) ||
-      m.phone.includes(query);
+    const q = query.toLowerCase();
+    let matchSearch = m.name.toLowerCase().includes(q) || m.phone.includes(query);
+    // Allow ID search only for non-clinic visitors
+    if (!m.id === -1) {
+      matchSearch = matchSearch || m.id.toLowerCase().includes(q) ||
+        String(m.id ?? '').includes(query);
+    }
     const matchStatus = statusFilter === "all" || m.status === statusFilter;
     return matchSearch && matchStatus;
   });
@@ -92,20 +116,37 @@ export default function Members() {
     }
 
     const assignedCoachId = (form.assignedCoachId && form.assignedCoachId !== '__none__') ? form.assignedCoachId : null;
+    const selectedPkg = form.packageId && form.packageId !== '__none__' ? packages.find(p => p.id === form.packageId) : null;
 
     if (editMember) {
-      updateMember.mutate({
-        id: editMember.id,
-        updates: {
-          name: form.name.trim(),
-          phone: form.phone.trim(),
-          parent_phone: form.parentPhone.trim() || null,
-          birth_date: form.birthDate || null,
-          gender: (form.gender as Gender) || null,
-          source: form.source,
-          assigned_coach_id: assignedCoachId,
-        }
-      }, {
+      const updates: Partial<Member> = {
+        name: form.name.trim(),
+        phone: form.phone.trim(),
+        parent_phone: form.parentPhone.trim() || null,
+        birth_date: form.birthDate || null,
+        gender: (form.gender as Gender) || null,
+        source: form.source,
+        assigned_coach_id: assignedCoachId,
+        sport: form.sport.trim() || null,
+        
+        
+        
+      };
+
+      // If a new package was selected, update subscription fields
+      if (selectedPkg) {
+        updates.package_name = selectedPkg.name;
+        updates.sessions_remaining = selectedPkg.sessions;
+        updates.total_sessions = selectedPkg.sessions;
+        updates.freeze_days_total = selectedPkg.freeze_days;
+        updates.freeze_days_used = 0;
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + selectedPkg.validity_days);
+        updates.expires_at = expiresAt.toISOString();
+        updates.status = 'active';
+      }
+
+      updateMember.mutate({ id: editMember.uuid, updates }, {
         onSuccess: () => {
           toast.success(`${form.name} updated`);
           closeDialogs();
@@ -113,6 +154,9 @@ export default function Members() {
         onError: (err) => toast.error(`Error updating: ${err.message}`)
       });
     } else {
+      const expiresAt = new Date();
+      if (selectedPkg) expiresAt.setDate(expiresAt.getDate() + selectedPkg.validity_days);
+
       createMember.mutate({
         name: form.name.trim(),
         phone: form.phone.trim(),
@@ -122,13 +166,19 @@ export default function Members() {
         source: form.source,
         assigned_coach_id: assignedCoachId,
         status: 'active',
-        sessions_remaining: 0,
-        total_sessions: 0,
-        expires_at: new Date().toISOString(),
+        sessions_remaining: selectedPkg?.sessions ?? 0,
+        total_sessions: selectedPkg?.sessions ?? 0,
+        expires_at: expiresAt.toISOString(),
         member_since: new Date().toISOString(),
-        package_name: "None",
+        package_name: selectedPkg?.name ?? "None",
         freeze_days_used: 0,
-        freeze_days_total: 7,
+        freeze_days_total: selectedPkg?.freeze_days ?? 7,
+        id: form.id,
+        
+        sport: form.sport.trim() || null,
+        
+        
+        
       }, {
         onSuccess: () => {
           toast.success(`Member ${form.name} created`);
@@ -137,6 +187,26 @@ export default function Members() {
         onError: (err) => toast.error(`Error creating: ${err.message}`)
       });
     }
+  };
+
+  const handleDelete = (member: Member) => {
+    deleteMember.mutate(member.uuid, {
+      onSuccess: () => {
+        createAuditLog.mutate({
+          action: 'Delete Member',
+          action_type: 'other',
+          performed_by: currentUser?.id ?? null,
+          performer_name: currentUser?.name ?? 'System',
+          member_id: null,
+          member_name: member.name,
+          timestamp: new Date().toISOString(),
+          details: `Hard deleted member ${member.id} (${member.name}), phone: ${member.phone}`,
+        });
+        toast.success(`Member ${member.name} deleted`);
+        setConfirmDelete(null);
+      },
+      onError: (err) => toast.error(`Error deleting: ${err.message}`),
+    });
   };
 
   const f = (key: keyof MemberForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -189,7 +259,7 @@ export default function Members() {
           {filtered.map(m => {
             const age = calcAge(m.birth_date);
             return (
-              <Card key={m.id} data-testid={`member-card-${m.id}`} className="hover:shadow-md transition-shadow">
+              <Card key={m.uuid} data-testid={`member-card-${m.uuid}`} className="hover:shadow-md transition-shadow">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -201,18 +271,31 @@ export default function Members() {
                         <StatusBadge status={m.status} />
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {m.display_id}
+                        {m.id === -1 ? (
+                          <span className="text-amber-600 font-medium">Clinic Visitor</span>
+                        ) : (
+                          <>#{m.id ?? '?'} · {m.id}</>
+                        )}
                         {m.gender && ` · ${m.gender}`}
                         {age !== null && ` · ${age}y`}
                       </p>
                     </div>
-                    <button
-                      data-testid={`btn-edit-member-${m.id}`}
-                      onClick={() => openEdit(m)}
-                      className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground flex-shrink-0"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                      <button
+                        data-testid={`btn-edit-member-${m.uuid}`}
+                        onClick={() => openEdit(m)}
+                        className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        data-testid={`btn-delete-member-${m.uuid}`}
+                        onClick={() => setConfirmDelete(m)}
+                        className="p-1.5 rounded-md hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="mt-3 grid grid-cols-3 gap-2 text-center">
@@ -349,9 +432,9 @@ export default function Members() {
               </Select>
             </div>
 
-            {/* Assigned Coach */}
+            {/* Assigned Class */}
             <div className="space-y-1.5">
-              <Label>Assigned Coach</Label>
+              <Label>Assigned Class</Label>
               <Select value={form.assignedCoachId} onValueChange={v => setForm(p => ({ ...p, assignedCoachId: v }))}>
                 <SelectTrigger data-testid="select-member-coach">
                   <SelectValue placeholder="None" />
@@ -361,6 +444,33 @@ export default function Members() {
                   {coaches.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Subscription Package */}
+            <div className="space-y-1.5">
+              <Label>Subscription Package {editMember && "(change)"}</Label>
+              <Select value={form.packageId} onValueChange={v => setForm(p => ({ ...p, packageId: v }))}>
+                <SelectTrigger data-testid="select-member-package">
+                  <SelectValue placeholder={editMember ? `Current: ${editMember.package_name}` : "Select package..."} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None</SelectItem>
+                  {packages.map(p => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} — {p.price} EGP · {p.sessions === 999 ? '∞' : p.sessions} sessions
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {editMember && form.packageId && form.packageId !== '__none__' && (() => {
+                const pkg = packages.find(p => p.id === form.packageId);
+                return pkg ? (
+                  <p className="text-xs text-amber-600 font-medium">
+                    ⚠ This will reset sessions to {pkg.sessions === 999 ? '∞' : pkg.sessions},
+                    freeze days to {pkg.freeze_days}, and extend expiry by {pkg.validity_days} days
+                  </p>
+                ) : null;
+              })()}
             </div>
 
             {/* Preview age if birthdate set */}
@@ -378,6 +488,30 @@ export default function Members() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Member Confirmation */}
+      <AlertDialog open={!!confirmDelete} onOpenChange={o => !o && setConfirmDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Member Permanently</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to permanently delete <strong>{confirmDelete?.name}</strong> ({confirmDelete?.id})?
+              <span className="block mt-2 text-red-600 font-medium">
+                ⚠ This will also delete all their invoices, check-ins, and discount associations. This action cannot be undone.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => confirmDelete && handleDelete(confirmDelete)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete Permanently
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

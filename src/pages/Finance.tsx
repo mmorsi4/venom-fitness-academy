@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { Plus, TrendingUp, TrendingDown, DollarSign, Landmark } from "lucide-react";
+import { Plus, TrendingUp, TrendingDown, DollarSign, Landmark, ChevronLeft, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -21,22 +20,6 @@ import { format } from "date-fns";
 const BASE_CATEGORIES = ["Government Bills", "Maintenance", "Salaries", "Loans/Debts", "Purchases", "Other"];
 const LIABILITY_CATEGORY = "Liability Payment";
 
-const chartData = [
-  { name: "Week 1", Income: 4200, Expenses: 1800 },
-  { name: "Week 2", Income: 5800, Expenses: 2200 },
-  { name: "Week 3", Income: 3900, Expenses: 1500 },
-  { name: "Week 4", Income: 6200, Expenses: 2800 },
-];
-
-const monthlyData = [
-  { name: "Jan", Income: 18000, Expenses: 8500 },
-  { name: "Feb", Income: 22000, Expenses: 9200 },
-  { name: "Mar", Income: 28000, Expenses: 11000 },
-  { name: "Apr", Income: 25000, Expenses: 10500 },
-  { name: "May", Income: 31000, Expenses: 12000 },
-  { name: "Jun", Income: 27000, Expenses: 9800 },
-];
-
 const emptyForm = {
   category: "Maintenance",
   amount: "",
@@ -50,27 +33,66 @@ export default function Finance() {
   const { data: liabilities = [] } = useLiabilities();
   const createExpense = useCreateExpense();
 
-  const [period, setPeriod] = useState("monthly");
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [form, setForm] = useState(emptyForm);
+
+  // Month/Year filter
+  const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
+  const [filterYear, setFilterYear] = useState(new Date().getFullYear());
 
   const isLiabilityPayment = form.category === LIABILITY_CATEGORY;
   const activeLiabilities = liabilities.filter(l => !l.is_complete);
   const selectedLiability = activeLiabilities.find(l => l.id === form.liabilityId);
 
-  const totalIncome = invoices.reduce((s, i) => s + i.paid_amount, 0);
-  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
+  // Filter invoices and expenses by selected month/year
+  const filteredInvoices = invoices.filter(i => {
+    const d = new Date(i.created_at);
+    return d.getMonth() === filterMonth && d.getFullYear() === filterYear;
+  });
+
+  const filteredExpenses = expenses.filter(e => {
+    const d = new Date(e.date);
+    return d.getMonth() === filterMonth && d.getFullYear() === filterYear;
+  });
+
+  const totalIncome = filteredInvoices.reduce((s, i) => s + i.paid_amount, 0);
+  const totalExpenses = filteredExpenses.reduce((s, e) => s + e.amount, 0);
   const netBalance = totalIncome - totalExpenses;
 
-  const cashIncome = invoices.filter(i => i.payment_method === 'Cash').reduce((s, i) => s + i.paid_amount, 0);
-  const visaIncome = invoices.filter(i => i.payment_method === 'Visa').reduce((s, i) => s + i.paid_amount, 0);
-  const instapayIncome = invoices.filter(i => i.payment_method === 'InstaPay').reduce((s, i) => s + i.paid_amount, 0);
+  const cashIncome = filteredInvoices.filter(i => i.payment_method === 'Cash').reduce((s, i) => s + i.paid_amount, 0);
+  const visaIncome = filteredInvoices.filter(i => i.payment_method === 'Visa').reduce((s, i) => s + i.paid_amount, 0);
+  const instapayIncome = filteredInvoices.filter(i => i.payment_method === 'InstaPay').reduce((s, i) => s + i.paid_amount, 0);
 
   const allCategories = [...BASE_CATEGORIES, LIABILITY_CATEGORY];
   const expenseByCategory = allCategories.map(cat => ({
     category: cat,
-    amount: expenses.filter(e => e.category === cat).reduce((s, e) => s + e.amount, 0),
+    amount: filteredExpenses.filter(e => e.category === cat).reduce((s, e) => s + e.amount, 0),
   })).filter(c => c.amount > 0);
+
+  // Income by package
+  const incomeByPackage = [...new Set(filteredInvoices.map(i => i.package_name).filter(Boolean))]
+    .map(pkg => ({
+      package: pkg,
+      amount: filteredInvoices.filter(i => i.package_name === pkg).reduce((s, i) => s + i.paid_amount, 0),
+      count: filteredInvoices.filter(i => i.package_name === pkg).length,
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
+  // Generate weekly chart data from filtered data
+  const chartDataToShow = [
+    { name: "Week 1", start: 1, end: 7 },
+    { name: "Week 2", start: 8, end: 14 },
+    { name: "Week 3", start: 15, end: 21 },
+    { name: "Week 4", start: 22, end: 31 },
+  ].map(w => ({
+    name: w.name,
+    Income: filteredInvoices
+      .filter(i => { const d = new Date(i.created_at).getDate(); return d >= w.start && d <= w.end; })
+      .reduce((s, i) => s + i.paid_amount, 0),
+    Expenses: filteredExpenses
+      .filter(e => { const d = new Date(e.date).getDate(); return d >= w.start && d <= w.end; })
+      .reduce((s, e) => s + e.amount, 0),
+  }));
 
   const handleCategoryChange = (cat: string) => {
     setForm(p => ({
@@ -119,7 +141,15 @@ export default function Finance() {
     });
   };
 
-  const chartDataToShow = period === "monthly" ? monthlyData : chartData;
+  const prevMonth = () => {
+    if (filterMonth === 0) { setFilterMonth(11); setFilterYear(y => y - 1); }
+    else setFilterMonth(m => m - 1);
+  };
+
+  const nextMonth = () => {
+    if (filterMonth === 11) { setFilterMonth(0); setFilterYear(y => y + 1); }
+    else setFilterMonth(m => m + 1);
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -130,6 +160,27 @@ export default function Finance() {
         </div>
         <Button data-testid="btn-add-expense" onClick={() => setShowAddExpense(true)} variant="outline" className="gap-2">
           <Plus className="w-4 h-4" /> Add Expense
+        </Button>
+      </div>
+
+      {/* Month/Year Filter */}
+      <div className="flex items-center gap-3">
+        <Button variant="outline" size="icon" className="h-8 w-8" onClick={prevMonth}>
+          <ChevronLeft className="w-4 h-4" />
+        </Button>
+        <div className="text-center min-w-[140px]">
+          <p className="text-sm font-semibold text-foreground">
+            {new Date(filterYear, filterMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+          </p>
+        </div>
+        <Button variant="outline" size="icon" className="h-8 w-8" onClick={nextMonth}>
+          <ChevronRight className="w-4 h-4" />
+        </Button>
+        <Button
+          variant="ghost" size="sm" className="text-xs"
+          onClick={() => { setFilterMonth(new Date().getMonth()); setFilterYear(new Date().getFullYear()); }}
+        >
+          Today
         </Button>
       </div>
 
@@ -183,18 +234,39 @@ export default function Finance() {
         ))}
       </div>
 
+      {/* Income by Package Category */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">Income by Package</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {incomeByPackage.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No income recorded this month</p>
+          ) : (
+            incomeByPackage.map(({ package: pkg, amount, count }) => (
+              <div key={pkg} className="flex items-center justify-between">
+                <div className="flex-1 mr-4">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-foreground font-medium">{pkg}</span>
+                    <span className="text-muted-foreground">{amount.toLocaleString()} EGP ({count} invoice{count !== 1 ? 's' : ''})</span>
+                  </div>
+                  <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-400 rounded-full"
+                      style={{ width: totalIncome > 0 ? `${(amount / totalIncome) * 100}%` : '0%' }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
       {/* Chart */}
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-semibold">Revenue vs Expenses</CardTitle>
-            <Tabs value={period} onValueChange={setPeriod}>
-              <TabsList className="h-7">
-                <TabsTrigger value="weekly" className="text-xs h-6">Weekly</TabsTrigger>
-                <TabsTrigger value="monthly" className="text-xs h-6">Monthly</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
+          <CardTitle className="text-sm font-semibold">Weekly Revenue vs Expenses</CardTitle>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={220}>
@@ -250,7 +322,7 @@ export default function Finance() {
             <CardTitle className="text-sm font-semibold">Recent Expenses</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {expenses.slice().reverse().slice(0, 8).map(e => (
+            {filteredExpenses.slice(0, 8).map(e => (
               <div key={e.id} data-testid={`expense-${e.id}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
                 {e.liability_id && <Landmark className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />}
                 <div className="flex-1 min-w-0">

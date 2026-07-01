@@ -35,8 +35,8 @@ export interface Profile {
 }
 
 export interface Member {
-  id: string;
-  display_id: string;
+  uuid: string;
+  id: number;
   name: string;
   phone: string;
   parent_phone: string | null;
@@ -52,6 +52,7 @@ export interface Member {
   assigned_coach_id: string | null;
   freeze_days_used: number;
   freeze_days_total: number;
+  sport: string | null;
   created_at: string;
   // Joined field (populated via query)
   coach_name?: string;

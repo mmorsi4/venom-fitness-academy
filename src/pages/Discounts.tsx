@@ -146,7 +146,7 @@ export default function Discounts() {
       ) : (
         <div className="space-y-4">
           {discounts.map(discount => {
-            const discountMembers = members.filter(m => discount.member_ids.includes(m.id));
+            const discountMembers = members.filter(m => discount.member_ids.includes(m.uuid));
             const relatedInvoices = invoices.filter(i => discount.invoice_ids.includes(i.id));
             const conditionsMet = discount.member_ids.length >= 2;
 
@@ -212,12 +212,12 @@ export default function Discounts() {
                     ) : (
                       <div className="flex flex-wrap gap-2">
                         {discountMembers.map(m => (
-                          <div key={m.id} data-testid={`discount-member-${m.id}`} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border bg-muted/50 text-xs">
+                          <div key={m.uuid} data-testid={`discount-member-${m.uuid}`} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border bg-muted/50 text-xs">
                             <span className="font-medium text-foreground">{m.name}</span>
-                            <span className="text-muted-foreground">({m.display_id})</span>
+                            <span className="text-muted-foreground">({m.id})</span>
                             <button
-                              data-testid={`btn-remove-member-${m.id}`}
-                              onClick={() => handleRemoveMemberFromDiscount(discount, m.id)}
+                              data-testid={`btn-remove-member-${m.uuid}`}
+                              onClick={() => handleRemoveMemberFromDiscount(discount, m.uuid)}
                               className="ml-1 text-muted-foreground hover:text-destructive transition-colors font-bold"
                             >×</button>
                           </div>
@@ -292,17 +292,17 @@ export default function Discounts() {
               <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                 {members.map(m => (
                   <button
-                    key={m.id}
-                    data-testid={`select-discount-member-${m.id}`}
-                    onClick={() => handleToggleMember(m.id)}
+                    key={m.uuid}
+                    data-testid={`select-discount-member-${m.uuid}`}
+                    onClick={() => handleToggleMember(m.uuid)}
                     className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg border text-left transition-colors ${
-                      form.memberIds.includes(m.id) ? 'bg-primary/5 border-primary/30' : 'bg-card hover:bg-accent'}`}
+                      form.memberIds.includes(m.uuid) ? 'bg-primary/5 border-primary/30' : 'bg-card hover:bg-accent'}`}
                   >
-                    <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center ${form.memberIds.includes(m.id) ? 'bg-primary border-primary' : 'border-input'}`}>
-                      {form.memberIds.includes(m.id) && <span className="text-white text-xs">✓</span>}
+                    <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center ${form.memberIds.includes(m.uuid) ? 'bg-primary border-primary' : 'border-input'}`}>
+                      {form.memberIds.includes(m.uuid) && <span className="text-white text-xs">✓</span>}
                     </div>
                     <span className="text-sm font-medium text-foreground">{m.name}</span>
-                    <span className="text-xs text-muted-foreground ml-auto">{m.display_id}</span>
+                    <span className="text-xs text-muted-foreground ml-auto">{m.id}</span>
                   </button>
                 ))}
               </div>

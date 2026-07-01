@@ -30,21 +30,21 @@ export default function CheckIn() {
   const results = query.length >= 1
     ? members.filter(m =>
         m.name.toLowerCase().includes(query.toLowerCase()) ||
-        m.display_id.toLowerCase().includes(query.toLowerCase()) ||
+        m.id.toLowerCase().includes(query.toLowerCase()) ||
         m.phone.includes(query)
       ).slice(0, 6)
     : [];
 
   const doCheckIn = (member: Member, override = false, payLater = false) => {
     checkInMutation.mutate({
-      memberId: member.id,
+      memberId: member.uuid,
       isOverride: override,
       payLater: payLater,
       performedBy: currentUser?.id,
       performerName: currentUser?.name
     }, {
       onSuccess: () => {
-        setCheckedInToday(prev => [...prev, member.id]);
+        setCheckedInToday(prev => [...prev, member.uuid]);
         setSuccessMember(member);
         setSelectedMember(null);
         setQuery("");
@@ -74,7 +74,7 @@ export default function CheckIn() {
     }
   };
 
-  const recentlyCheckedIn = members.filter(m => checkedInToday.includes(m.id));
+  const recentlyCheckedIn = members.filter(m => checkedInToday.includes(m.uuid));
 
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
@@ -102,8 +102,8 @@ export default function CheckIn() {
         <div className="space-y-2">
           {results.map(m => (
             <button
-              key={m.id}
-              data-testid={`result-member-${m.id}`}
+              key={m.uuid}
+              data-testid={`result-member-${m.uuid}`}
               onClick={() => handleSelect(m)}
               className="w-full text-left p-3 rounded-lg border bg-card hover:bg-accent transition-colors flex items-center gap-4"
             >
@@ -112,7 +112,7 @@ export default function CheckIn() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-foreground">{m.name}</p>
-                <p className="text-sm text-muted-foreground">{m.display_id} · {m.phone}</p>
+                <p className="text-sm text-muted-foreground">{m.id} · {m.phone}</p>
               </div>
               <StatusBadge status={m.status} />
             </button>
@@ -134,7 +134,7 @@ export default function CheckIn() {
               </div>
               <div className="flex-1">
                 <CardTitle className="text-xl">{selectedMember.name}</CardTitle>
-                <p className="text-sm text-muted-foreground">{selectedMember.display_id} · {selectedMember.phone}</p>
+                <p className="text-sm text-muted-foreground">{selectedMember.id} · {selectedMember.phone}</p>
                 <div className="mt-1"><StatusBadge status={selectedMember.status} /></div>
               </div>
               <button onClick={() => setSelectedMember(null)} className="text-muted-foreground hover:text-foreground">✕</button>
@@ -183,13 +183,13 @@ export default function CheckIn() {
               <Button
                 data-testid="btn-checkin-confirm"
                 onClick={handleCheckInClick}
-                disabled={checkedInToday.includes(selectedMember.id) || checkInMutation.isPending}
+                disabled={checkedInToday.includes(selectedMember.uuid) || checkInMutation.isPending}
                 className="flex-1 h-11 text-base font-semibold gap-2"
                 variant={selectedMember.status === 'expired' ? 'destructive' : 'default'}
               >
                 <CheckCircle2 className="w-5 h-5" />
                 {selectedMember.status === 'expired' ? 'Override & Check In' :
-                  checkedInToday.includes(selectedMember.id) ? 'Already Checked In' : 'Check In'}
+                  checkedInToday.includes(selectedMember.uuid) ? 'Already Checked In' : 'Check In'}
               </Button>
               <Button data-testid="btn-checkin-cancel" variant="outline" onClick={() => setSelectedMember(null)}>Cancel</Button>
             </div>
@@ -219,7 +219,7 @@ export default function CheckIn() {
           </p>
           <div className="space-y-1.5">
             {recentlyCheckedIn.map(m => (
-              <div key={m.id} data-testid={`checked-in-${m.id}`} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100">
+              <div key={m.uuid} data-testid={`checked-in-${m.uuid}`} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100">
                 <UserCheck className="w-4 h-4 text-emerald-600" />
                 <span className="text-sm font-medium text-foreground">{m.name}</span>
                 <span className="text-xs text-muted-foreground ml-auto">{format(new Date(), "HH:mm")}</span>

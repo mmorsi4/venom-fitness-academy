@@ -136,6 +136,18 @@ export function useUpdateInvoice() {
   });
 }
 
+export function useDeleteInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: q.deleteInvoice,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.invoices });
+      qc.invalidateQueries({ queryKey: queryKeys.members });
+      qc.invalidateQueries({ queryKey: queryKeys.discounts });
+    },
+  });
+}
+
 // ── Discounts ───────────────────────────────────────────────
 
 export function useDiscounts() {

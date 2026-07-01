@@ -111,7 +111,7 @@ export default function Dashboard() {
               <p className="text-sm text-muted-foreground text-center py-4">No expiring memberships</p>
             ) : (
               [...expiringSoon, ...expired].slice(0, 5).map(m => (
-                <div key={m.id} data-testid={`expiring-${m.id}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
+                <div key={m.uuid} data-testid={`expiring-${m.uuid}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{m.name}</p>
                     <p className="text-xs text-muted-foreground">{m.sessions_remaining} sessions left</p>

@@ -36,30 +36,48 @@ export async function getMembers() {
   })) as Member[];
 }
 
-export async function createMember(member: Omit<Member, 'id' | 'created_at' | 'display_id' | 'coach_name'>) {
+export async function createMember(member: Omit<Member, 'uuid' | 'created_at' | 'coach_name'>) {
+  const memberData: any = { ...member };
+
+  // Auto-assign numeric id if not set (and not -1 for clinic visitors)
+  if (!member.id || member.id <= 0) {
+    if (member.id === -1) {
+      memberData.id = -1;
+    } else {
+      const { data: maxData } = await supabase
+        .from('members')
+        .select('id')
+        .gt('id', 0)
+        .order('id', { ascending: false })
+        .limit(1)
+        .single();
+      memberData.id = (maxData?.id ?? 0) + 1;
+    }
+  }
+
   const { data, error } = await supabase
     .from('members')
-    .insert(member)
+    .insert(memberData)
     .select()
     .single();
   if (error) throw error;
   return data as Member;
 }
 
-export async function updateMember(id: string, updates: Partial<Member>) {
+export async function updateMember(uuid: string, updates: Partial<Member>) {
   const { coach_name, ...clean } = updates as any;
   const { data, error } = await supabase
     .from('members')
     .update(clean)
-    .eq('id', id)
+    .eq('uuid', uuid)
     .select()
     .single();
   if (error) throw error;
   return data as Member;
 }
 
-export async function deleteMember(id: string) {
-  const { error } = await supabase.from('members').delete().eq('id', id);
+export async function deleteMember(uuid: string) {
+  const { error } = await supabase.from('members').delete().eq('uuid', uuid);
   if (error) throw error;
 }
 
@@ -147,6 +165,11 @@ export async function updateInvoice(id: string, updates: Partial<Invoice>) {
   const { data, error } = await supabase.from('invoices').update(updates).eq('id', id).select().single();
   if (error) throw error;
   return data as Invoice;
+}
+
+export async function deleteInvoice(id: string) {
+  const { error } = await supabase.from('invoices').delete().eq('id', id);
+  if (error) throw error;
 }
 
 // ── Discounts ───────────────────────────────────────────────

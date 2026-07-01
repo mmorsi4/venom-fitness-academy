@@ -69,7 +69,7 @@ export default function Reports() {
   const exportToExcel = async () => {
     const XLSX = await import('xlsx');
     const rows = filtered.map(m => ({
-      "ID": m.display_id,
+      "ID": m.id,
       "Name": m.name,
       "Phone": m.phone,
       "Parent Phone": m.parent_phone ?? "",
@@ -105,7 +105,7 @@ export default function Reports() {
       startY: 28,
       head: [['ID', 'Name', 'Phone', 'Gender', 'Status', 'Package', 'Sessions', 'Expires', 'Coach', 'Source']],
       body: filtered.map(m => [
-        m.display_id, m.name, m.phone,
+        m.id, m.name, m.phone,
         m.gender ?? '—',
         m.status.replace('_', ' '),
         m.package_name,
@@ -221,7 +221,7 @@ export default function Reports() {
                   {filtered.map(m => {
                     const age = calcAge(m.birth_date);
                     return (
-                      <tr key={m.id} data-testid={`report-row-${m.id}`} className="hover:bg-muted/30 transition-colors">
+                      <tr key={m.uuid} data-testid={`report-row-${m.uuid}`} className="hover:bg-muted/30 transition-colors">
                         <td className="p-3">
                           <div className="flex items-center gap-2">
                             <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -229,7 +229,7 @@ export default function Reports() {
                             </div>
                             <div>
                               <p className="font-medium text-foreground">{m.name}</p>
-                              <p className="text-xs text-muted-foreground">{m.display_id}{age !== null && ` · ${age}y`}{m.gender && ` · ${m.gender}`}</p>
+                              <p className="text-xs text-muted-foreground">{m.id}{age !== null && ` · ${age}y`}{m.gender && ` · ${m.gender}`}</p>
                             </div>
                           </div>
                         </td>

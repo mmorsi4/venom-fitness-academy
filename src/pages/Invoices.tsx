@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, FileText, CreditCard, Tag } from "lucide-react";
+import { Plus, FileText, CreditCard, Tag, Trash2, Pencil, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,12 +8,20 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from "@/components/ui/dialog";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle
+} from "@/components/ui/alert-dialog";
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useInvoices, usePackages, useMembers, useDiscounts, useCreateInvoice } from "@/hooks/use-data";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { useInvoices, usePackages, useMembers, useDiscounts, useCreateInvoice, useUpdateInvoice, useDeleteInvoice, useCreateAuditLog } from "@/hooks/use-data";
+import { useAuth } from "@/lib/auth";
+import type { Invoice } from "@/lib/types";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -35,6 +43,7 @@ const emptyForm = {
   customDiscountType: "fixed" as CustomDiscountType,
   customDiscountValue: "",
   customDiscountDescription: "",
+  invoiceDate: "",
 };
 
 export default function Invoices() {
@@ -43,14 +52,68 @@ export default function Invoices() {
   const { data: packages = [] } = usePackages();
   const { data: discounts = [] } = useDiscounts();
   const createInvoice = useCreateInvoice();
+  const updateInvoice = useUpdateInvoice();
+  const deleteInvoice = useDeleteInvoice();
+  const createAuditLog = useCreateAuditLog();
+  const { currentUser } = useAuth();
 
   const [tab, setTab] = useState("all");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
-  const filtered = invoices.filter(i => tab === "all" || i.status === tab);
+  // Edit invoice state
+  const [editInvoice, setEditInvoice] = useState<Invoice | null>(null);
+  const [editForm, setEditForm] = useState({ paidAmount: "", paymentMethod: "Cash" });
+
+  // Delete invoice state
+  const [confirmDelete, setConfirmDelete] = useState<Invoice | null>(null);
+
+  // Filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterPaymentMethod, setFilterPaymentMethod] = useState("all");
+  const [filterPackage, setFilterPackage] = useState("all");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
+
+  const filtered = invoices.filter(i => {
+    // Status tab filter
+    if (tab !== "all" && i.status !== tab) return false;
+
+    // Text search (invoice ID, member name, member phone/ID)
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const member = members.find(m => m.uuid === i.member_id);
+      const matchesSearch =
+        i.display_id.toLowerCase().includes(q) ||
+        i.member_name.toLowerCase().includes(q) ||
+        (member?.phone ?? "").includes(q) ||
+        (member?.display_id ?? "").toLowerCase().includes(q);
+      if (!matchesSearch) return false;
+    }
+
+    // Payment method filter
+    if (filterPaymentMethod !== "all" && i.payment_method !== filterPaymentMethod) return false;
+
+    // Package filter
+    if (filterPackage !== "all" && i.package_name !== filterPackage) return false;
+
+    // Date range filter
+    if (filterDateFrom) {
+      const invoiceDate = new Date(i.created_at);
+      if (invoiceDate < new Date(filterDateFrom)) return false;
+    }
+    if (filterDateTo) {
+      const invoiceDate = new Date(i.created_at);
+      const toDate = new Date(filterDateTo);
+      toDate.setHours(23, 59, 59, 999);
+      if (invoiceDate > toDate) return false;
+    }
+
+    return true;
+  });
+
   const selectedPackage = packages.find(p => p.id === form.packageId);
-  const selectedMember = members.find(m => m.id === form.memberId);
+  const selectedMember = members.find(m => m.uuid === form.memberId);
   const activeDiscounts = discounts.filter(d => d.active);
   const selectedGroup = activeDiscounts.find(d => d.id === form.discountGroupId);
 
@@ -86,7 +149,7 @@ export default function Invoices() {
       member_name: selectedMember?.name ?? "",
       package_id: form.packageId,
       package_name: selectedPackage?.name ?? "",
-      discount_group_id: form.discountMode === 'group' ? form.discountGroupId : null,
+      discount_id: form.discountMode === 'group' ? form.discountGroupId : null,
       discount_description: form.discountMode === 'custom'
         ? form.customDiscountDescription.trim()
         : (selectedGroup?.name ?? null),
@@ -95,15 +158,76 @@ export default function Invoices() {
       paid_amount: paid,
       status: invStatus,
       payment_method: form.paymentMethod,
-    }, {
+      created_at: form.invoiceDate ? new Date(form.invoiceDate).toISOString() : new Date().toISOString(),
+    } as any, {
       onSuccess: () => {
         toast.success(`Invoice created`);
         resetForm();
         setShowCreate(false);
       },
-      onError: (err) => {
+      onError: (err: any) => {
         toast.error(`Error creating invoice: ${err.message}`);
       }
+    });
+  };
+
+  const openEditInvoice = (inv: Invoice) => {
+    setEditInvoice(inv);
+    setEditForm({
+      paidAmount: String(inv.paid_amount),
+      paymentMethod: inv.payment_method,
+    });
+  };
+
+  const handleEditInvoice = () => {
+    if (!editInvoice) return;
+    const newPaid = Number(editForm.paidAmount) || 0;
+    const newStatus: 'paid' | 'partial' | 'unpaid' =
+      newPaid >= editInvoice.total_amount ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
+
+    updateInvoice.mutate({
+      id: editInvoice.id,
+      updates: {
+        paid_amount: newPaid,
+        payment_method: editForm.paymentMethod as any,
+        status: newStatus,
+      }
+    }, {
+      onSuccess: () => {
+        createAuditLog.mutate({
+          action: 'Edit Invoice',
+          action_type: 'edit_payment',
+          performed_by: currentUser?.id ?? null,
+          performer_name: currentUser?.name ?? 'System',
+          member_id: editInvoice.member_id,
+          member_name: editInvoice.member_name,
+          timestamp: new Date().toISOString(),
+          details: `Edited invoice ${editInvoice.display_id}: paid ${editInvoice.paid_amount} → ${newPaid} EGP, method: ${editForm.paymentMethod}`,
+        });
+        toast.success(`Invoice ${editInvoice.display_id} updated`);
+        setEditInvoice(null);
+      },
+      onError: (err) => toast.error(`Error: ${err.message}`),
+    });
+  };
+
+  const handleDeleteInvoice = (inv: Invoice) => {
+    deleteInvoice.mutate(inv.id, {
+      onSuccess: () => {
+        createAuditLog.mutate({
+          action: 'Delete Invoice',
+          action_type: 'other',
+          performed_by: currentUser?.id ?? null,
+          performer_name: currentUser?.name ?? 'System',
+          member_id: null,
+          member_name: inv.member_name,
+          timestamp: new Date().toISOString(),
+          details: `Hard deleted invoice ${inv.display_id} for ${inv.member_name}, amount: ${inv.total_amount} EGP`,
+        });
+        toast.success(`Invoice ${inv.display_id} deleted`);
+        setConfirmDelete(null);
+      },
+      onError: (err) => toast.error(`Error deleting invoice: ${err.message}`),
     });
   };
 
@@ -134,6 +258,54 @@ export default function Invoices() {
           <TabsTrigger value="unpaid">Unpaid ({counts.unpaid})</TabsTrigger>
         </TabsList>
       </Tabs>
+
+      {/* Filter Bar */}
+      <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            data-testid="input-invoice-search"
+            placeholder="Search invoice ID, member name, or phone..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select value={filterPaymentMethod} onValueChange={setFilterPaymentMethod}>
+          <SelectTrigger className="w-36" data-testid="filter-payment-method">
+            <SelectValue placeholder="Payment..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Methods</SelectItem>
+            {paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filterPackage} onValueChange={setFilterPackage}>
+          <SelectTrigger className="w-40" data-testid="filter-package">
+            <SelectValue placeholder="Package..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Packages</SelectItem>
+            {[...new Set(invoices.map(i => i.package_name).filter(Boolean))].map(p => (
+              <SelectItem key={p} value={p}>{p}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
+          type="date"
+          value={filterDateFrom}
+          onChange={e => setFilterDateFrom(e.target.value)}
+          className="w-36"
+          title="From date"
+        />
+        <Input
+          type="date"
+          value={filterDateTo}
+          onChange={e => setFilterDateTo(e.target.value)}
+          className="w-36"
+          title="To date"
+        />
+      </div>
 
       {filtered.length === 0 ? (
         <Card><CardContent className="py-12 text-center"><p className="text-muted-foreground">No invoices</p></CardContent></Card>
@@ -170,6 +342,22 @@ export default function Invoices() {
                     {inv.status === 'partial' && (
                       <p className="text-xs text-muted-foreground">Paid: {inv.paid_amount} / {inv.total_amount}</p>
                     )}
+                    <div className="flex items-center gap-1 justify-end mt-1">
+                      <button
+                        data-testid={`btn-edit-invoice-${inv.id}`}
+                        onClick={() => openEditInvoice(inv)}
+                        className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        data-testid={`btn-delete-invoice-${inv.id}`}
+                        onClick={() => setConfirmDelete(inv)}
+                        className="p-1 rounded hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -186,10 +374,19 @@ export default function Invoices() {
 
             <div className="space-y-1.5">
               <Label>Member</Label>
-              <Select value={form.memberId} onValueChange={v => setForm(p => ({ ...p, memberId: v }))}>
-                <SelectTrigger data-testid="select-invoice-member"><SelectValue placeholder="Select member..." /></SelectTrigger>
-                <SelectContent>{members.map(m => <SelectItem key={m.id} value={m.id}>{m.name} ({m.display_id})</SelectItem>)}</SelectContent>
-              </Select>
+              <SearchableSelect
+                data-testid="select-invoice-member"
+                options={members.map(m => ({
+                  value: m.uuid,
+                  label: `${m.name} (${m.id})`,
+                  searchTerms: `${m.phone} ${m.id}`,
+                }))}
+                value={form.memberId}
+                onValueChange={v => setForm(p => ({ ...p, memberId: v }))}
+                placeholder="Search member by name, phone, or ID..."
+                searchPlaceholder="Type name, phone, or member ID..."
+                emptyMessage="No members found"
+              />
             </div>
 
             <div className="space-y-1.5">
@@ -300,6 +497,18 @@ export default function Invoices() {
               </div>
             </div>
 
+            {/* Invoice Date */}
+            <div className="space-y-1.5">
+              <Label>Invoice Date</Label>
+              <Input
+                type="date"
+                data-testid="input-invoice-date"
+                value={form.invoiceDate}
+                onChange={e => setForm(p => ({ ...p, invoiceDate: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">Leave empty for today's date</p>
+            </div>
+
             {selectedPackage && (
               <div className="p-3 rounded-lg bg-muted/50 text-sm space-y-1">
                 <div className="flex justify-between"><span className="text-muted-foreground">Package price</span><span>{selectedPackage.price} EGP</span></div>
@@ -319,6 +528,65 @@ export default function Invoices() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Edit Invoice Dialog */}
+      <Dialog open={!!editInvoice} onOpenChange={o => !o && setEditInvoice(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Edit Invoice: {editInvoice?.display_id}</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="px-3 py-2 rounded-lg bg-muted/50 text-sm space-y-1">
+              <div className="flex justify-between"><span className="text-muted-foreground">Member</span><span>{editInvoice?.member_name}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Package</span><span>{editInvoice?.package_name}</span></div>
+              <div className="flex justify-between font-bold"><span>Total</span><span>{editInvoice?.total_amount.toLocaleString()} EGP</span></div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Amount Paid (EGP)</Label>
+              <Input
+                type="number"
+                value={editForm.paidAmount}
+                onChange={e => setEditForm(p => ({ ...p, paidAmount: e.target.value }))}
+                placeholder={String(editInvoice?.total_amount)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Payment Method</Label>
+              <Select value={editForm.paymentMethod} onValueChange={v => setEditForm(p => ({ ...p, paymentMethod: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditInvoice(null)}>Cancel</Button>
+            <Button onClick={handleEditInvoice} disabled={updateInvoice.isPending}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Invoice Confirmation */}
+      <AlertDialog open={!!confirmDelete} onOpenChange={o => !o && setConfirmDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Invoice</AlertDialogTitle>
+            <AlertDialogDescription>
+              Permanently delete invoice <strong>{confirmDelete?.id}</strong> for {confirmDelete?.member_name}?
+              <span className="block mt-1 text-sm">Amount: {confirmDelete?.total_amount.toLocaleString()} EGP</span>
+              <span className="block mt-2 text-red-600 font-medium">This action cannot be undone.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => confirmDelete && handleDeleteInvoice(confirmDelete)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete Invoice
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
