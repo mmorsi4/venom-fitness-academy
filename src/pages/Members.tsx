@@ -16,15 +16,23 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useMembers, useCoaches, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog } from "@/hooks/use-data";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
 import type { Member, Gender } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import { toast } from "sonner";
 import { format, differenceInYears, parseISO } from "date-fns";
 
-const SOURCES = ["Walk-in", "Referral", "Facebook", "Instagram", "WhatsApp"];
 const GENDERS: { value: Gender; label: string }[] = [
   { value: "male", label: "Male" },
   { value: "female", label: "Female" },
@@ -37,25 +45,40 @@ interface MemberForm {
   parentPhone: string;
   birthDate: string;
   gender: Gender | "";
-  source: string;
-  assignedCoachId: string;
   id: number;
-  sport: string;
+  classId: string;
+  isClinicVisitor: boolean;
+  
+  // Custom edit fields
+  sessions_remaining: string;
+  total_sessions: string;
+  freeze_days_used: string;
+  freeze_days_total: string;
+  invitations_remaining: string;
+  inbody_sessions_remaining: string;
 }
 
 const emptyForm: MemberForm = {
   name: "", phone: "", parentPhone: "", birthDate: "",
-  gender: "", source: "Walk-in", assignedCoachId: "",
-  sport: "", id: 0,
+  gender: "", classId: "", id: 0, isClinicVisitor: false,
+  sessions_remaining: "0", total_sessions: "0",
+  freeze_days_used: "0", freeze_days_total: "0",
+  invitations_remaining: "0", inbody_sessions_remaining: "0"
 };
 
 function memberToForm(m: Member): MemberForm {
   return {
     name: m.name, phone: m.phone, parentPhone: m.parent_phone ?? "",
     birthDate: m.birth_date ?? "", gender: m.gender ?? "",
-    source: m.source, assignedCoachId: m.assigned_coach_id ?? "",
     id: m.id,
-    sport: m.sport ?? "",
+    classId: m.class_id ?? "",
+    isClinicVisitor: m.id === -1,
+    sessions_remaining: String(m.sessions_remaining ?? 0),
+    total_sessions: String(m.total_sessions ?? 0),
+    freeze_days_used: String(m.freeze_days_used ?? 0),
+    freeze_days_total: String(m.freeze_days_total ?? 0),
+    invitations_remaining: String(m.invitations_remaining ?? 0),
+    inbody_sessions_remaining: String(m.inbody_sessions_remaining ?? 0),
   };
 }
 
@@ -67,6 +90,7 @@ function calcAge(birthDate?: string | null) {
 export default function Members() {
   const { data: members = [] } = useMembers();
   const { data: coaches = [] } = useCoaches();
+  const { data: classes = [] } = useClasses();
   const createMember = useCreateMember();
   const updateMember = useUpdateMember();
   const deleteMember = useDeleteMember();
@@ -85,9 +109,8 @@ export default function Members() {
     const q = query.toLowerCase();
     let matchSearch = m.name.toLowerCase().includes(q) || m.phone.includes(query);
     // Allow ID search only for non-clinic visitors
-    if (!m.id === -1) {
-      matchSearch = matchSearch || m.id.toLowerCase().includes(q) ||
-        String(m.id ?? '').includes(query);
+    if (m.id !== -1) {
+      matchSearch = matchSearch || m.id.toString().includes(q)
     }
     const matchStatus = statusFilter === "all" || m.status === statusFilter;
     return matchSearch && matchStatus;
@@ -99,6 +122,7 @@ export default function Members() {
     expiring_soon: members.filter(m => m.status === 'expiring_soon').length,
     expired: members.filter(m => m.status === 'expired').length,
     has_debt: members.filter(m => m.status === 'has_debt').length,
+    new: members.filter(m => m.status === 'new').length,
   };
 
   const openAdd = () => { setForm(emptyForm); setShowAdd(true); };
@@ -111,7 +135,16 @@ export default function Members() {
       return;
     }
 
-    const assignedCoachId = (form.assignedCoachId && form.assignedCoachId !== '__none__') ? form.assignedCoachId : null;
+    const phoneRegex = /^\d{11}$/;
+    if (!phoneRegex.test(form.phone.trim())) {
+      toast.error("Phone number must be exactly 11 digits");
+      return;
+    }
+    
+    if (form.parentPhone.trim() && !phoneRegex.test(form.parentPhone.trim())) {
+      toast.error("Parent phone number must be exactly 11 digits");
+      return;
+    }
 
     if (editMember) {
       const updates: Partial<Member> = {
@@ -120,10 +153,18 @@ export default function Members() {
         parent_phone: form.parentPhone.trim() || null,
         birth_date: form.birthDate || null,
         gender: (form.gender as Gender) || null,
-        source: form.source,
-        assigned_coach_id: assignedCoachId,
-        sport: form.sport.trim() || null,
+        class_id: form.isClinicVisitor || form.classId === '__none__' ? null : (form.classId || null),
+        sessions_remaining: Number(form.sessions_remaining) || 0,
+        total_sessions: Number(form.total_sessions) || 0,
+        freeze_days_used: Number(form.freeze_days_used) || 0,
+        freeze_days_total: Number(form.freeze_days_total) || 0,
+        invitations_remaining: Number(form.invitations_remaining) || 0,
+        inbody_sessions_remaining: Number(form.inbody_sessions_remaining) || 0,
       };
+
+      if (!form.isClinicVisitor && editMember.id === -1) {
+        updates.id = 0; // Signals queries.ts to auto-assign a new ID
+      }
 
       updateMember.mutate({ id: editMember.uuid, updates }, {
         onSuccess: () => {
@@ -139,18 +180,16 @@ export default function Members() {
         parent_phone: form.parentPhone.trim() || null,
         birth_date: form.birthDate || null,
         gender: (form.gender as Gender) || null,
-        source: form.source,
-        assigned_coach_id: assignedCoachId,
-        status: 'expired',
+        class_id: form.isClinicVisitor || form.classId === '__none__' ? null : (form.classId || null),
+        status: 'new',
         sessions_remaining: 0,
         total_sessions: 0,
-        expires_at: new Date().toISOString(),
+        expires_at: null,
         member_since: new Date().toISOString(),
         package_name: "None",
         freeze_days_used: 0,
         freeze_days_total: 0,
-        id: form.id,
-        sport: form.sport.trim() || null,
+        id: form.isClinicVisitor ? -1 : 0,
       }, {
         onSuccess: () => {
           toast.success(`Member ${form.name} created`);
@@ -215,6 +254,7 @@ export default function Members() {
             <TabsTrigger value="expiring_soon" className="text-xs">Expiring ({counts.expiring_soon})</TabsTrigger>
             <TabsTrigger value="expired" className="text-xs">Expired ({counts.expired})</TabsTrigger>
             <TabsTrigger value="has_debt" className="text-xs">Debt ({counts.has_debt})</TabsTrigger>
+            <TabsTrigger value="new" className="text-xs">New ({counts.new})</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -227,107 +267,130 @@ export default function Members() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {filtered.map(m => {
-            const age = calcAge(m.birth_date);
-            return (
-              <Card key={m.uuid} data-testid={`member-card-${m.uuid}`} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm font-bold text-primary">{m.name.charAt(0)}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-semibold text-foreground text-sm">{m.name}</p>
-                        <StatusBadge status={m.status} />
+        <div className="rounded-md border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Member</TableHead>
+                <TableHead>Contact Info</TableHead>
+                <TableHead>Class</TableHead>
+                <TableHead>Subscription</TableHead>
+                <TableHead>Balances</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map(m => {
+                const age = calcAge(m.birth_date);
+                const freezeRemaining = (m.freeze_days_total || 0) - (m.freeze_days_used || 0);
+                return (
+                  <TableRow key={m.uuid} data-testid={`member-row-${m.uuid}`}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${m.id === -1 ? 'bg-teal-100 text-teal-600' : 'bg-primary/10 text-primary'}`}>
+                          <span className="text-sm font-bold">{m.name.charAt(0)}</span>
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-foreground text-sm">{m.name}</p>
+                            <StatusBadge status={m.status} />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {m.id === -1 ? (
+                              <span className="text-amber-600 font-medium">Clinic Visitor</span>
+                            ) : (
+                              <>#{m.id ?? '?'}</>
+                            )}
+                            {m.gender && ` · ${m.gender}`}
+                            {age !== null && ` · ${age}y`}
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {m.id === -1 ? (
-                          <span className="text-amber-600 font-medium">Clinic Visitor</span>
-                        ) : (
-                          <>#{m.id ?? '?'} · {m.id}</>
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Phone className="w-3 h-3" /> {m.phone}
+                        </div>
+                        {m.parent_phone && (
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className="w-3 h-3 flex items-center justify-center font-bold text-[10px]">P</span> {m.parent_phone}
+                          </div>
                         )}
-                        {m.gender && ` · ${m.gender}`}
-                        {age !== null && ` · ${age}y`}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-0.5 flex-shrink-0">
-                      <button
-                        data-testid={`btn-edit-member-${m.uuid}`}
-                        onClick={() => openEdit(m)}
-                        className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        data-testid={`btn-delete-member-${m.uuid}`}
-                        onClick={() => setConfirmDelete(m)}
-                        className="p-1.5 rounded-md hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-5 gap-1.5 text-center">
-                    <div className="p-1.5 rounded bg-muted/50">
-                      <p className="text-sm font-bold text-foreground">
-                        {m.sessions_remaining === 999 ? "∞" : m.sessions_remaining}
-                      </p>
-                      <p className="text-xs text-muted-foreground leading-tight">Sessions</p>
-                    </div>
-                    <div className="p-1.5 rounded bg-muted/50">
-                      <p className="text-sm font-bold text-foreground truncate">{m.package_name}</p>
-                      <p className="text-xs text-muted-foreground leading-tight">Package</p>
-                    </div>
-                    <div className="p-1.5 rounded bg-muted/50">
-                      <p className="text-sm font-bold text-foreground">{m.invitations_remaining ?? 0}</p>
-                      <p className="text-xs text-muted-foreground leading-tight">Invites</p>
-                    </div>
-                    <div className="p-1.5 rounded bg-muted/50">
-                      <p className="text-sm font-bold text-foreground">{m.inbody_sessions_remaining ?? 0}</p>
-                      <p className="text-xs text-muted-foreground leading-tight">InBody</p>
-                    </div>
-                    <div className="p-1.5 rounded bg-muted/50">
-                      <p className="text-sm font-bold text-foreground">{format(new Date(m.expires_at), "dd MMM")}</p>
-                      <p className="text-xs text-muted-foreground leading-tight">Expires</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 space-y-1">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Phone className="w-3 h-3" /> {m.phone}
-                      {m.parent_phone && (
-                        <span className="text-xs text-muted-foreground/70">· P: {m.parent_phone}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Calendar className="w-3 h-3" /> Since {format(new Date(m.member_since), "MMM yyyy")}
-                      {m.coach_name && (
-                        <span className="ml-1">· {m.coach_name.split(' ')[0]}</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {m.freeze_days_total && m.freeze_days_total > 0 && (
-                    <div className="mt-2">
-                      <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                        <span>Freeze days</span>
-                        <span>{m.freeze_days_used ?? 0}/{m.freeze_days_total}</span>
                       </div>
-                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-blue-400 rounded-full"
-                          style={{ width: `${((m.freeze_days_used ?? 0) / m.freeze_days_total) * 100}%` }}
-                        />
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        {m.class_info ? (
+                          <div className="text-sm">
+                            <span className="font-semibold text-primary">{m.class_info.sport_name ?? 'No Sport'}</span>
+                            <span className="text-muted-foreground mx-1">-</span>
+                            <span>{m.class_info.coach_name ?? 'No Coach'}</span>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {m.class_info.schedules?.map(s => `${s.day.slice(0,3)} ${s.time}`).join(', ')}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">-</span>
+                        )}
                       </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">{m.package_name || 'None'}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          Last Subscription: {m.last_subscription_date ? format(new Date(m.last_subscription_date), "dd MMM yyyy") : 'Never'}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          Expires: {m.expires_at ? format(new Date(m.expires_at), "dd MMM yyyy") : 'N/A'}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1 text-xs">
+                        <div className="flex justify-between w-32">
+                          <span className="text-muted-foreground">Sessions:</span>
+                          <span className="font-medium">{m.sessions_remaining === 999 ? "∞" : m.sessions_remaining}</span>
+                        </div>
+                        <div className="flex justify-between w-32">
+                          <span className="text-muted-foreground">Freezes:</span>
+                          <span className="font-medium">{m.freeze_days_total - m.freeze_days_used}</span>
+                        </div>
+                        <div className="flex justify-between w-32">
+                          <span className="text-muted-foreground">Invites:</span>
+                          <span className="font-medium">{m.invitations_remaining ?? 0}</span>
+                        </div>
+                        <div className="flex justify-between w-32">
+                          <span className="text-muted-foreground">InBody:</span>
+                          <span className="font-medium">{m.inbody_sessions_remaining ?? 0}</span>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <button
+                          data-testid={`btn-edit-member-${m.uuid}`}
+                          onClick={() => openEdit(m)}
+                          className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                          title="Edit"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          data-testid={`btn-delete-member-${m.uuid}`}
+                          onClick={() => setConfirmDelete(m)}
+                          className="p-1.5 rounded-md hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         </div>
       )}
 
@@ -338,6 +401,18 @@ export default function Members() {
             <DialogTitle>{editMember ? `Edit: ${editMember.name}` : "New Member"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-1">
+            {/* Clinic Visitor Checkbox */}
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="is-clinic-visitor"
+                checked={form.isClinicVisitor}
+                onCheckedChange={(c) => setForm(p => ({ ...p, isClinicVisitor: !!c }))}
+              />
+              <Label htmlFor="is-clinic-visitor" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                This is a Clinic Visitor
+              </Label>
+            </div>
+
             {/* Name */}
             <div className="space-y-1.5">
               <Label htmlFor="m-name">Full Name *</Label>
@@ -357,7 +432,7 @@ export default function Members() {
                 <Input
                   data-testid="input-new-member-phone"
                   id="m-phone"
-                  placeholder="055-XXXXXXX"
+                  placeholder="01XXXXXXXXX"
                   value={form.phone}
                   onChange={f('phone')}
                 />
@@ -367,7 +442,7 @@ export default function Members() {
                 <Input
                   data-testid="input-new-member-parent-phone"
                   id="m-parent-phone"
-                  placeholder="055-XXXXXXX"
+                  placeholder="01XXXXXXXXX"
                   value={form.parentPhone}
                   onChange={f('parentPhone')}
                 />
@@ -399,32 +474,59 @@ export default function Members() {
               </div>
             </div>
 
-            {/* Source */}
-            <div className="space-y-1.5">
-              <Label>Source</Label>
-              <Select value={form.source} onValueChange={v => setForm(p => ({ ...p, source: v }))}>
-                <SelectTrigger data-testid="select-member-source">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SOURCES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Class (Hidden for clinic visitors) */}
+            {!form.isClinicVisitor && (
+              <div className="space-y-1.5">
+                <Label htmlFor="m-class">Class</Label>
+                <Select value={form.classId} onValueChange={v => setForm(p => ({ ...p, classId: v }))}>
+                  <SelectTrigger data-testid="select-member-class">
+                    <SelectValue placeholder="Select Class" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None</SelectItem>
+                    {classes.map(c => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.sport_name ?? 'Sport'} - {c.coach_name ?? 'Coach'} ({c.schedules?.length || 0} slots)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
-            {/* Assigned Class */}
-            <div className="space-y-1.5">
-              <Label>Assigned Class</Label>
-              <Select value={form.assignedCoachId} onValueChange={v => setForm(p => ({ ...p, assignedCoachId: v }))}>
-                <SelectTrigger data-testid="select-member-coach">
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {coaches.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Custom Session Edits */}
+            {editMember && (
+              <div className="pt-4 mt-4 border-t space-y-4">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Custom Adjustments</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>Sessions Remaining</Label>
+                    <Input type="number" value={form.sessions_remaining} onChange={e => setForm(p => ({ ...p, sessions_remaining: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Total Sessions</Label>
+                    <Input type="number" value={form.total_sessions} onChange={e => setForm(p => ({ ...p, total_sessions: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Freeze Days Used</Label>
+                    <Input type="number" value={form.freeze_days_used} onChange={e => setForm(p => ({ ...p, freeze_days_used: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Freeze Days Total</Label>
+                    <Input type="number" value={form.freeze_days_total} onChange={e => setForm(p => ({ ...p, freeze_days_total: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Invitations</Label>
+                    <Input type="number" value={form.invitations_remaining} onChange={e => setForm(p => ({ ...p, invitations_remaining: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>InBody Sessions</Label>
+                    <Input type="number" value={form.inbody_sessions_remaining} onChange={e => setForm(p => ({ ...p, inbody_sessions_remaining: e.target.value }))} />
+                  </div>
+                </div>
+              </div>
+            )}
+
 
             {/* Subscription Package — read-only display + change via invoice */}
             {editMember && (

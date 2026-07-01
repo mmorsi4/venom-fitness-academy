@@ -30,7 +30,7 @@ export default function CheckIn() {
   const results = query.length >= 1
     ? members.filter(m =>
         m.name.toLowerCase().includes(query.toLowerCase()) ||
-        m.id.toLowerCase().includes(query.toLowerCase()) ||
+        m.id.toString().includes(query) ||
         m.phone.includes(query)
       ).slice(0, 6)
     : [];
@@ -67,7 +67,8 @@ export default function CheckIn() {
 
   const handleCheckInClick = () => {
     if (!selectedMember) return;
-    if (selectedMember.status === 'expired') {
+    const needsOverride = selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999);
+    if (needsOverride) {
       setOverrideDialog(true);
     } else {
       doCheckIn(selectedMember);
@@ -172,6 +173,13 @@ export default function CheckIn() {
               </div>
             )}
 
+            {selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999 && selectedMember.status !== 'expired' && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-red-100 border border-red-200 text-red-800 text-sm">
+                <XCircle className="w-4 h-4 flex-shrink-0" />
+                <span>This member has no sessions remaining. Override required.</span>
+              </div>
+            )}
+
             {selectedMember.status === 'has_debt' && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-purple-100 border border-purple-200 text-purple-800 text-sm">
                 <AlertTriangle className="w-4 h-4 flex-shrink-0" />
@@ -185,10 +193,10 @@ export default function CheckIn() {
                 onClick={handleCheckInClick}
                 disabled={checkedInToday.includes(selectedMember.uuid) || checkInMutation.isPending}
                 className="flex-1 h-11 text-base font-semibold gap-2"
-                variant={selectedMember.status === 'expired' ? 'destructive' : 'default'}
+                variant={(selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999)) ? 'destructive' : 'default'}
               >
                 <CheckCircle2 className="w-5 h-5" />
-                {selectedMember.status === 'expired' ? 'Override & Check In' :
+                {(selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999)) ? 'Override & Check In' :
                   checkedInToday.includes(selectedMember.uuid) ? 'Already Checked In' : 'Check In'}
               </Button>
               <Button data-testid="btn-checkin-cancel" variant="outline" onClick={() => setSelectedMember(null)}>Cancel</Button>

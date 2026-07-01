@@ -102,15 +102,15 @@ export default function Invoices() {
     // Status tab filter
     if (tab !== "all" && i.status !== tab) return false;
 
-    // Text search (invoice ID, member name, member phone/ID)
+    // Text search (invoice ID, member ID, member name, member phone)
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       const member = members.find(m => m.uuid === i.member_id);
       const matchesSearch =
         i.id.toLowerCase().includes(q) ||
+        member?.id.toString().includes(q) ||
         i.member_name.toLowerCase().includes(q) ||
-        (member?.phone ?? "").includes(q) ||
-        String(member?.id ?? "").includes(q);
+        (member?.phone ?? "").includes(q);
       if (!matchesSearch) return false;
     }
 
@@ -288,7 +288,7 @@ export default function Invoices() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             data-testid="input-invoice-search"
-            placeholder="Search invoice ID, member name, or phone..."
+            placeholder="Search invoice ID, member ID, member name, or phone..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="pl-9"

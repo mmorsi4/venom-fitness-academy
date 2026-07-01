@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, LogIn, Package, FileText, DollarSign,
   Dumbbell, Calendar, UserPlus, ClipboardList, Tag,
   ChevronRight, CalendarDays, BarChart2, AlertCircle, Landmark,
-  UserCog, LogOut, Menu, X
+  UserCog, LogOut, Menu, X, Trophy
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth, ROLE_NAV } from "@/lib/auth";
@@ -23,7 +23,8 @@ const ALL_NAV_ITEMS = [
   { href: "/daily", label: "Daily Report", icon: CalendarDays },
   { href: "/reports", label: "Member Reports", icon: BarChart2 },
   { href: "/coaches", label: "Coaches", icon: Dumbbell },
-  { href: "/schedule", label: "Schedule", icon: Calendar },
+  { href: "/classes", label: "Classes", icon: Calendar },
+  { href: "/sports", label: "Sports", icon: Trophy },
   { href: "/leads", label: "Leads (CRM)", icon: UserPlus },
   { href: "/liabilities", label: "Liabilities", icon: Landmark },
   { href: "/audit", label: "Audit Log", icon: ClipboardList },

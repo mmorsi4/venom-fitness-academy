@@ -32,12 +32,13 @@ const commissionBaseLabels: Record<string, string> = {
 
 interface CoachForm {
   name: string;
+  phone: string;
   paymentType: "salary" | "per_session" | "commission";
   rate: string;
   commissionBase: "revenue" | "members";
 }
 
-const emptyForm: CoachForm = { name: "", paymentType: "salary", rate: "", commissionBase: "revenue" };
+const emptyForm: CoachForm = { name: "", phone: "", paymentType: "salary", rate: "", commissionBase: "revenue" };
 
 export default function Coaches() {
   const { data: coaches = [] } = useCoaches();
@@ -52,6 +53,7 @@ export default function Coaches() {
   const [showCoachDialog, setShowCoachDialog] = useState(false);
   const [editCoach, setEditCoach] = useState<Coach | null>(null);
   const [form, setForm] = useState<CoachForm>(emptyForm);
+  const [coachSearch, setCoachSearch] = useState("");
 
   const checkedInCount = coaches.filter(c => checkIns.some(ci => ci.coach_id === c.id)).length;
 
@@ -75,7 +77,7 @@ export default function Coaches() {
   };
 
   const handleCoachCheckIn = (coachId: string, name: string) => {
-    checkInMutation.mutate({ coachId }, {
+    checkInMutation.mutate(coachId, {
       onSuccess: () => toast.success(`${name} checked in for session`),
       onError: (err) => toast.error(`Failed to check in: ${err.message}`)
     });
@@ -84,18 +86,21 @@ export default function Coaches() {
   const openAdd = () => { setForm(emptyForm); setEditCoach(null); setShowCoachDialog(true); };
   const openEdit = (c: Coach) => {
     setEditCoach(c);
-    setForm({ name: c.name, paymentType: c.payment_type, rate: String(c.rate), commissionBase: c.commission_base ?? 'revenue' });
+    setForm({ name: c.name, phone: c.phone || "", paymentType: c.payment_type, rate: String(c.rate), commissionBase: c.commission_base ?? 'revenue' });
     setShowCoachDialog(true);
   };
   const closeDialog = () => { setShowCoachDialog(false); setEditCoach(null); };
 
   const handleSave = () => {
-    if (!form.name.trim() || !form.rate) { toast.error("Name and rate are required"); return; }
+    if (!form.name.trim() || !form.phone.trim() || !form.rate) { toast.error("Name, phone, and rate are required"); return; }
+    if (!/^\d{11}$/.test(form.phone.trim())) { toast.error("Phone number must be exactly 11 digits"); return; }
+    
     if (editCoach) {
       updateCoach.mutate({
         id: editCoach.id,
         updates: {
           name: form.name.trim(),
+          phone: form.phone.trim(),
           payment_type: form.paymentType,
           rate: Number(form.rate),
           commission_base: form.commissionBase
@@ -110,6 +115,7 @@ export default function Coaches() {
     } else {
       createCoach.mutate({
         name: form.name.trim(),
+        phone: form.phone.trim(),
         payment_type: form.paymentType,
         rate: Number(form.rate),
         commission_base: form.commissionBase,
@@ -255,11 +261,20 @@ export default function Coaches() {
       <Dialog open={checkInModal} onOpenChange={setCheckInModal}>
         <DialogContent>
           <DialogHeader><DialogTitle>Coach Check-In</DialogTitle></DialogHeader>
-          <div className="space-y-3 py-2">
-            {coaches.map(c => {
-              const isCheckedIn = checkIns.some(ci => ci.coach_id === c.id);
-              return (
-                <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border bg-card">
+          <div className="space-y-4 py-2">
+            <Input 
+              placeholder="Search by coach name or phone..." 
+              value={coachSearch} 
+              onChange={(e) => setCoachSearch(e.target.value)}
+            />
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              {coaches.filter(c => 
+                c.name.toLowerCase().includes(coachSearch.toLowerCase()) || 
+                (c.phone && c.phone.includes(coachSearch))
+              ).map(c => {
+                const isCheckedIn = checkIns.some(ci => ci.coach_id === c.id);
+                return (
+                  <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border bg-card">
                   <div><p className="font-medium">{c.name}</p><p className="text-xs text-muted-foreground">{paymentTypeLabels[c.payment_type]}</p></div>
                   {isCheckedIn ? (
                     <span className="flex items-center gap-1 text-emerald-600 text-sm font-medium"><CheckCircle2 className="w-4 h-4" /> Checked In</span>
@@ -269,6 +284,10 @@ export default function Coaches() {
                 </div>
               );
             })}
+            {coaches.filter(c => c.name.toLowerCase().includes(coachSearch.toLowerCase()) || (c.phone && c.phone.includes(coachSearch))).length === 0 && (
+              <p className="text-sm text-center text-muted-foreground py-4">No coaches found matching your search.</p>
+            )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -278,6 +297,7 @@ export default function Coaches() {
           <DialogHeader><DialogTitle>{editCoach ? `Edit: ${editCoach.name}` : 'Add Coach'}</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5"><Label>Name</Label><Input placeholder="Coach name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>Phone</Label><Input placeholder="01XXXXXXXXX" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></div>
             <div className="space-y-1.5">
               <Label>Payment Type</Label>
               <Select value={form.paymentType} onValueChange={(v: "salary" | "per_session" | "commission") => setForm(p => ({ ...p, paymentType: v }))}>

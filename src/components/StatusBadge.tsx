@@ -11,6 +11,7 @@ const statusConfig: Record<MemberStatus, { label: string; className: string }> =
   expiring_soon: { label: "Expiring Soon", className: "bg-amber-100 text-amber-700 border border-amber-200" },
   expired: { label: "Expired", className: "bg-red-100 text-red-700 border border-red-200" },
   has_debt: { label: "Has Debt", className: "bg-purple-100 text-purple-700 border border-purple-200" },
+  new: { label: "New", className: "bg-blue-100 text-blue-700 border border-blue-200" },
 };
 
 export default function StatusBadge({ status, className }: StatusBadgeProps) {

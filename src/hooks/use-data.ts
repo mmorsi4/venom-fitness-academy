@@ -19,10 +19,11 @@ export const queryKeys = {
   leads:          ['leads']         as const,
   expenses:       ['expenses']      as const,
   liabilities:    ['liabilities']   as const,
-  auditLogs:      ['auditLogs']     as const,
-  todayCheckIns:  ['todayCheckIns'] as const,
-  gymSessions:    ['gymSessions']   as const,
-  profiles:       ['profiles']      as const,
+  auditLogs: ['auditLogs'] as const,
+  todayCheckIns: ['todayCheckIns'] as const,
+  classes: ['classes'] as const,
+  sports: ['sports'] as const,
+  profiles: ['profiles'] as const,
 };
 
 // ── Members ─────────────────────────────────────────────────
@@ -304,10 +305,64 @@ export function useTodayCheckIns() {
   return useQuery({ queryKey: queryKeys.todayCheckIns, queryFn: q.getTodayCheckIns });
 }
 
-// ── Gym Sessions ────────────────────────────────────────────
+// ── Sports ──────────────────────────────────────────────────
 
-export function useGymSessions() {
-  return useQuery({ queryKey: queryKeys.gymSessions, queryFn: q.getGymSessions });
+export function useSports() {
+  return useQuery({ queryKey: queryKeys.sports, queryFn: q.getSports });
+}
+
+export function useCreateSport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sport: Omit<Sport, 'id' | 'created_at'>) => q.createSport(sport),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.sports }),
+  });
+}
+
+export function useUpdateSport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<Sport> }) => q.updateSport(id, updates),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.sports }),
+  });
+}
+
+export function useDeleteSport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => q.deleteSport(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.sports }),
+  });
+}
+
+// ── Classes ─────────────────────────────────────────────────
+
+export function useClasses() {
+  return useQuery({ queryKey: queryKeys.classes, queryFn: q.getClasses });
+}
+
+export function useCreateClass() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (cls: Omit<Class, 'id' | 'created_at' | 'coach_name' | 'sport_name'>) => q.createClass(cls),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.classes }),
+  });
+}
+
+export function useUpdateClass() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<Class> }) => q.updateClass(id, updates),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.classes }),
+  });
+}
+
+export function useDeleteClass() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => q.deleteClass(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.classes }),
+  });
 }
 
 // ── Profiles ────────────────────────────────────────────────

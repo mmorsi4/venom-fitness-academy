@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { useAuditLogs, useInvoices, useExpenses, useGymSessions } from "@/hooks/use-data";
+import { useAuditLogs, useInvoices, useExpenses, useClasses } from "@/hooks/use-data";
 import { format, isSameDay, subDays, addDays, parseISO } from "date-fns";
 
 function isoToDate(s: string) {
@@ -20,15 +20,14 @@ export default function DailyReport() {
   const { data: auditLogs = [] } = useAuditLogs();
   const { data: invoices = [] } = useInvoices();
   const { data: expenses = [] } = useExpenses();
-  const { data: sessions = [] } = useGymSessions();
+  const { data: classes = [] } = useClasses();
 
   const [selectedDate, setSelectedDate] = useState(new Date());
 
   const dayOfWeek = DAYS_OF_WEEK[selectedDate.getDay()];
   const isToday = isSameDay(selectedDate, new Date());
 
-  // Sessions for this day of week
-  const sessionsForDay = sessions.filter(s => s.day_of_week === dayOfWeek);
+  const classesForDay = classes.filter(c => c.schedules?.some(s => s.day === dayOfWeek));
 
   // Check-ins from audit log for selected date
   const checkIns = useMemo(() =>
@@ -55,7 +54,7 @@ export default function DailyReport() {
   const totalIncome = invoicesForDay.reduce((s, i) => s + i.paid_amount, 0);
   const totalExpenses = expensesForDay.reduce((s, e) => s + e.amount, 0);
   const netBalance = totalIncome - totalExpenses;
-  const totalAttendance = sessionsForDay.reduce((s, s2) => s + (isToday ? s2.attendance_count : s2.attendance_count), 0);
+  const totalAttendance = classesForDay.reduce((s, c) => s + c.attendance_count, 0);
 
   const cashIncome = invoicesForDay.filter(i => i.payment_method === 'Cash').reduce((s, i) => s + i.paid_amount, 0);
   const visaIncome = invoicesForDay.filter(i => i.payment_method === 'Visa').reduce((s, i) => s + i.paid_amount, 0);
@@ -69,7 +68,7 @@ export default function DailyReport() {
 
   const summaryCards = [
     { label: "Members Checked In", value: checkIns.length, icon: Users, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
-    { label: "Sessions Today", value: sessionsForDay.length, icon: Clock, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
+    { label: "Classes Today", value: classesForDay.length, icon: Clock, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
     { label: "Total Attendance", value: totalAttendance, icon: CheckCircle2, color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-100" },
     { label: "Overrides", value: overrides.length, icon: AlertTriangle, color: overrides.length > 0 ? "text-red-600" : "text-muted-foreground", bg: overrides.length > 0 ? "bg-red-50" : "bg-muted/50", border: overrides.length > 0 ? "border-red-100" : "border-border" },
   ];
@@ -182,27 +181,29 @@ export default function DailyReport() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {sessionsForDay.length === 0 ? (
-              <div className="py-6 text-center text-muted-foreground text-sm">No sessions scheduled on {dayOfWeek}</div>
+            {classesForDay.length === 0 ? (
+              <div className="py-6 text-center text-muted-foreground text-sm">No classes scheduled on {dayOfWeek}</div>
             ) : (
               <div className="space-y-2">
-                {sessionsForDay.map(session => {
-                  const pct = Math.round((session.attendance_count / session.capacity) * 100);
+                {classesForDay.map(cls => {
+                  const pct = Math.round((cls.attendance_count / cls.capacity) * 100);
+                  // Find the schedule for this day to show the time
+                  const time = cls.schedules?.find(s => s.day === dayOfWeek)?.time ?? '--:--';
                   return (
-                    <div key={session.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border">
+                    <div key={cls.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border">
                       <div className="text-center min-w-[44px]">
-                        <p className="text-sm font-bold text-foreground">{session.time}</p>
+                        <p className="text-sm font-bold text-foreground">{time}</p>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-foreground">{session.name}</p>
-                        <p className="text-xs text-muted-foreground">{session.coach_name ?? 'Unassigned'}</p>
+                        <p className="text-sm font-semibold text-foreground">{cls.name}</p>
+                        <p className="text-xs text-muted-foreground">{cls.coach_name ?? 'Unassigned'}</p>
                         <div className="mt-1.5 h-1.5 bg-muted rounded-full overflow-hidden">
                           <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(pct, 100)}%` }} />
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <p className="text-sm font-bold text-foreground">{session.attendance_count}</p>
-                        <p className="text-xs text-muted-foreground">/{session.capacity}</p>
+                        <p className="text-sm font-bold text-foreground">{cls.attendance_count}</p>
+                        <p className="text-xs text-muted-foreground">/{cls.capacity}</p>
                       </div>
                     </div>
                   );

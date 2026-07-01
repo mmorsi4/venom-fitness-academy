@@ -184,7 +184,7 @@ export function useAuth() {
 
 // Role-based nav permissions
 export const ROLE_NAV: Record<UserRole, string[]> = {
-  admin: ['/', '/checkin', '/members', '/subscriptions', '/invoices', '/discounts', '/finance', '/daily', '/reports', '/coaches', '/schedule', '/leads', '/liabilities', '/audit', '/users'],
-  reception: ['/', '/checkin', '/members', '/invoices', '/finance', '/coaches', '/schedule', '/daily', '/liabilities'],
+  admin: ['/', '/checkin', '/members', '/subscriptions', '/invoices', '/discounts', '/finance', '/daily', '/reports', '/coaches', '/classes', '/sports', '/leads', '/liabilities', '/audit', '/users'],
+  reception: ['/', '/checkin', '/members', '/invoices', '/finance', '/coaches', '/classes', '/sports', '/daily', '/liabilities'],
   sales: ['/', '/members', '/leads'],
 };

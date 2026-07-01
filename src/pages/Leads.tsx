@@ -53,6 +53,12 @@ export default function Leads() {
 
   const handleAddLead = () => {
     if (!form.name.trim() || !form.phone.trim()) { toast.error("Name and phone required"); return; }
+    
+    if (!/^\d{11}$/.test(form.phone.trim())) {
+      toast.error("Phone number must be exactly 11 digits");
+      return;
+    }
+
     createLead.mutate({
       name: form.name.trim(), 
       phone: form.phone.trim(),
@@ -61,7 +67,7 @@ export default function Leads() {
       notes: [], 
       calls_made: 0,
       follow_up_date: new Date(Date.now() + 86400000).toISOString(), 
-      assigned_to: "Reception",
+      assigned_to: null,
     }, {
       onSuccess: () => {
         toast.success(`Lead added: ${form.name}`);

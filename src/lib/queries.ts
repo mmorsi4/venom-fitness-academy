@@ -6,7 +6,7 @@
 import { supabase } from './supabase';
 import type {
   Member, SubscriptionPackage, Invoice, Discount, Coach, Lead,
-  Expense, Liability, AuditLog, CheckIn, CoachCheckIn, GymSession,
+  Expense, Liability, AuditLog, CheckIn, CoachCheckIn, Class, Sport,
   Profile,
 } from './types';
 
@@ -29,14 +29,36 @@ export async function getMembers() {
 
   const { data, error } = await supabase
     .from('members')
-    .select('*, coaches(name)')
+    .select('*, classes(id, name, schedules, sports(name), coaches(name)), invoices(created_at, package_id)')
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []).map((m: any) => ({
-    ...m,
-    coach_name: m.coaches?.name ?? null,
-    coaches: undefined,
-  })) as Member[];
+  
+  return (data ?? []).map((m: any) => {
+    const validInvoices = (m.invoices || []).filter((i: any) => i.package_id != null);
+    validInvoices.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const lastSubDate = validInvoices.length > 0 ? validInvoices[0].created_at : null;
+
+    let class_info = null;
+    if (m.classes) {
+      class_info = {
+        id: m.classes.id,
+        name: m.classes.name,
+        schedules: m.classes.schedules,
+        sport_name: m.classes.sports?.name ?? null,
+        coach_name: m.classes.coaches?.name ?? null,
+      };
+    }
+
+    return {
+      ...m,
+      coach_name: m.coaches?.name ?? null,
+      class_info,
+      last_subscription_date: lastSubDate,
+      coaches: undefined,
+      classes: undefined,
+      invoices: undefined,
+    };
+  }) as Member[];
 }
 
 export async function createMember(member: Omit<Member, 'uuid' | 'created_at' | 'coach_name'>) {
@@ -69,6 +91,18 @@ export async function createMember(member: Omit<Member, 'uuid' | 'created_at' | 
 
 export async function updateMember(uuid: string, updates: Partial<Member>) {
   const { coach_name, ...clean } = updates as any;
+  
+  if (clean.id === 0) {
+    const { data: maxData } = await supabase
+      .from('members')
+      .select('id')
+      .gt('id', 0)
+      .order('id', { ascending: false })
+      .limit(1)
+      .single();
+    clean.id = (maxData?.id ?? 0) + 1;
+  }
+
   const { data, error } = await supabase
     .from('members')
     .update(clean)
@@ -392,18 +426,65 @@ export async function getTodayCheckIns() {
   return data as CheckIn[];
 }
 
-// ── Gym Sessions ────────────────────────────────────────────
+// ── Sports ──────────────────────────────────────────────────
 
-export async function getGymSessions() {
+export async function getSports() {
   const { data, error } = await supabase
-    .from('gym_sessions')
-    .select('*, coaches(name)')
-    .order('day_of_week')
-    .order('time');
+    .from('sports')
+    .select('*')
+    .order('name');
   if (error) throw error;
-  return (data ?? []).map((s: any) => ({
-    ...s,
-    coach_name: s.coaches?.name ?? null,
+  return data as Sport[];
+}
+
+export async function createSport(sport: Omit<Sport, 'id' | 'created_at'>) {
+  const { data, error } = await supabase.from('sports').insert(sport).select().single();
+  if (error) throw error;
+  return data as Sport;
+}
+
+export async function updateSport(id: string, updates: Partial<Sport>) {
+  const { data, error } = await supabase.from('sports').update(updates).eq('id', id).select().single();
+  if (error) throw error;
+  return data as Sport;
+}
+
+export async function deleteSport(id: string) {
+  const { error } = await supabase.from('sports').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ── Classes ─────────────────────────────────────────────────
+
+export async function getClasses() {
+  const { data, error } = await supabase
+    .from('classes')
+    .select('*, coaches(name), sports(name)')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((c: any) => ({
+    ...c,
+    coach_name: c.coaches?.name ?? null,
+    sport_name: c.sports?.name ?? null,
     coaches: undefined,
-  })) as GymSession[];
+    sports: undefined,
+  })) as Class[];
+}
+
+export async function createClass(cls: Omit<Class, 'id' | 'created_at' | 'coach_name' | 'sport_name'>) {
+  const { data, error } = await supabase.from('classes').insert(cls).select().single();
+  if (error) throw error;
+  return data as Class;
+}
+
+export async function updateClass(id: string, updates: Partial<Class>) {
+  const { coach_name, sport_name, ...clean } = updates as any;
+  const { data, error } = await supabase.from('classes').update(clean).eq('id', id).select().single();
+  if (error) throw error;
+  return data as Class;
+}
+
+export async function deleteClass(id: string) {
+  const { error } = await supabase.from('classes').delete().eq('id', id);
+  if (error) throw error;
 }

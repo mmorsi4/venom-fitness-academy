@@ -6,7 +6,7 @@
 // ── Enums ──────────────────────────────────────────────────────
 
 export type UserRole = 'admin' | 'reception' | 'sales';
-export type MemberStatus = 'active' | 'expired' | 'expiring_soon' | 'has_debt';
+export type MemberStatus = 'active' | 'expired' | 'expiring_soon' | 'has_debt' | 'new';
 export type Gender = 'male' | 'female' | 'other';
 export type InvoiceStatus = 'paid' | 'partial' | 'unpaid';
 export type PaymentMethod = 'Cash' | 'Visa' | 'InstaPay';
@@ -42,15 +42,17 @@ export interface Member {
   parent_phone: string | null;
   birth_date: string | null;
   gender: Gender | null;
-  source: string;
   status: MemberStatus;
   sessions_remaining: number;
   total_sessions: number;
-  expires_at: string;
+  expires_at: string | null;
   member_since: string;
+  last_subscription_date?: string | null;
   package_id: string | null;
   package_name: string;
-  assigned_coach_id: string | null;
+  class_id: string | null;
+  coach_name?: string | null;
+  class_info?: Class | null;
   freeze_days_used: number;
   freeze_days_total: number;
   invitations_remaining: number;
@@ -106,6 +108,7 @@ export interface Discount {
 export interface Coach {
   id: string;
   name: string;
+  phone: string;
   payment_type: CoachPaymentType;
   rate: number;
   commission_base: CommissionBase | null;
@@ -179,16 +182,30 @@ export interface CoachCheckIn {
   created_at: string;
 }
 
-export interface GymSession {
+export interface Sport {
   id: string;
   name: string;
-  day_of_week: string;
+  created_at: string;
+}
+
+export interface ClassSchedule {
+  day: string;
   time: string;
-  capacity: number;
+}
+
+export interface Class {
+  id: string;
+  name: string;
+  sport_id: string | null;
   coach_id: string | null;
-  coach_name?: string;
+  schedules: ClassSchedule[];
+  capacity: number;
   attendance_count: number;
   created_at: string;
+  
+  // Joined fields
+  sport_name?: string;
+  coach_name?: string;
 }
 
 export interface DiscountMember {
@@ -218,7 +235,8 @@ export interface Database {
       audit_logs: { Row: AuditLog; Insert: Omit<AuditLog, 'id'>; Update: never };
       check_ins: { Row: CheckIn; Insert: Omit<CheckIn, 'id' | 'created_at'>; Update: never };
       coach_check_ins: { Row: CoachCheckIn; Insert: Omit<CoachCheckIn, 'id' | 'created_at'>; Update: never };
-      gym_sessions: { Row: GymSession; Insert: Omit<GymSession, 'id' | 'created_at' | 'coach_name'>; Update: Partial<Omit<GymSession, 'id' | 'created_at' | 'coach_name'>> };
+      classes: { Row: Class; Insert: Omit<Class, 'id' | 'created_at' | 'sport_name' | 'coach_name'>; Update: Partial<Omit<Class, 'id' | 'created_at' | 'sport_name' | 'coach_name'>> };
+      sports: { Row: Sport; Insert: Omit<Sport, 'id' | 'created_at'>; Update: Partial<Omit<Sport, 'id' | 'created_at'>> };
       discount_members: { Row: DiscountMember; Insert: DiscountMember; Update: never };
       discount_invoices: { Row: DiscountInvoice; Insert: DiscountInvoice; Update: never };
     };

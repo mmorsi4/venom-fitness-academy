@@ -3,7 +3,7 @@ import { Users, LogIn, AlertTriangle, DollarSign, UserPlus, Clock, TrendingUp } 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useMembers, useInvoices, useLeads, useGymSessions } from "@/hooks/use-data";
+import { useMembers, useInvoices, useLeads, useClasses } from "@/hooks/use-data";
 import StatusBadge from "@/components/StatusBadge";
 import { format } from "date-fns";
 
@@ -12,7 +12,7 @@ export default function Dashboard() {
   const { data: members = [] } = useMembers();
   const { data: invoices = [] } = useInvoices();
   const { data: leads = [] } = useLeads();
-  const { data: sessions = [] } = useGymSessions();
+  const { data: classes = [] } = useClasses();
 
   const activeMembers = members.filter(m => m.status === 'active').length;
   const expiringSoon = members.filter(m => m.status === 'expiring_soon');
@@ -23,7 +23,7 @@ export default function Dashboard() {
     .filter(i => i.status === 'partial' || i.status === 'unpaid')
     .reduce((sum, i) => sum + (i.total_amount - i.paid_amount), 0);
 
-  const todaySessions = sessions.slice(0, 4);
+  const todayClasses = classes.slice(0, 4);
 
   const statCards = [
     { label: "Active Members", value: activeMembers, icon: Users, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
@@ -73,28 +73,28 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Today's Schedule */}
+        {/* Today's Classes */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Clock className="w-4 h-4 text-muted-foreground" />
-              Today's Sessions
+              Recent Classes
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 pt-0">
-            {todaySessions.map(s => (
-              <div key={s.id} data-testid={`session-${s.id}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-                <div className="text-center min-w-[42px]">
-                  <p className="text-xs font-bold text-foreground">{s.time}</p>
-                  <p className="text-xs text-muted-foreground">{s.day_of_week.slice(0,3)}</p>
+            {todayClasses.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No classes available</p>
+            ) : (
+              todayClasses.map(c => (
+                <div key={c.id} data-testid={`class-${c.id}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{c.name}</p>
+                    <p className="text-xs text-muted-foreground">{c.coach_name ?? 'Unassigned'} • {c.sport_name ?? 'No Sport'}</p>
+                  </div>
+                  <Badge variant="secondary" className="text-xs shrink-0">{c.schedules?.length || 0} slots</Badge>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
-                  <p className="text-xs text-muted-foreground">{s.coach_name ?? 'Unassigned'}</p>
-                </div>
-                <Badge variant="secondary" className="text-xs">{s.attendance_count}/{s.capacity}</Badge>
-              </div>
-            ))}
+              ))
+            )}
           </CardContent>
         </Card>
 

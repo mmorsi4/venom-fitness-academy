@@ -12,7 +12,8 @@ import Subscriptions from "@/pages/Subscriptions";
 import Invoices from "@/pages/Invoices";
 import Finance from "@/pages/Finance";
 import Coaches from "@/pages/Coaches";
-import Schedule from "@/pages/Schedule";
+import Classes from "@/pages/Classes";
+import Sports from "@/pages/Sports";
 import Leads from "@/pages/Leads";
 import AuditLog from "@/pages/AuditLog";
 import Discounts from "@/pages/Discounts";
@@ -35,7 +36,8 @@ function Router() {
         <Route path="/invoices" component={Invoices} />
         <Route path="/finance" component={Finance} />
         <Route path="/coaches" component={Coaches} />
-        <Route path="/schedule" component={Schedule} />
+        <Route path="/classes" component={Classes} />
+        <Route path="/sports" component={Sports} />
         <Route path="/leads" component={Leads} />
         <Route path="/audit" component={AuditLog} />
         <Route path="/discounts" component={Discounts} />
