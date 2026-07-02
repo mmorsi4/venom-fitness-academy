@@ -79,6 +79,14 @@ export function useFreezeMember() {
   });
 }
 
+export function useUnfreezeMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (memberId: string) => q.unfreezeMember(memberId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.members }),
+  });
+}
+
 // ── Packages ────────────────────────────────────────────────
 
 export function usePackages() {

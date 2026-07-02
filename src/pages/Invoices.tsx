@@ -16,6 +16,9 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow
+} from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -333,59 +336,75 @@ export default function Invoices() {
       {filtered.length === 0 ? (
         <Card><CardContent className="py-12 text-center"><p className="text-muted-foreground">No invoices</p></CardContent></Card>
       ) : (
-        <div className="space-y-3">
-          {filtered.map(inv => (
-            <Card key={inv.uuid} data-testid={`invoice-${inv.uuid}`} className="hover:shadow-sm transition-shadow">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    <FileText className="w-4 h-4 text-primary" />
-                  </div>
-                  <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2 items-center">
-                    <div><p className="text-xs text-muted-foreground">Invoice</p><p className="text-sm font-bold">{inv.id}</p></div>
-                    <div><p className="text-xs text-muted-foreground">Member</p><p className="text-sm font-medium">{inv.member_name}</p></div>
-                    <div><p className="text-xs text-muted-foreground">Package</p><p className="text-sm">{inv.package_name}</p></div>
-                    <div><p className="text-xs text-muted-foreground">Date</p><p className="text-sm">{format(new Date(inv.created_at), "dd MMM yyyy")}</p></div>
-                  </div>
-                  <div className="text-right flex-shrink-0 space-y-1">
-                    <p className="text-base font-bold">{inv.total_amount.toLocaleString()} EGP</p>
-                    {inv.discount_amount > 0 && (
-                      <div className="flex items-center gap-1 justify-end">
-                        <Tag className="w-3 h-3 text-muted-foreground" />
-                        <p className="text-xs text-muted-foreground">
-                          -{inv.discount_amount} EGP
-                          {inv.discount_description && ` · ${inv.discount_description}`}
-                        </p>
+        <div className="rounded-md border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Invoice</TableHead>
+                <TableHead>Member ID</TableHead>
+                <TableHead>Member Name</TableHead>
+                <TableHead>Package</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Status & Payment</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead className="w-[80px]"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map(inv => {
+                const shortId = members.find(m => m.uuid === inv.member_id)?.id;
+                return (
+                  <TableRow key={inv.uuid} data-testid={`invoice-${inv.uuid}`}>
+                    <TableCell className="font-bold text-xs text-muted-foreground">{inv.id}</TableCell>
+                    <TableCell className="text-sm font-medium text-muted-foreground">{shortId === -1 ? 'Clinic Visitor' : (shortId ?? '?')}</TableCell>
+                    <TableCell className="font-medium text-sm">{inv.member_name}</TableCell>
+                    <TableCell className="text-sm">{inv.package_name}</TableCell>
+                    <TableCell className="text-sm">{format(new Date(inv.created_at), "dd MMM yyyy")}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1 items-start">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${paymentStatuses[inv.status]}`}>
+                          {inv.status}
+                        </span>
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <CreditCard className="w-3 h-3" /> {inv.payment_method}
+                        </div>
+                        {inv.status === 'partial' && (
+                          <p className="text-[10px] text-muted-foreground">Paid: {inv.paid_amount} / {inv.total_amount}</p>
+                        )}
                       </div>
-                    )}
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${paymentStatuses[inv.status]}`}>{inv.status}</span>
-                      <Badge variant="outline" className="text-xs gap-1"><CreditCard className="w-3 h-3" />{inv.payment_method}</Badge>
-                    </div>
-                    {inv.status === 'partial' && (
-                      <p className="text-xs text-muted-foreground">Paid: {inv.paid_amount} / {inv.total_amount}</p>
-                    )}
-                    <div className="flex items-center gap-1 justify-end mt-1">
-                      <button
-                        data-testid={`btn-edit-invoice-${inv.uuid}`}
-                        onClick={() => openEditInvoice(inv)}
-                        className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        data-testid={`btn-delete-invoice-${inv.uuid}`}
-                        onClick={() => setConfirmDelete(inv)}
-                        className="p-1 rounded hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <p className="text-sm font-bold">{inv.total_amount.toLocaleString()} EGP</p>
+                      {inv.discount_amount > 0 && (
+                        <div className="flex items-center gap-1 justify-end text-muted-foreground mt-0.5">
+                          <Tag className="w-3 h-3" />
+                          <p className="text-[10px]">-{inv.discount_amount} EGP</p>
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1 justify-end">
+                        <button
+                          data-testid={`btn-edit-invoice-${inv.uuid}`}
+                          onClick={() => openEditInvoice(inv)}
+                          className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          data-testid={`btn-delete-invoice-${inv.uuid}`}
+                          onClick={() => setConfirmDelete(inv)}
+                          className="p-1.5 rounded-md hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         </div>
       )}
 

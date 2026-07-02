@@ -55,7 +55,6 @@ export default function Reports() {
     active: filtered.filter(m => m.status === 'active').length,
     male: filtered.filter(m => m.gender === 'male').length,
     female: filtered.filter(m => m.gender === 'female').length,
-    totalSessions: filtered.reduce((s, m) => s + (m.total_sessions === 999 ? 0 : m.total_sessions), 0),
     avgSessionsLeft: filtered.length > 0
       ? Math.round(filtered.reduce((s, m) => s + (m.sessions_remaining === 999 ? 0 : m.sessions_remaining), 0) / filtered.length)
       : 0,
@@ -79,7 +78,6 @@ export default function Reports() {
       "Status": m.status,
       "Package": m.package_name,
       "Sessions Remaining": m.sessions_remaining === 999 ? "Unlimited" : m.sessions_remaining,
-      "Total Sessions": m.total_sessions === 999 ? "Unlimited" : m.total_sessions,
       "Expires": format(new Date(m.expires_at), "dd MMM yyyy"),
       "Member Since": format(new Date(m.member_since), "dd MMM yyyy"),
       "Coach": m.coach_name ?? "",
@@ -109,7 +107,7 @@ export default function Reports() {
         m.gender ?? '—',
         m.status.replace('_', ' '),
         m.package_name,
-        m.sessions_remaining === 999 ? '∞' : `${m.sessions_remaining}/${m.total_sessions}`,
+        m.sessions_remaining === 999 ? '∞' : m.sessions_remaining,
         format(new Date(m.expires_at), 'dd MMM yy'),
         m.coach_name ?? '—',
         m.source,
@@ -186,7 +184,6 @@ export default function Reports() {
           { label: "Active", value: statsForFiltered.active, color: "text-emerald-600" },
           { label: "Male", value: statsForFiltered.male, color: "text-blue-600" },
           { label: "Female", value: statsForFiltered.female, color: "text-pink-600" },
-          { label: "Total Sessions", value: statsForFiltered.totalSessions, color: "text-violet-600" },
           { label: "Avg Sessions Left", value: statsForFiltered.avgSessionsLeft, color: "text-primary" },
         ].map(({ label, value, color }) => (
           <div key={label} className="p-3 rounded-xl border bg-card text-center">
@@ -243,7 +240,6 @@ export default function Reports() {
                         <td className="p-3">
                           <p className="font-medium text-foreground">
                             {m.sessions_remaining === 999 ? '∞' : m.sessions_remaining}
-                            <span className="text-xs text-muted-foreground">/{m.total_sessions === 999 ? '∞' : m.total_sessions}</span>
                           </p>
                         </td>
                         <td className="p-3"><p className="text-foreground">{format(new Date(m.expires_at), "dd MMM yyyy")}</p></td>

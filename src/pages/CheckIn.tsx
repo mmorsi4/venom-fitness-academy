@@ -23,7 +23,7 @@ export default function CheckIn() {
   
   const [query, setQuery] = useState("");
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
-  const [overrideDialog, setOverrideDialog] = useState(false);
+
   const [successMember, setSuccessMember] = useState<Member | null>(null);
   const [checkedInToday, setCheckedInToday] = useState<string[]>([]);
 
@@ -35,11 +35,11 @@ export default function CheckIn() {
       ).slice(0, 6)
     : [];
 
-  const doCheckIn = (member: Member, override = false, payLater = false) => {
+  const doCheckIn = (member: Member) => {
     checkInMutation.mutate({
       memberId: member.uuid,
-      isOverride: override,
-      payLater: payLater,
+      isOverride: false,
+      payLater: false,
       performedBy: currentUser?.id,
       performerName: currentUser?.name
     }, {
@@ -48,11 +48,7 @@ export default function CheckIn() {
         setSuccessMember(member);
         setSelectedMember(null);
         setQuery("");
-        setOverrideDialog(false);
-        const msg = override
-          ? `Override check-in: ${member.name}${payLater ? " (Pay Later)" : ""}`
-          : `Checked in: ${member.name}`;
-        toast.success(msg, { description: override ? "Action logged in audit trail" : `Session deducted` });
+        toast.success(`Checked in: ${member.name}`, { description: `Session deducted` });
       },
       onError: (err) => {
         toast.error(`Check-in failed: ${err.message}`);
@@ -67,12 +63,36 @@ export default function CheckIn() {
 
   const handleCheckInClick = () => {
     if (!selectedMember) return;
+    const isFrozen = selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date();
+    
+    if (isFrozen) {
+      checkInMutation.mutate({
+        memberId: selectedMember.uuid,
+        isOverride: true,
+        payLater: false,
+        performedBy: currentUser?.id,
+        performerName: currentUser?.name
+      }, {
+        onSuccess: () => {
+          setCheckedInToday(prev => [...prev, selectedMember.uuid]);
+          setSuccessMember(selectedMember);
+          setSelectedMember(null);
+          setQuery("");
+          toast.success(`Check-in Override Successful`, { description: `Freeze cancelled and checked in.` });
+        },
+        onError: (err) => {
+          toast.error(`Check-in override failed: ${err.message}`);
+        }
+      });
+      return;
+    }
+
     const needsOverride = selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999);
     if (needsOverride) {
-      setOverrideDialog(true);
-    } else {
-      doCheckIn(selectedMember);
+      toast.error("Cannot check in: Membership is expired or no sessions remaining.");
+      return;
     }
+    doCheckIn(selectedMember);
   };
 
   const recentlyCheckedIn = members.filter(m => checkedInToday.includes(m.uuid));
@@ -124,7 +144,7 @@ export default function CheckIn() {
       {/* Member card */}
       {selectedMember && (
         <Card className={
-          selectedMember.status === 'expired' ? "border-red-300 bg-red-50" :
+          (selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999)) ? "border-red-300 bg-red-50" :
           selectedMember.status === 'expiring_soon' ? "border-amber-300 bg-amber-50" :
           "border-emerald-200 bg-emerald-50"
         }>
@@ -134,9 +154,16 @@ export default function CheckIn() {
                 <span className="text-lg font-bold text-primary">{selectedMember.name.charAt(0)}</span>
               </div>
               <div className="flex-1">
-                <CardTitle className="text-xl">{selectedMember.name}</CardTitle>
+                <CardTitle className="text-xl flex items-center gap-2">
+                  {selectedMember.name}
+                  <StatusBadge status={selectedMember.status} />
+                  {selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date() && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">
+                      FROZEN
+                    </span>
+                  )}
+                </CardTitle>
                 <p className="text-sm text-muted-foreground">{selectedMember.id} · {selectedMember.phone}</p>
-                <div className="mt-1"><StatusBadge status={selectedMember.status} /></div>
               </div>
               <button onClick={() => setSelectedMember(null)} className="text-muted-foreground hover:text-foreground">✕</button>
             </div>
@@ -169,14 +196,21 @@ export default function CheckIn() {
             {selectedMember.status === 'expired' && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-red-100 border border-red-200 text-red-800 text-sm">
                 <XCircle className="w-4 h-4 flex-shrink-0" />
-                <span>Membership expired on {format(new Date(selectedMember.expires_at), "MMM d, yyyy")}. Override required.</span>
+                <span>Membership expired on {format(new Date(selectedMember.expires_at), "MMM d, yyyy")}. Cannot check in.</span>
               </div>
             )}
 
             {selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999 && selectedMember.status !== 'expired' && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-red-100 border border-red-200 text-red-800 text-sm">
                 <XCircle className="w-4 h-4 flex-shrink-0" />
-                <span>This member has no sessions remaining. Override required.</span>
+                <span>This member has no sessions remaining. Cannot check in.</span>
+              </div>
+            )}
+            
+            {selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date() && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-100 border border-blue-200 text-blue-800 text-sm">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <span>This member is frozen until {format(new Date(selectedMember.frozen_until), "MMM d, yyyy")}. Overriding will cancel the freeze.</span>
               </div>
             )}
 
@@ -188,18 +222,20 @@ export default function CheckIn() {
             )}
 
             <div className="flex gap-2">
-              <Button
-                data-testid="btn-checkin-confirm"
-                onClick={handleCheckInClick}
-                disabled={checkedInToday.includes(selectedMember.uuid) || checkInMutation.isPending}
-                className="flex-1 h-11 text-base font-semibold gap-2"
-                variant={(selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999)) ? 'destructive' : 'default'}
-              >
-                <CheckCircle2 className="w-5 h-5" />
-                {(selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999)) ? 'Override & Check In' :
-                  checkedInToday.includes(selectedMember.uuid) ? 'Already Checked In' : 'Check In'}
-              </Button>
-              <Button data-testid="btn-checkin-cancel" variant="outline" onClick={() => setSelectedMember(null)}>Cancel</Button>
+              {!(selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999)) && (
+                <Button
+                  data-testid="btn-checkin-confirm"
+                  onClick={handleCheckInClick}
+                  disabled={checkedInToday.includes(selectedMember.uuid) || checkInMutation.isPending}
+                  className={`flex-1 h-11 text-base font-semibold gap-2 ${selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date() ? 'bg-orange-500 hover:bg-orange-600 text-white' : ''}`}
+                >
+                  <CheckCircle2 className="w-5 h-5" />
+                  {checkedInToday.includes(selectedMember.uuid) 
+                    ? 'Already Checked In' 
+                    : (selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date() ? 'Override & Unfreeze' : 'Check In')}
+                </Button>
+              )}
+              <Button data-testid="btn-checkin-cancel" variant="outline" onClick={() => setSelectedMember(null)} className={!(selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999)) ? "" : "flex-1"}>Cancel</Button>
             </div>
           </CardContent>
         </Card>
@@ -219,55 +255,9 @@ export default function CheckIn() {
         </Card>
       )}
 
-      {/* Recently checked in today */}
-      {recentlyCheckedIn.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5" /> Checked In This Session
-          </p>
-          <div className="space-y-1.5">
-            {recentlyCheckedIn.map(m => (
-              <div key={m.uuid} data-testid={`checked-in-${m.uuid}`} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100">
-                <UserCheck className="w-4 h-4 text-emerald-600" />
-                <span className="text-sm font-medium text-foreground">{m.name}</span>
-                <span className="text-xs text-muted-foreground ml-auto">{format(new Date(), "HH:mm")}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* Override Dialog */}
-      <AlertDialog open={overrideDialog} onOpenChange={setOverrideDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Override Expired Membership</AlertDialogTitle>
-            <AlertDialogDescription>
-              <strong>{selectedMember?.name}</strong>'s membership has expired. This action will be logged in the audit trail.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-            <AlertDialogCancel data-testid="btn-override-cancel">Cancel</AlertDialogCancel>
-            <Button
-              data-testid="btn-override-paylater"
-              variant="outline"
-              onClick={() => selectedMember && doCheckIn(selectedMember, true, true)}
-              className="border-amber-300 text-amber-700 hover:bg-amber-50"
-              disabled={checkInMutation.isPending}
-            >
-              Mark Pay Later
-            </Button>
-            <AlertDialogAction
-              data-testid="btn-override-allow"
-              onClick={() => selectedMember && doCheckIn(selectedMember, true, false)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={checkInMutation.isPending}
-            >
-              Allow Anyway
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+
+
     </div>
   );
 }

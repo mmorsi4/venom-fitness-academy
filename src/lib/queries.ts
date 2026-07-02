@@ -138,18 +138,85 @@ export async function checkInMember(args: {
 }
 
 export async function freezeMember(memberId: string, days: number) {
-  // Read current freeze state
+  // Read current freeze state and expiration date
   const { data: member, error: readErr } = await supabase
     .from('members')
-    .select('freeze_days_used, freeze_days_total')
-    .eq('id', memberId)
+    .select('freeze_days_remaining, expires_at')
+    .eq('uuid', memberId)
     .single();
   if (readErr) throw readErr;
-  const newUsed = Math.min((member.freeze_days_used ?? 0) + days, member.freeze_days_total ?? 7);
+  
+  if (member.freeze_days_remaining < days) {
+    throw new Error(`Cannot freeze for ${days} days. Only ${member.freeze_days_remaining} days remaining.`);
+  }
+
+  const newRemaining = Math.max(0, (member.freeze_days_remaining ?? 0) - days);
+  
+  // Extend expiration date if there is one
+  let newExpiresAt = member.expires_at;
+  if (newExpiresAt) {
+    const d = new Date(newExpiresAt);
+    d.setDate(d.getDate() + days);
+    newExpiresAt = d.toISOString();
+  }
+  
+  // Calculate frozen_until date
+  const frozenUntil = new Date();
+  frozenUntil.setDate(frozenUntil.getDate() + days);
+
   const { error } = await supabase
     .from('members')
-    .update({ freeze_days_used: newUsed })
-    .eq('id', memberId);
+    .update({ 
+      freeze_days_remaining: newRemaining,
+      expires_at: newExpiresAt,
+      frozen_until: frozenUntil.toISOString()
+    })
+    .eq('uuid', memberId);
+  if (error) throw error;
+}
+
+export async function unfreezeMember(memberId: string) {
+  const { data: member, error: readErr } = await supabase
+    .from('members')
+    .select('frozen_until, expires_at')
+    .eq('uuid', memberId)
+    .single();
+  
+  if (readErr) throw readErr;
+  if (!member.frozen_until) return; // not frozen
+
+  const frozenUntil = new Date(member.frozen_until);
+  const now = new Date();
+  
+  if (frozenUntil > now) {
+    const diffTime = frozenUntil.getTime() - now.getTime();
+    const unusedDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (unusedDays > 0) {
+      let newExpiresAt = member.expires_at;
+      if (newExpiresAt) {
+        const d = new Date(newExpiresAt);
+        d.setDate(d.getDate() - unusedDays);
+        newExpiresAt = d.toISOString();
+      }
+      
+      const { error } = await supabase
+        .from('members')
+        .update({
+          expires_at: newExpiresAt,
+          frozen_until: null
+        })
+        .eq('uuid', memberId);
+      if (error) throw error;
+      return;
+    }
+  }
+  
+  // if already passed or no unused days, just clear it
+  const { error } = await supabase
+    .from('members')
+    .update({ frozen_until: null })
+    .eq('uuid', memberId);
   if (error) throw error;
 }
 

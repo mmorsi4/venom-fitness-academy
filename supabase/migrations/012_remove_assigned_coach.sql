@@ -52,9 +52,7 @@ BEGIN
 
   -- Update member
   UPDATE public.members
-  SET 
-    sessions_remaining = v_new_remaining,
-    last_checkin = now()
+  SET sessions_remaining = v_new_remaining
   WHERE id = p_member_id;
 
   -- Increment coach session count if applicable (based on assigned class)

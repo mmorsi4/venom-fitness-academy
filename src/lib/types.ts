@@ -44,7 +44,6 @@ export interface Member {
   gender: Gender | null;
   status: MemberStatus;
   sessions_remaining: number;
-  total_sessions: number;
   expires_at: string | null;
   member_since: string;
   last_subscription_date?: string | null;
@@ -53,14 +52,14 @@ export interface Member {
   class_id: string | null;
   coach_name?: string | null;
   class_info?: Class | null;
-  freeze_days_used: number;
-  freeze_days_total: number;
+  freeze_days_remaining: number;
   invitations_remaining: number;
   inbody_sessions_remaining: number;
   sport: string | null;
   created_at: string;
   // Joined field (populated via query)
   coach_name?: string;
+  frozen_until?: string | null;
 }
 
 export interface SubscriptionPackage {

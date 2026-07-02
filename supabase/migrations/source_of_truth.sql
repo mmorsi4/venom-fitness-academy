@@ -66,13 +66,11 @@ create table public.members (
   status             text not null default 'active'
                      check (status in ('active', 'expired', 'expiring_soon', 'has_debt', 'new')),
   sessions_remaining int not null default 0,
-  total_sessions     int not null default 0,
   expires_at         timestamptz,
   member_since       timestamptz not null default now(),
   package_name       text not null default 'None',
   class_id           uuid references public.classes(id) on delete set null,
-  freeze_days_used   int not null default 0,
-  freeze_days_total  int not null default 7,
+  freeze_days_remaining int not null default 7,
   created_at         timestamptz not null default now()
 );
 
@@ -306,7 +304,6 @@ GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
 -- Decrements sessions, updates status, logs audit, creates check_in row.
 -- All in a single atomic transaction.
 
-create or replace function public.check_in_member(
 CREATE OR REPLACE FUNCTION public.check_in_member(
   p_member_id      uuid,
   p_is_override    boolean DEFAULT false,
@@ -345,7 +342,6 @@ BEGIN
   -- Update member
   UPDATE public.members
   SET sessions_remaining = v_new_remaining,
-      last_checkin = now(),
       status = CASE
         WHEN v_new_remaining <= 2 AND v_new_remaining != 999 THEN 'expiring_soon'
         ELSE status
@@ -424,38 +420,31 @@ begin
   where id = p_liability_id;
 end;
 $$ language plpgsql security definer;
--- ============================================================
--- 004_seed.sql
--- Seed data matching the original mock data
--- Run AFTER creating your first admin user via Supabase Auth.
--- ============================================================
 
--- ── Coaches ─────────────────────────────────────────────────
-
-insert into public.coaches (id, name, payment_type, rate, commission_base, sessions_this_month) values
-  ('00000000-0000-0000-0000-000000000c01', 'Alex Turner',  'salary',     3000, null,      22),
-  ('00000000-0000-0000-0000-000000000c02', 'Bella Nour',   'per_session', 80,  null,      18),
-  ('00000000-0000-0000-0000-000000000c03', 'Chris Maged',  'commission',  10,  'revenue', 25);
+-- ============================================================
+-- 004_seed_data.sql
+-- Initial sample data
+-- ============================================================
 
 -- ── Packages ────────────────────────────────────────────────
 
 insert into public.packages (id, name, sessions, price, validity_days, freeze_days, invitations, inbody_sessions) values
-  ('00000000-0000-0000-0000-000000000b01', '8 Sessions',        8,   350, 30, 7,  1, 1),
-  ('00000000-0000-0000-0000-000000000b02', '12 Sessions',       12,  480, 30, 7,  2, 2),
+  ('00000000-0000-0000-0000-000000000b01', '8 Sessions',        8,  350, 30, 7, 1, 1),
+  ('00000000-0000-0000-0000-000000000b02', '12 Sessions',       12, 480, 30, 7, 2, 2),
   ('00000000-0000-0000-0000-000000000b03', 'Unlimited Monthly', 999, 700, 30, 14, 3, 2),
   ('00000000-0000-0000-0000-000000000b04', '16 Sessions',       16,  580, 45, 10, 2, 2);
 
 -- ── Members ─────────────────────────────────────────────────
 
-insert into public.members (id, display_id, name, phone, parent_phone, birth_date, gender, source, status, sessions_remaining, total_sessions, expires_at, member_since, package_name, freeze_days_used, freeze_days_total) values
-  ('00000000-0000-0000-0000-000000000a01', 'M001', 'Ahmed Al-Rashid', '055-0101', '055-0100', '1998-03-15', 'male',   'Walk-in',   'active',        8, 12, now() + interval '14 days', now() - interval '60 days', '12 Sessions',       0, 7),
-  ('00000000-0000-0000-0000-000000000a02', 'M002', 'Nour Hassan',     '055-0102', '055-0109', '2002-07-22', 'female', 'Instagram', 'expiring_soon', 2, 8,  now() + interval '2 days',  now() - interval '30 days', '8 Sessions',        3, 7),
-  ('00000000-0000-0000-0000-000000000a03', 'M003', 'Kareem Mansour',  '055-0103', null,       '1995-11-08', 'male',   'Referral',  'expired',       0, 12, now() - interval '5 days',  now() - interval '90 days', '12 Sessions',       0, 7),
-  ('00000000-0000-0000-0000-000000000a04', 'M004', 'Sara Al-Fahed',   '055-0104', '055-0111', '2001-01-30', 'female', 'Facebook',  'has_debt',      10, 12, now() + interval '25 days', now() - interval '5 days',  '12 Sessions',       0, 7),
-  ('00000000-0000-0000-0000-000000000a05', 'M005', 'Layla Ibrahim',   '055-0105', null,       '1999-05-14', 'female', 'WhatsApp',  'active',        6, 8,  now() + interval '18 days', now() - interval '15 days', '8 Sessions',        0, 7),
-  ('00000000-0000-0000-0000-000000000a06', 'M006', 'Omar Khalil',     '055-0106', null,       '1993-09-03', 'male',   'Walk-in',   'active',        999, 999, now() + interval '20 days', now() - interval '10 days', 'Unlimited Monthly', 2, 14),
-  ('00000000-0000-0000-0000-000000000a07', 'M007', 'Rania Saleh',     '055-0107', '055-0120', '2003-12-19', 'female', 'Instagram', 'expiring_soon', 1, 12, now() + interval '1 day',   now() - interval '45 days', '12 Sessions',       0, 7),
-  ('00000000-0000-0000-0000-000000000a08', 'M008', 'Hassan Yousef',   '055-0108', null,       '1990-06-25', 'male',   'Referral',  'expired',       2, 12, now() - interval '3 days',  now() - interval '75 days', '12 Sessions',       7, 7);
+insert into public.members (id, display_id, name, phone, parent_phone, birth_date, gender, status, sessions_remaining, expires_at, member_since, package_name, freeze_days_remaining) values
+  ('00000000-0000-0000-0000-000000000a01', 'M001', 'Ahmed Al-Rashid', '055-0101', '055-0100', '1998-03-15', 'male',   'active',        8, now() + interval '14 days', now() - interval '60 days', '12 Sessions',       7),
+  ('00000000-0000-0000-0000-000000000a02', 'M002', 'Nour Hassan',     '055-0102', '055-0109', '2002-07-22', 'female', 'expiring_soon', 2,  now() + interval '2 days',  now() - interval '30 days', '8 Sessions',        7),
+  ('00000000-0000-0000-0000-000000000a03', 'M003', 'Kareem Mansour',  '055-0103', null,       '1995-11-08', 'male',   'expired',       0, now() - interval '5 days',  now() - interval '90 days', '12 Sessions',       7),
+  ('00000000-0000-0000-0000-000000000a04', 'M004', 'Sara Al-Fahed',   '055-0104', '055-0111', '2001-01-30', 'female', 'has_debt',      10, now() + interval '25 days', now() - interval '5 days',  '12 Sessions',       7),
+  ('00000000-0000-0000-0000-000000000a05', 'M005', 'Layla Ibrahim',   '055-0105', null,       '1999-05-14', 'female', 'active',        6,  now() + interval '18 days', now() - interval '15 days', '8 Sessions',        7),
+  ('00000000-0000-0000-0000-000000000a06', 'M006', 'Omar Khalil',     '055-0106', null,       '1993-09-03', 'male',   'active',        999, now() + interval '20 days', now() - interval '10 days', 'Unlimited Monthly', 14),
+  ('00000000-0000-0000-0000-000000000a07', 'M007', 'Rania Saleh',     '055-0107', '055-0120', '2003-12-19', 'female', 'expiring_soon', 1,  now() + interval '1 day',   now() - interval '45 days', '12 Sessions',       7),
+  ('00000000-0000-0000-0000-000000000a08', 'M008', 'Hassan Yousef',   '055-0108', null,       '1990-06-25', 'male',   'expired',       2,  now() - interval '3 days',  now() - interval '75 days', '12 Sessions',       7);
 
 -- Reset the sequence to continue after our seeded data
 select setval('member_display_id_seq', 8);
@@ -605,9 +594,7 @@ BEGIN
     package_id                = v_pkg.id,
     package_name              = v_pkg.name,
     sessions_remaining        = v_pkg.sessions,
-    total_sessions            = v_pkg.sessions,
-    freeze_days_total         = v_pkg.freeze_days,
-    freeze_days_used          = 0,
+    freeze_days_remaining     = v_pkg.freeze_days,
     invitations_remaining     = v_pkg.invitations,
     inbody_sessions_remaining = v_pkg.inbody_sessions,
     expires_at                = now() + (v_pkg.validity_days || ' days')::interval,
@@ -637,9 +624,7 @@ BEGIN
     package_id = null,
     package_name = 'None',
     sessions_remaining = 0,
-    total_sessions = 0,
-    freeze_days_total = 0,
-    freeze_days_used = 0,
+    freeze_days_remaining = 0,
     invitations_remaining = 0,
     inbody_sessions_remaining = 0,
     status = 'expired'

@@ -66,13 +66,11 @@ create table public.members (
   status             text not null default 'active'
                      check (status in ('active', 'expired', 'expiring_soon', 'has_debt')),
   sessions_remaining int not null default 0,
-  total_sessions     int not null default 0,
   expires_at         timestamptz not null default now(),
   member_since       timestamptz not null default now(),
   package_name       text not null default 'None',
   assigned_coach_id  uuid references public.coaches(id) on delete set null,
-  freeze_days_used   int not null default 0,
-  freeze_days_total  int not null default 7,
+  freeze_days_remaining int not null default 7,
   created_at         timestamptz not null default now()
 );
 

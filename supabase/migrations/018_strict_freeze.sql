@@ -1,7 +1,6 @@
--- ============================================================
--- 013_fix_checkin_rpc.sql
--- Fix UUID lookup in check_in_member and enforce sessions limit
--- ============================================================
+-- migration 018_strict_freeze.sql
+
+ALTER TABLE public.members ADD COLUMN IF NOT EXISTS frozen_until timestamptz;
 
 CREATE OR REPLACE FUNCTION public.check_in_member(
   p_member_id      uuid,
@@ -18,12 +17,38 @@ DECLARE
   v_action     text;
   v_action_type text;
   v_details    text;
+  v_unused_freeze_days int;
 BEGIN
   -- Lock the member row
   SELECT * INTO v_member FROM public.members WHERE uuid = p_member_id FOR UPDATE;
 
   IF v_member IS NULL THEN
     RAISE EXCEPTION 'Member not found: %', p_member_id;
+  END IF;
+
+  -- Check freeze status
+  IF v_member.frozen_until IS NOT NULL AND v_member.frozen_until > now() THEN
+    IF NOT p_is_override THEN
+      RAISE EXCEPTION 'Member is frozen until %. Please cancel freeze to check-in.', to_char(v_member.frozen_until, 'YYYY-MM-DD');
+    ELSE
+      -- Calculate unused freeze days (ceiling of diff in days)
+      v_unused_freeze_days := CEIL(EXTRACT(EPOCH FROM (v_member.frozen_until - now())) / 86400);
+      IF v_unused_freeze_days > 0 THEN
+        -- Subtract from expires_at, do NOT refund freeze_days_remaining
+        UPDATE public.members
+        SET 
+          expires_at = expires_at - (v_unused_freeze_days || ' days')::interval,
+          frozen_until = null
+        WHERE uuid = p_member_id;
+      ELSE
+        UPDATE public.members SET frozen_until = null WHERE uuid = p_member_id;
+      END IF;
+    END IF;
+  ELSE
+    -- Just clear it if it's passed
+    IF v_member.frozen_until IS NOT NULL THEN
+      UPDATE public.members SET frozen_until = null WHERE uuid = p_member_id;
+    END IF;
   END IF;
 
   -- Validation: Ensure sessions are available for non-override check-ins
@@ -61,7 +86,7 @@ BEGIN
   IF p_is_override THEN
     v_action := 'Override Check-in';
     v_action_type := 'override_checkin';
-    v_details := format('Allowed %s(Pay Later) expired member %s (%s) to attend',
+    v_details := format('Allowed %s(Pay Later) expired or frozen member %s (%s) to attend',
       CASE WHEN p_pay_later THEN '(Pay Later) ' ELSE '' END,
       v_member.id, v_member.name);
   ELSE

@@ -1,7 +1,4 @@
--- ============================================================
--- 013_fix_checkin_rpc.sql
--- Fix UUID lookup in check_in_member and enforce sessions limit
--- ============================================================
+-- migration 016_fix_checkin_rpc.sql
 
 CREATE OR REPLACE FUNCTION public.check_in_member(
   p_member_id      uuid,

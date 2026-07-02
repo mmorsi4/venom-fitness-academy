@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Plus, Search, Phone, Calendar, Pencil, Trash2 } from "lucide-react";
+import { Plus, Search, Phone, Calendar, Pencil, Trash2, Snowflake, Unlock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog } from "@/hooks/use-data";
+import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog, useFreezeMember, useUnfreezeMember } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
 import type { Member, Gender } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
@@ -51,9 +51,7 @@ interface MemberForm {
   
   // Custom edit fields
   sessions_remaining: string;
-  total_sessions: string;
-  freeze_days_used: string;
-  freeze_days_total: string;
+  freeze_days_remaining: string;
   invitations_remaining: string;
   inbody_sessions_remaining: string;
 }
@@ -61,8 +59,8 @@ interface MemberForm {
 const emptyForm: MemberForm = {
   name: "", phone: "", parentPhone: "", birthDate: "",
   gender: "", classId: "", id: 0, isClinicVisitor: false,
-  sessions_remaining: "0", total_sessions: "0",
-  freeze_days_used: "0", freeze_days_total: "0",
+  sessions_remaining: "0",
+  freeze_days_remaining: "0",
   invitations_remaining: "0", inbody_sessions_remaining: "0"
 };
 
@@ -74,9 +72,7 @@ function memberToForm(m: Member): MemberForm {
     classId: m.class_id ?? "",
     isClinicVisitor: m.id === -1,
     sessions_remaining: String(m.sessions_remaining ?? 0),
-    total_sessions: String(m.total_sessions ?? 0),
-    freeze_days_used: String(m.freeze_days_used ?? 0),
-    freeze_days_total: String(m.freeze_days_total ?? 0),
+    freeze_days_remaining: String(m.freeze_days_remaining ?? 0),
     invitations_remaining: String(m.invitations_remaining ?? 0),
     inbody_sessions_remaining: String(m.inbody_sessions_remaining ?? 0),
   };
@@ -95,6 +91,8 @@ export default function Members() {
   const updateMember = useUpdateMember();
   const deleteMember = useDeleteMember();
   const createAuditLog = useCreateAuditLog();
+  const freezeMember = useFreezeMember();
+  const unfreezeMember = useUnfreezeMember();
   const { currentUser } = useAuth();
   const [, navigate] = useLocation();
 
@@ -104,6 +102,8 @@ export default function Members() {
   const [editMember, setEditMember] = useState<Member | null>(null);
   const [form, setForm] = useState<MemberForm>(emptyForm);
   const [confirmDelete, setConfirmDelete] = useState<Member | null>(null);
+  const [freezeMemberState, setFreezeMemberState] = useState<Member | null>(null);
+  const [freezeDaysInput, setFreezeDaysInput] = useState("");
 
   const filtered = members.filter(m => {
     const q = query.toLowerCase();
@@ -112,13 +112,20 @@ export default function Members() {
     if (m.id !== -1) {
       matchSearch = matchSearch || m.id.toString().includes(q)
     }
-    const matchStatus = statusFilter === "all" || m.status === statusFilter;
+    const isFrozen = m.frozen_until ? new Date(m.frozen_until) > new Date() : false;
+    let matchStatus = false;
+    if (statusFilter === "all") matchStatus = true;
+    else if (statusFilter === "frozen") matchStatus = isFrozen;
+    else if (statusFilter === "active") matchStatus = m.status === 'active' && !isFrozen;
+    else matchStatus = m.status === statusFilter;
+    
     return matchSearch && matchStatus;
   });
 
   const counts: Record<string, number> = {
     all: members.length,
-    active: members.filter(m => m.status === 'active').length,
+    active: members.filter(m => m.status === 'active' && !(m.frozen_until && new Date(m.frozen_until) > new Date())).length,
+    frozen: members.filter(m => m.frozen_until && new Date(m.frozen_until) > new Date()).length,
     expiring_soon: members.filter(m => m.status === 'expiring_soon').length,
     expired: members.filter(m => m.status === 'expired').length,
     has_debt: members.filter(m => m.status === 'has_debt').length,
@@ -155,9 +162,7 @@ export default function Members() {
         gender: (form.gender as Gender) || null,
         class_id: form.isClinicVisitor || form.classId === '__none__' ? null : (form.classId || null),
         sessions_remaining: Number(form.sessions_remaining) || 0,
-        total_sessions: Number(form.total_sessions) || 0,
-        freeze_days_used: Number(form.freeze_days_used) || 0,
-        freeze_days_total: Number(form.freeze_days_total) || 0,
+        freeze_days_remaining: Number(form.freeze_days_remaining) || 0,
         invitations_remaining: Number(form.invitations_remaining) || 0,
         inbody_sessions_remaining: Number(form.inbody_sessions_remaining) || 0,
       };
@@ -183,12 +188,10 @@ export default function Members() {
         class_id: form.isClinicVisitor || form.classId === '__none__' ? null : (form.classId || null),
         status: 'new',
         sessions_remaining: 0,
-        total_sessions: 0,
         expires_at: null,
         member_since: new Date().toISOString(),
         package_name: "None",
-        freeze_days_used: 0,
-        freeze_days_total: 0,
+        freeze_days_remaining: 0,
         id: form.isClinicVisitor ? -1 : 0,
       }, {
         onSuccess: () => {
@@ -217,6 +220,57 @@ export default function Members() {
         setConfirmDelete(null);
       },
       onError: (err) => toast.error(`Error deleting: ${err.message}`),
+    });
+  };
+
+  const handleFreeze = () => {
+    if (!freezeMemberState) return;
+    const days = Number(freezeDaysInput);
+    if (!days || days <= 0 || days % 7 !== 0) {
+      toast.error("Please select a valid freeze duration (multiples of 7)");
+      return;
+    }
+    if (days > freezeMemberState.freeze_days_remaining) {
+      toast.error(`Cannot freeze for more than ${freezeMemberState.freeze_days_remaining} days`);
+      return;
+    }
+
+    freezeMember.mutate({ memberId: freezeMemberState.uuid, days }, {
+      onSuccess: () => {
+        createAuditLog.mutate({
+          action: 'Freeze Member',
+          action_type: 'other',
+          performed_by: currentUser?.id ?? null,
+          performer_name: currentUser?.name ?? 'System',
+          member_id: freezeMemberState.uuid,
+          member_name: freezeMemberState.name,
+          timestamp: new Date().toISOString(),
+          details: `Froze membership for ${days} days. Previous expires_at: ${freezeMemberState.expires_at ? format(new Date(freezeMemberState.expires_at), 'dd MMM yyyy') : 'N/A'}`,
+        });
+        toast.success(`Membership frozen for ${days} days`);
+        setFreezeMemberState(null);
+        setFreezeDaysInput("");
+      },
+      onError: (err: any) => toast.error(`Error freezing: ${err.message}`)
+    });
+  };
+
+  const handleUnfreeze = (m: Member) => {
+    unfreezeMember.mutate(m.uuid, {
+      onSuccess: () => {
+        createAuditLog.mutate({
+          action: 'Unfreeze Member',
+          action_type: 'other',
+          performed_by: currentUser?.id ?? null,
+          performer_name: currentUser?.name ?? 'System',
+          member_id: m.uuid,
+          member_name: m.name,
+          timestamp: new Date().toISOString(),
+          details: `Manually unfroze membership early.`,
+        });
+        toast.success(`Membership for ${m.name} unfrozen.`);
+      },
+      onError: (err: any) => toast.error(`Error unfreezing: ${err.message}`)
     });
   };
 
@@ -251,6 +305,7 @@ export default function Members() {
           <TabsList className="h-9 flex-wrap">
             <TabsTrigger value="all" className="text-xs">All ({counts.all})</TabsTrigger>
             <TabsTrigger value="active" className="text-xs">Active ({counts.active})</TabsTrigger>
+            <TabsTrigger value="frozen" className="text-xs">Frozen ({counts.frozen})</TabsTrigger>
             <TabsTrigger value="expiring_soon" className="text-xs">Expiring ({counts.expiring_soon})</TabsTrigger>
             <TabsTrigger value="expired" className="text-xs">Expired ({counts.expired})</TabsTrigger>
             <TabsTrigger value="has_debt" className="text-xs">Debt ({counts.has_debt})</TabsTrigger>
@@ -282,7 +337,6 @@ export default function Members() {
             <TableBody>
               {filtered.map(m => {
                 const age = calcAge(m.birth_date);
-                const freezeRemaining = (m.freeze_days_total || 0) - (m.freeze_days_used || 0);
                 return (
                   <TableRow key={m.uuid} data-testid={`member-row-${m.uuid}`}>
                     <TableCell>
@@ -294,6 +348,11 @@ export default function Members() {
                           <div className="flex items-center gap-2">
                             <p className="font-semibold text-foreground text-sm">{m.name}</p>
                             <StatusBadge status={m.status} />
+                            {m.frozen_until && new Date(m.frozen_until) > new Date() && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">
+                                FROZEN
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-muted-foreground">
                             {m.id === -1 ? (
@@ -354,7 +413,7 @@ export default function Members() {
                         </div>
                         <div className="flex justify-between w-32">
                           <span className="text-muted-foreground">Freezes:</span>
-                          <span className="font-medium">{m.freeze_days_total - m.freeze_days_used}</span>
+                          <span className="font-medium">{m.freeze_days_remaining}</span>
                         </div>
                         <div className="flex justify-between w-32">
                           <span className="text-muted-foreground">Invites:</span>
@@ -368,6 +427,26 @@ export default function Members() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
+                        {m.frozen_until && new Date(m.frozen_until) > new Date() ? (
+                          <button
+                            data-testid={`btn-unfreeze-member-${m.uuid}`}
+                            onClick={() => handleUnfreeze(m)}
+                            className="p-1.5 rounded-md hover:bg-orange-50 transition-colors text-muted-foreground hover:text-orange-600"
+                            title="Unfreeze"
+                            disabled={unfreezeMember.isPending}
+                          >
+                            <Unlock className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <button
+                            data-testid={`btn-freeze-member-${m.uuid}`}
+                            onClick={() => { setFreezeMemberState(m); setFreezeDaysInput(""); }}
+                            className="p-1.5 rounded-md hover:bg-blue-50 transition-colors text-muted-foreground hover:text-blue-600"
+                            title="Freeze"
+                          >
+                            <Snowflake className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           data-testid={`btn-edit-member-${m.uuid}`}
                           onClick={() => openEdit(m)}
@@ -497,23 +576,15 @@ export default function Members() {
             {/* Custom Session Edits */}
             {editMember && (
               <div className="pt-4 mt-4 border-t space-y-4">
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Custom Adjustments</h4>
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Balances</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label>Sessions Remaining</Label>
+                    <Label>Sessions</Label>
                     <Input type="number" value={form.sessions_remaining} onChange={e => setForm(p => ({ ...p, sessions_remaining: e.target.value }))} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Total Sessions</Label>
-                    <Input type="number" value={form.total_sessions} onChange={e => setForm(p => ({ ...p, total_sessions: e.target.value }))} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Freeze Days Used</Label>
-                    <Input type="number" value={form.freeze_days_used} onChange={e => setForm(p => ({ ...p, freeze_days_used: e.target.value }))} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Freeze Days Total</Label>
-                    <Input type="number" value={form.freeze_days_total} onChange={e => setForm(p => ({ ...p, freeze_days_total: e.target.value }))} />
+                    <Label>Freeze Days</Label>
+                    <Input type="number" value={form.freeze_days_remaining} onChange={e => setForm(p => ({ ...p, freeze_days_remaining: e.target.value }))} />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Invitations</Label>
@@ -594,6 +665,42 @@ export default function Members() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Freeze Member Dialog */}
+      <Dialog open={!!freezeMemberState} onOpenChange={o => { if (!o) { setFreezeMemberState(null); setFreezeDaysInput(""); }}}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Freeze Membership</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="px-3 py-2 rounded-lg bg-muted/50 text-sm space-y-1">
+              <div className="flex justify-between"><span className="text-muted-foreground">Member</span><span>{freezeMemberState?.name}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Freeze Days Remaining</span><span className="font-bold text-blue-600">{freezeMemberState?.freeze_days_remaining} days</span></div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Days to Freeze</Label>
+              <Select value={freezeDaysInput} onValueChange={setFreezeDaysInput}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select duration" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: Math.floor((freezeMemberState?.freeze_days_remaining || 0) / 7) }).map((_, i) => {
+                    const d = (i + 1) * 7;
+                    return <SelectItem key={d} value={d.toString()}>{d} Days</SelectItem>
+                  })}
+                </SelectContent>
+              </Select>
+              {(!freezeMemberState?.freeze_days_remaining || freezeMemberState.freeze_days_remaining < 7) && (
+                 <p className="text-xs text-red-500">Not enough freeze days remaining (minimum 7).</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setFreezeMemberState(null); setFreezeDaysInput(""); }}>Cancel</Button>
+            <Button onClick={handleFreeze} disabled={freezeMember.isPending}>Freeze Membership</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
