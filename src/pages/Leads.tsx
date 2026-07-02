@@ -112,7 +112,7 @@ export default function Leads() {
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Leads (CRM)</h1>
+          <h1 className="text-2xl font-bold text-foreground">Leads</h1>
           <p className="text-sm text-muted-foreground">{leads.length} total leads</p>
         </div>
         <Button data-testid="btn-add-lead" onClick={() => setShowAdd(true)} className="gap-2">

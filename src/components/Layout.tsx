@@ -25,7 +25,7 @@ const ALL_NAV_ITEMS = [
   { href: "/coaches", label: "Coaches", icon: Dumbbell },
   { href: "/classes", label: "Classes", icon: Calendar },
   { href: "/sports", label: "Sports", icon: Trophy },
-  { href: "/leads", label: "Leads (CRM)", icon: UserPlus },
+  { href: "/leads", label: "Leads", icon: UserPlus },
   { href: "/liabilities", label: "Liabilities", icon: Landmark },
   { href: "/audit", label: "Audit Log", icon: ClipboardList },
   { href: "/users", label: "User Management", icon: UserCog },
