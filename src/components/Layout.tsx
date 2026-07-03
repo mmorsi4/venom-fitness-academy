@@ -7,7 +7,7 @@ import {
   UserCog, LogOut, Menu, X, Trophy
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useAuth, ROLE_NAV } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import { useLiabilities } from "@/hooks/use-data";
 import { differenceInDays, parseISO } from "date-fns";
 import { toast } from "sonner";
@@ -44,7 +44,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   if (!currentUser) return <>{children}</>;
 
-  const allowedHrefs = ROLE_NAV[currentUser.role];
+  const allowedHrefs = Array.from(new Set(currentUser.roles.flatMap(r => r.tabs)));
   const navItems = ALL_NAV_ITEMS.filter(item => allowedHrefs.includes(item.href));
   
   const canViewLiabilities = allowedHrefs.includes('/finance') || allowedHrefs.includes('/liabilities');
@@ -61,18 +61,18 @@ export default function Layout({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background w-full">
+    <div className="flex h-screen print:h-auto overflow-hidden print:overflow-visible bg-background w-full">
       {/* Mobile Backdrop */}
       {isMobileMenuOpen && (
         <div 
-          className="fixed inset-0 bg-black/80 z-40 md:hidden"
+          className="fixed inset-0 bg-black/80 z-40 md:hidden print:hidden"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed inset-y-0 left-0 z-50 w-64 bg-sidebar flex flex-col transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0",
+        "fixed inset-y-0 left-0 z-50 w-64 bg-sidebar flex flex-col transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 print:hidden",
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         {/* Mobile close button */}
@@ -140,9 +140,9 @@ export default function Layout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto flex flex-col relative w-full min-w-0">
+      <main className="flex-1 overflow-y-auto print:overflow-visible flex flex-col relative w-full min-w-0">
         {/* Mobile Header */}
-        <div className="md:hidden flex items-center justify-between p-4 bg-sidebar border-b border-sidebar-border flex-shrink-0 sticky top-0 z-30">
+        <div className="md:hidden print:hidden flex items-center justify-between p-4 bg-sidebar border-b border-sidebar-border flex-shrink-0 sticky top-0 z-30">
           <button 
             onClick={() => setIsMobileMenuOpen(true)}
             className="p-2 -ml-2 text-sidebar-foreground hover:bg-sidebar-accent rounded-md transition-colors"

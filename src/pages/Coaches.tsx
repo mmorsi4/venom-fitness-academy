@@ -13,7 +13,8 @@ import {
 import { 
   useCoaches, useInvoices, useMembers, 
   useCreateCoach, useUpdateCoach, 
-  useCoachCheckInsToday, useCheckInCoach 
+  useCoachCheckInsToday, useCheckInCoach,
+  useCoachCheckInsForMonth, useClasses
 } from "@/hooks/use-data";
 import type { Coach } from "@/lib/types";
 import { toast } from "sonner";
@@ -45,6 +46,9 @@ export default function Coaches() {
   const { data: invoices = [] } = useInvoices();
   const { data: members = [] } = useMembers();
   const { data: checkIns = [] } = useCoachCheckInsToday();
+  const { data: checkInsThisMonth = [] } = useCoachCheckInsForMonth(new Date().getMonth(), new Date().getFullYear());
+  const { data: classes = [] } = useClasses();
+
   const createCoach = useCreateCoach();
   const updateCoach = useUpdateCoach();
   const checkInMutation = useCheckInCoach();
@@ -55,6 +59,10 @@ export default function Coaches() {
   const [form, setForm] = useState<CoachForm>(emptyForm);
   const [coachSearch, setCoachSearch] = useState("");
 
+  const [classCheckInCoach, setClassCheckInCoach] = useState<Coach | null>(null);
+  const [selectedClassId, setSelectedClassId] = useState<string>("none");
+
+  // A coach is checked in today if they have ANY check-in record for today
   const checkedInCount = coaches.filter(c => checkIns.some(ci => ci.coach_id === c.id)).length;
 
   const monthlyRevenue = invoices
@@ -69,17 +77,38 @@ export default function Coaches() {
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   }).length;
 
+  const getCoachSessionsThisMonth = (coachId: string) => {
+    return checkInsThisMonth.filter(ci => ci.coach_id === coachId).length;
+  };
+
   const calcEarnings = (coach: Coach) => {
     if (coach.payment_type === 'salary') return coach.rate;
-    if (coach.payment_type === 'per_session') return coach.rate * coach.sessions_this_month;
+    if (coach.payment_type === 'per_session') return coach.rate * getCoachSessionsThisMonth(coach.id);
     const base = coach.commission_base === 'members' ? newMembersThisMonth * 1000 : monthlyRevenue;
     return Math.round((coach.rate / 100) * base);
   };
 
-  const handleCoachCheckIn = (coachId: string, name: string) => {
-    checkInMutation.mutate(coachId, {
-      onSuccess: () => toast.success(`${name} checked in for session`),
-      onError: (err) => toast.error(`Failed to check in: ${err.message}`)
+  const openClassCheckIn = (coach: Coach) => {
+    setClassCheckInCoach(coach);
+    setSelectedClassId("none");
+  };
+
+  const submitCheckIn = () => {
+    if (!classCheckInCoach) return;
+    const cid = selectedClassId === "none" ? undefined : selectedClassId;
+    checkInMutation.mutate({ coachId: classCheckInCoach.id, classId: cid }, {
+      onSuccess: () => {
+        toast.success(`${classCheckInCoach.name} checked in`);
+        setClassCheckInCoach(null);
+      },
+      onError: (err) => {
+        // If it's a unique constraint violation, they already checked into this class today
+        if (err.message.includes('unique constraint') || err.message.includes('duplicate key')) {
+          toast.error("Already checked into this class today");
+        } else {
+          toast.error(`Failed to check in: ${err.message}`);
+        }
+      }
     });
   };
 
@@ -103,7 +132,7 @@ export default function Coaches() {
           phone: form.phone.trim(),
           payment_type: form.paymentType,
           rate: Number(form.rate),
-          commission_base: form.commissionBase
+          commission_base: form.paymentType === 'commission' ? form.commissionBase : null
         }
       }, {
         onSuccess: () => {
@@ -118,8 +147,7 @@ export default function Coaches() {
         phone: form.phone.trim(),
         payment_type: form.paymentType,
         rate: Number(form.rate),
-        commission_base: form.commissionBase,
-        sessions_this_month: 0,
+        commission_base: form.paymentType === 'commission' ? form.commissionBase : null,
       }, {
         onSuccess: () => {
           toast.success(`Coach added: ${form.name}`);
@@ -172,7 +200,7 @@ export default function Coaches() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {coaches.map(coach => {
           const earnings = calcEarnings(coach);
-          const isCheckedIn = checkIns.some(ci => ci.coach_id === coach.id);
+          const sessions = getCoachSessionsThisMonth(coach.id);
           return (
             <Card key={coach.id} data-testid={`coach-card-${coach.id}`} className="hover:shadow-md transition-shadow">
               <CardContent className="p-5 space-y-4">
@@ -192,7 +220,6 @@ export default function Coaches() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
-                    <div className={`w-2.5 h-2.5 rounded-full ${isCheckedIn ? 'bg-emerald-500' : 'bg-gray-300'}`} />
                     <button onClick={() => openEdit(coach)} className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground">
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
@@ -200,7 +227,7 @@ export default function Coaches() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="p-2.5 rounded-lg bg-muted/50 text-center">
-                    <p className="text-lg font-bold">{coach.sessions_this_month}</p>
+                    <p className="text-lg font-bold">{sessions}</p>
                     <p className="text-xs text-muted-foreground">Sessions (Month)</p>
                   </div>
                   <div className="p-2.5 rounded-lg bg-muted/50 text-center">
@@ -216,18 +243,16 @@ export default function Coaches() {
                     <div className="flex items-center gap-2"><DollarSign className="w-4 h-4 text-primary" /><span className="text-sm font-medium">Monthly Payroll</span></div>
                     <span className="text-base font-bold">{earnings.toLocaleString()} EGP</span>
                   </div>
-                  {coach.payment_type === 'per_session' && <p className="text-xs text-muted-foreground mt-1">{coach.sessions_this_month} × {coach.rate} EGP</p>}
+                  {coach.payment_type === 'per_session' && <p className="text-xs text-muted-foreground mt-1">{sessions} × {coach.rate} EGP</p>}
                   {coach.payment_type === 'commission' && (
                     <p className="text-xs text-muted-foreground mt-1">
                       {coach.rate}% of {coach.commission_base === 'members' ? `${newMembersThisMonth} new members (×1000)` : `${monthlyRevenue.toLocaleString()} EGP revenue`}
                     </p>
                   )}
                 </div>
-                {!isCheckedIn && (
-                  <Button data-testid={`btn-checkin-coach-${coach.id}`} variant="outline" size="sm" className="w-full gap-2" onClick={() => handleCoachCheckIn(coach.id, coach.name)} disabled={checkInMutation.isPending}>
-                    <Dumbbell className="w-3.5 h-3.5" /> Check In for Today
-                  </Button>
-                )}
+                <Button data-testid={`btn-checkin-coach-${coach.id}`} variant="outline" size="sm" className="w-full gap-2" onClick={() => openClassCheckIn(coach)}>
+                  <Dumbbell className="w-3.5 h-3.5" /> Check In for Today
+                </Button>
               </CardContent>
             </Card>
           );
@@ -272,15 +297,10 @@ export default function Coaches() {
                 c.name.toLowerCase().includes(coachSearch.toLowerCase()) || 
                 (c.phone && c.phone.includes(coachSearch))
               ).map(c => {
-                const isCheckedIn = checkIns.some(ci => ci.coach_id === c.id);
                 return (
                   <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border bg-card">
                   <div><p className="font-medium">{c.name}</p><p className="text-xs text-muted-foreground">{paymentTypeLabels[c.payment_type]}</p></div>
-                  {isCheckedIn ? (
-                    <span className="flex items-center gap-1 text-emerald-600 text-sm font-medium"><CheckCircle2 className="w-4 h-4" /> Checked In</span>
-                  ) : (
-                    <Button data-testid={`btn-modal-checkin-coach-${c.id}`} size="sm" onClick={() => handleCoachCheckIn(c.id, c.name)} disabled={checkInMutation.isPending}>Check In</Button>
-                  )}
+                  <Button data-testid={`btn-modal-checkin-coach-${c.id}`} size="sm" onClick={() => openClassCheckIn(c)}>Check In</Button>
                 </div>
               );
             })}
@@ -289,6 +309,34 @@ export default function Coaches() {
             )}
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!classCheckInCoach} onOpenChange={(o) => !o && setClassCheckInCoach(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Check In: {classCheckInCoach?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Select Class</Label>
+              <Select value={selectedClassId} onValueChange={setSelectedClassId}>
+                <SelectTrigger><SelectValue placeholder="Select a class" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">General Check-In (No specific class)</SelectItem>
+                  {classCheckInCoach && classes.filter(c => c.coach_id === classCheckInCoach.id).map(cls => (
+                    <SelectItem key={cls.id} value={cls.id}>
+                      {cls.name} ({cls.sport_name})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClassCheckInCoach(null)}>Cancel</Button>
+            <Button onClick={submitCheckIn} disabled={checkInMutation.isPending}>Submit Check-In</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

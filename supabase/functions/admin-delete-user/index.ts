@@ -34,14 +34,14 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const { data: callerProfile } = await userClient
-      .from('profiles')
-      .select('role')
-      .eq('id', caller.id)
-      .single();
+    const { data: userRoles } = await userClient
+      .from('user_roles')
+      .select('roles(name, tabs)')
+      .eq('user_id', caller.id);
 
-    if (callerProfile?.role !== 'admin') {
-      return new Response(JSON.stringify({ error: 'Admin access required' }), {
+    const canManageUsers = userRoles?.some((ur: any) => ur.roles?.name === 'admin' || (ur.roles?.tabs && ur.roles.tabs.includes('/users')));
+    if (!canManageUsers) {
+      return new Response(JSON.stringify({ error: 'User management access required' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

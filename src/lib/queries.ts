@@ -383,11 +383,23 @@ export async function getCoachCheckInsToday() {
   return data as CoachCheckIn[];
 }
 
-export async function checkInCoach(coachId: string) {
-  const today = new Date().toISOString().split('T')[0];
-  const { error } = await supabase
+export async function getCoachCheckInsForMonth(month: number, year: number) {
+  const startDate = new Date(year, month, 1).toISOString();
+  const endDate = new Date(year, month + 1, 0, 23, 59, 59).toISOString();
+  const { data, error } = await supabase
     .from('coach_check_ins')
-    .upsert({ coach_id: coachId, check_in_date: today });
+    .select('*')
+    .gte('created_at', startDate)
+    .lte('created_at', endDate);
+  if (error) throw error;
+  return data as CoachCheckIn[];
+}
+
+export async function checkInCoach(coachId: string, classId?: string) {
+  const today = new Date().toISOString().split('T')[0];
+  const payload: any = { coach_id: coachId, check_in_date: today };
+  if (classId) payload.class_id = classId;
+  const { error } = await supabase.from('coach_check_ins').insert(payload);
   if (error) throw error;
 }
 

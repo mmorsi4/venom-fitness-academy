@@ -205,6 +205,13 @@ export function useCoachCheckInsToday() {
   return useQuery({ queryKey: queryKeys.coachCheckIns, queryFn: q.getCoachCheckInsToday });
 }
 
+export function useCoachCheckInsForMonth(month: number, year: number) {
+  return useQuery({ 
+    queryKey: [...queryKeys.coachCheckIns, month, year], 
+    queryFn: () => q.getCoachCheckInsForMonth(month, year) 
+  });
+}
+
 export function useCreateCoach() {
   const qc = useQueryClient();
   return useMutation({
@@ -225,7 +232,7 @@ export function useUpdateCoach() {
 export function useCheckInCoach() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: q.checkInCoach,
+    mutationFn: ({ coachId, classId }: { coachId: string, classId?: string }) => q.checkInCoach(coachId, classId),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.coachCheckIns }),
   });
 }

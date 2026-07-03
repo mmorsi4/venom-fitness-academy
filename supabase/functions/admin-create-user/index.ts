@@ -38,22 +38,22 @@ Deno.serve(async (req: Request) => {
     }
 
     // Check caller is admin
-    const { data: callerProfile } = await userClient
-      .from('profiles')
-      .select('role')
-      .eq('id', caller.id)
-      .single();
+    const { data: userRoles } = await userClient
+      .from('user_roles')
+      .select('roles(name, tabs)')
+      .eq('user_id', caller.id);
 
-    if (callerProfile?.role !== 'admin') {
-      return new Response(JSON.stringify({ error: 'Admin access required' }), {
+    const canManageUsers = userRoles?.some((ur: any) => ur.roles?.name === 'admin' || (ur.roles?.tabs && ur.roles.tabs.includes('/users')));
+    if (!canManageUsers) {
+      return new Response(JSON.stringify({ error: 'User management access required' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     // Parse request body
-    const { name, email, password, role } = await req.json();
-    if (!name || !email || !password || !role) {
-      return new Response(JSON.stringify({ error: 'name, email, password, and role are required' }), {
+    const { name, email, password, roleIds } = await req.json();
+    if (!name || !email || !password || !roleIds || !Array.isArray(roleIds)) {
+      return new Response(JSON.stringify({ error: 'name, email, password, and roleIds (array) are required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -69,13 +69,27 @@ Deno.serve(async (req: Request) => {
       email,
       password,
       email_confirm: true,
-      user_metadata: { name, role },
+      user_metadata: { name },
     });
 
     if (createError) {
       return new Response(JSON.stringify({ error: createError.message }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    if (roleIds.length > 0) {
+      // Delete the default roles inserted by the trigger
+      await adminClient.from('user_roles').delete().eq('user_id', newUser.user.id);
+      
+      // Insert the requested roles
+      const roleInserts = roleIds.map((roleId: string) => ({ user_id: newUser.user.id, role_id: roleId }));
+      const { error: rolesErr } = await adminClient.from('user_roles').insert(roleInserts);
+      if (rolesErr) {
+        return new Response(JSON.stringify({ error: rolesErr.message }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     return new Response(JSON.stringify({ user: newUser.user }), {

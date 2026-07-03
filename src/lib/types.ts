@@ -5,7 +5,19 @@
 
 // ── Enums ──────────────────────────────────────────────────────
 
-export type UserRole = 'admin' | 'reception' | 'sales';
+export interface Role {
+  id: string;
+  name: string;
+  description: string | null;
+  tabs: string[];
+  created_at: string;
+}
+
+export interface UserRoleMapping {
+  user_id: string;
+  role_id: string;
+  role?: Role;
+}
 export type MemberStatus = 'active' | 'expired' | 'expiring_soon' | 'has_debt' | 'new';
 export type Gender = 'male' | 'female' | 'other';
 export type InvoiceStatus = 'paid' | 'partial' | 'unpaid';
@@ -30,7 +42,6 @@ export interface Profile {
   id: string;
   email: string;
   name: string;
-  role: UserRole;
   created_at: string;
 }
 
@@ -111,7 +122,6 @@ export interface Coach {
   payment_type: CoachPaymentType;
   rate: number;
   commission_base: CommissionBase | null;
-  sessions_this_month: number;
   created_at: string;
 }
 
@@ -177,6 +187,7 @@ export interface CheckIn {
 export interface CoachCheckIn {
   id: string;
   coach_id: string;
+  class_id?: string;
   check_in_date: string;
   created_at: string;
 }
@@ -238,6 +249,8 @@ export interface Database {
       sports: { Row: Sport; Insert: Omit<Sport, 'id' | 'created_at'>; Update: Partial<Omit<Sport, 'id' | 'created_at'>> };
       discount_members: { Row: DiscountMember; Insert: DiscountMember; Update: never };
       discount_invoices: { Row: DiscountInvoice; Insert: DiscountInvoice; Update: never };
+      roles: { Row: Role; Insert: Omit<Role, 'id' | 'created_at'>; Update: Partial<Omit<Role, 'id' | 'created_at'>> };
+      user_roles: { Row: UserRoleMapping; Insert: Omit<UserRoleMapping, 'created_at'>; Update: Partial<Omit<UserRoleMapping, 'created_at'>> };
     };
     Functions: {
       check_in_member: {
