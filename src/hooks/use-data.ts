@@ -260,6 +260,14 @@ export function useUpdateLead() {
   });
 }
 
+export function useDeleteLead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => q.deleteLead(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.leads }),
+  });
+}
+
 // ── Expenses ────────────────────────────────────────────────
 
 export function useExpenses() {

@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, Pencil, Trash2, Calendar as CalendarIcon, Clock, Users, X, Search } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Plus, Pencil, Trash2, Calendar as CalendarIcon, Clock, Users, X, Search, LayoutGrid, CalendarDays } from "lucide-react";
 import { toast } from "sonner";
 import type { Class, ClassSchedule } from "@/lib/types";
 
@@ -119,81 +120,180 @@ export default function Classes() {
         <Button onClick={openAdd} className="gap-2 shrink-0"><Plus className="w-4 h-4" /> Add Class</Button>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input 
-            placeholder="Search by class name, coach, or sport..." 
-            value={query} 
-            onChange={e => setQuery(e.target.value)} 
-            className="pl-9" 
-          />
+      {/* Filters and View Toggle */}
+      <Tabs defaultValue="grid" className="space-y-6">
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+          <div className="relative flex-1 max-w-sm w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input 
+              placeholder="Search by class name, coach, or sport..." 
+              value={query} 
+              onChange={e => setQuery(e.target.value)} 
+              className="pl-9" 
+            />
+          </div>
+          <TabsList className="shrink-0">
+            <TabsTrigger value="grid" className="gap-2"><LayoutGrid className="w-4 h-4" /> Grid View</TabsTrigger>
+            <TabsTrigger value="schedule" className="gap-2"><CalendarDays className="w-4 h-4" /> Weekly Schedule</TabsTrigger>
+          </TabsList>
         </div>
-      </div>
 
       {/* Grid of Classes */}
-      {isLoading ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">Loading classes...</p>
-          </CardContent>
-        </Card>
-      ) : filtered.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">No classes found.</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filtered.map(cls => (
-            <Card key={cls.id} className="hover:shadow-md transition-shadow flex flex-col group">
-              <CardHeader className="p-4 pb-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <CardTitle className="text-lg font-bold truncate">{cls.name}</CardTitle>
-                    <p className="text-sm text-primary font-medium mt-0.5">{cls.sport_name ?? 'Unknown Sport'}</p>
+      <TabsContent value="grid" className="m-0">
+        {isLoading ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <p className="text-muted-foreground">Loading classes...</p>
+            </CardContent>
+          </Card>
+        ) : filtered.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <p className="text-muted-foreground">No classes found.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filtered.map(cls => (
+              <Card key={cls.id} className="hover:shadow-md transition-shadow flex flex-col group">
+                <CardHeader className="p-4 pb-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <CardTitle className="text-lg font-bold truncate">{cls.name}</CardTitle>
+                      <p className="text-sm text-primary font-medium mt-0.5">{cls.sport_name ?? 'Unknown Sport'}</p>
+                    </div>
+                    <div className="flex shrink-0 gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(cls)}>
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => setConfirmDelete(cls)}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex shrink-0 gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(cls)}>
-                      <Pencil className="w-3.5 h-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => setConfirmDelete(cls)}>
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
+                </CardHeader>
+                <CardContent className="p-4 pt-2 flex-1 flex flex-col gap-3">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Users className="w-4 h-4" />
+                    <span>Coach: <strong>{cls.coach_name ?? 'Unassigned'}</strong></span>
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent className="p-4 pt-2 flex-1 flex flex-col gap-3">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Users className="w-4 h-4" />
-                  <span>Coach: <strong>{cls.coach_name ?? 'Unassigned'}</strong></span>
-                </div>
-                
-                <div className="space-y-1.5 flex-1">
-                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Schedule</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {cls.schedules?.map((s, i) => (
-                      <div key={i} className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs font-medium">
-                        <CalendarIcon className="w-3 h-3 text-muted-foreground" />
-                        {s.day.slice(0, 3)}
-                        <Clock className="w-3 h-3 ml-1 text-muted-foreground" />
-                        {s.time}
-                      </div>
-                    ))}
+                  
+                  <div className="space-y-1.5 flex-1">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Schedule</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {cls.schedules?.map((s, i) => (
+                        <div key={i} className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs font-medium">
+                          <CalendarIcon className="w-3 h-3 text-muted-foreground" />
+                          {s.day.slice(0, 3)}
+                          <Clock className="w-3 h-3 ml-1 text-muted-foreground" />
+                          {(() => {
+                            const [h, m] = s.time.split(':');
+                            let hour = parseInt(h, 10);
+                            const ampm = hour >= 12 ? 'PM' : 'AM';
+                            hour = hour % 12 || 12;
+                            return `${hour}:${m} ${ampm}`;
+                          })()}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                <div className="pt-3 border-t flex items-center justify-between mt-auto">
-                  <span className="text-sm text-muted-foreground">Capacity</span>
-                  <span className="font-semibold">{cls.attendance_count ?? 0} / {cls.capacity}</span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  <div className="pt-3 border-t flex items-center justify-between mt-auto">
+                    <span className="text-sm text-muted-foreground">Capacity</span>
+                    <span className="font-semibold">{cls.attendance_count ?? 0} / {cls.capacity}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </TabsContent>
+
+      <TabsContent value="schedule" className="m-0">
+        <div className="overflow-x-auto pb-4">
+          {(() => {
+            const uniqueTimes = Array.from(new Set(
+              filtered.flatMap(c => (c.schedules || []).map(s => s.time))
+            )).sort((a, b) => a.localeCompare(b));
+
+            return (
+              <table className="w-full min-w-[900px] border-separate border-spacing-1">
+                <thead>
+                  <tr>
+                    <th className="w-24 p-2 bg-transparent"></th>
+                    {DAYS.map(dayName => (
+                      <th 
+                        key={dayName} 
+                        className={`p-2 text-sm font-semibold text-white uppercase tracking-wider relative
+                          ${dayName === 'Sunday' ? 'bg-[#CC5A5C]' : 'bg-[#485363]'}
+                        `}
+                      >
+                        {dayName}
+                        {dayName !== 'Saturday' && (
+                          <div 
+                            className={`absolute -right-[1px] top-0 bottom-0 w-3 z-10 hidden sm:block ${dayName === 'Sunday' ? 'bg-[#CC5A5C]' : 'bg-[#485363]'}`}
+                            style={{ clipPath: 'polygon(0 0, 100% 50%, 0 100%)', transform: 'translateX(100%)' }}
+                          />
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {uniqueTimes.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="text-center py-12 text-muted-foreground border rounded-lg bg-muted/20">
+                        No classes scheduled matching your criteria.
+                      </td>
+                    </tr>
+                  ) : (
+                    uniqueTimes.map(time => {
+                      const [h, m] = time.split(':');
+                      let hour = parseInt(h, 10);
+                      const ampm = hour >= 12 ? 'PM' : 'AM';
+                      hour = hour % 12 || 12;
+                      const time12 = `${hour}:${m} ${ampm}`;
+
+                      return (
+                        <tr key={time}>
+                          <td className="p-3 bg-[#78A4A3] text-white text-xs font-bold text-center align-top whitespace-nowrap shadow-sm">
+                            {time12}
+                          </td>
+                        {DAYS.map(day => {
+                          const classesInSlot = filtered.flatMap(cls => 
+                            (cls.schedules || [])
+                              .filter(s => s.day === day && s.time === time)
+                              .map(s => ({ ...cls }))
+                          );
+                          return (
+                            <td key={day} className="p-2 align-top min-w-[120px] bg-[#EEF0F2] shadow-sm">
+                              {classesInSlot.length === 0 ? null : (
+                                <div className="space-y-2">
+                                  {classesInSlot.map((cls, idx) => (
+                                    <div key={`${cls.id}-${idx}`} className="p-2 bg-white rounded border-l-4 border-l-primary shadow-sm hover:shadow-md transition-shadow cursor-default flex flex-col gap-0.5">
+                                      <p className="font-bold text-xs leading-tight text-foreground truncate">{cls.name}</p>
+                                      <p className="text-[10px] text-primary truncate">{cls.sport_name}</p>
+                                      <p className="text-[10px] text-muted-foreground truncate flex items-center gap-1 mt-1">
+                                        <Users className="w-3 h-3" /> {cls.coach_name ?? 'Unassigned'}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })
+                  )}
+                </tbody>
+              </table>
+            );
+          })()}
         </div>
-      )}
+      </TabsContent>
+      </Tabs>
 
       {/* Add / Edit Dialog */}
       <Dialog open={showAdd || !!editClass} onOpenChange={o => !o && closeDialogs()}>

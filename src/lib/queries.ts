@@ -426,6 +426,11 @@ export async function updateLead(id: string, updates: Partial<Lead>) {
   return data as Lead;
 }
 
+export async function deleteLead(id: string) {
+  const { error } = await supabase.from('leads').delete().eq('id', id);
+  if (error) throw error;
+}
+
 // ── Expenses ────────────────────────────────────────────────
 
 export async function getExpenses() {

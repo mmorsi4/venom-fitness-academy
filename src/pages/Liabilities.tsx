@@ -140,7 +140,6 @@ export default function Liabilities() {
         <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
         <span>
           To record a payment, go to <strong>Finance → Add Expense → Liability Payment</strong> and select the liability.
-          Payments are automatically reflected in the progress bars below.
         </span>
         <Link href="/finance" className="ml-auto flex-shrink-0 underline text-xs font-medium hover:text-blue-900">Go to Finance →</Link>
       </div>

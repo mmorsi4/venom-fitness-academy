@@ -18,6 +18,7 @@ import {
 } from "@/hooks/use-data";
 import type { Coach } from "@/lib/types";
 import { toast } from "sonner";
+import { calculateCoachPayroll } from "@/lib/utils";
 
 const paymentTypeColors: Record<string, string> = {
   salary: "bg-blue-100 text-blue-700 border border-blue-200",
@@ -30,6 +31,7 @@ const paymentTypeLabels: Record<string, string> = {
 const commissionBaseLabels: Record<string, string> = {
   revenue: "Total Revenue", members: "New Members",
 };
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 interface CoachForm {
   name: string;
@@ -58,6 +60,7 @@ export default function Coaches() {
   const [editCoach, setEditCoach] = useState<Coach | null>(null);
   const [form, setForm] = useState<CoachForm>(emptyForm);
   const [coachSearch, setCoachSearch] = useState("");
+  const [mainCoachSearch, setMainCoachSearch] = useState("");
 
   const [classCheckInCoach, setClassCheckInCoach] = useState<Coach | null>(null);
   const [selectedClassId, setSelectedClassId] = useState<string>("none");
@@ -77,17 +80,6 @@ export default function Coaches() {
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   }).length;
 
-  const getCoachSessionsThisMonth = (coachId: string) => {
-    return checkInsThisMonth.filter(ci => ci.coach_id === coachId).length;
-  };
-
-  const calcEarnings = (coach: Coach) => {
-    if (coach.payment_type === 'salary') return coach.rate;
-    if (coach.payment_type === 'per_session') return coach.rate * getCoachSessionsThisMonth(coach.id);
-    const base = coach.commission_base === 'members' ? newMembersThisMonth * 1000 : monthlyRevenue;
-    return Math.round((coach.rate / 100) * base);
-  };
-
   const openClassCheckIn = (coach: Coach) => {
     setClassCheckInCoach(coach);
     setSelectedClassId("none");
@@ -95,19 +87,39 @@ export default function Coaches() {
 
   const submitCheckIn = () => {
     if (!classCheckInCoach) return;
-    const cid = selectedClassId === "none" ? undefined : selectedClassId;
-    checkInMutation.mutate({ coachId: classCheckInCoach.id, classId: cid }, {
+    
+    if (selectedClassId === "none") {
+      toast.error("Please select a specific class to check into.");
+      return;
+    }
+
+    const classData = classes.find(c => c.id === selectedClassId);
+    if (!classData) return;
+
+    // Validate the day of the week
+    const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const todayName = DAYS[new Date().getDay()];
+    const scheduledSlotsForToday = classData.schedules.filter(s => s.day === todayName).length;
+
+    if (scheduledSlotsForToday === 0) {
+      toast.error(`This class is not scheduled for today (${todayName}).`);
+      return;
+    }
+
+    // Validate check-in count for this class today
+    const checkInsForThisClassToday = checkIns.filter(ci => ci.coach_id === classCheckInCoach.id && ci.class_id === selectedClassId).length;
+    if (checkInsForThisClassToday >= scheduledSlotsForToday) {
+      toast.error(`Coach has already checked in ${checkInsForThisClassToday} time(s) for this class today (Max: ${scheduledSlotsForToday}).`);
+      return;
+    }
+
+    checkInMutation.mutate({ coachId: classCheckInCoach.id, classId: selectedClassId }, {
       onSuccess: () => {
         toast.success(`${classCheckInCoach.name} checked in`);
         setClassCheckInCoach(null);
       },
       onError: (err) => {
-        // If it's a unique constraint violation, they already checked into this class today
-        if (err.message.includes('unique constraint') || err.message.includes('duplicate key')) {
-          toast.error("Already checked into this class today");
-        } else {
-          toast.error(`Failed to check in: ${err.message}`);
-        }
+        toast.error(`Failed to check in: ${err.message}`);
       }
     });
   };
@@ -165,42 +177,32 @@ export default function Coaches() {
           <h1 className="text-2xl font-bold text-foreground">Coaches</h1>
           <p className="text-sm text-muted-foreground">{checkedInCount} of {coaches.length} checked in today</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <Input 
+            placeholder="Search by name or phone..." 
+            value={mainCoachSearch} 
+            onChange={(e) => setMainCoachSearch(e.target.value)}
+            className="w-48 sm:w-64"
+          />
           <Button variant="outline" onClick={openAdd} className="gap-2">
-            <Plus className="w-4 h-4" /> Add Coach
+            <Plus className="w-4 h-4" /> Add
           </Button>
           <Button data-testid="btn-coach-checkin-modal" onClick={() => setCheckInModal(true)} className="gap-2">
-            <CheckCircle2 className="w-4 h-4" /> Coach Check-In
+            <CheckCircle2 className="w-4 h-4" /> Check-In
           </Button>
         </div>
       </div>
 
-      <Card className="bg-muted/30">
-        <CardContent className="p-4">
-          <div className="flex flex-wrap gap-4 text-sm mb-3">
-            <div><p className="text-xs text-muted-foreground">Monthly Revenue (commission base)</p><p className="font-bold">{monthlyRevenue.toLocaleString()} EGP</p></div>
-            <div><p className="text-xs text-muted-foreground">New Members This Month</p><p className="font-bold">{newMembersThisMonth}</p></div>
-          </div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Today's Check-In Status</p>
-          <div className="flex flex-wrap gap-3">
-            {coaches.map(c => {
-              const isCheckedIn = checkIns.some(ci => ci.coach_id === c.id);
-              return (
-                <div key={c.id} data-testid={`coach-status-${c.id}`} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${isCheckedIn ? 'bg-emerald-50 border-emerald-200' : 'bg-card border-border'}`}>
-                  <div className={`w-2 h-2 rounded-full ${isCheckedIn ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-                  <span className="text-sm font-medium">{c.name}</span>
-                  {isCheckedIn ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <Clock className="w-3.5 h-3.5 text-muted-foreground" />}
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {coaches.map(coach => {
-          const earnings = calcEarnings(coach);
-          const sessions = getCoachSessionsThisMonth(coach.id);
+        {coaches.filter(c => c.name.toLowerCase().includes(mainCoachSearch.toLowerCase()) || (c.phone && c.phone.includes(mainCoachSearch))).map(coach => {
+          const stats = calculateCoachPayroll(coach, new Date().getMonth(), new Date().getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth);
+          const sessions = stats.attendedSessions;
+          const todayName = DAYS[new Date().getDay()];
+          const coachTotalSlotsToday = classes.filter(c => c.coach_id === coach.id).flatMap(c => c.schedules || []).filter(s => s.day === todayName).length;
+          const checkInsTodayCount = checkIns.filter(ci => ci.coach_id === coach.id).length;
+
           return (
             <Card key={coach.id} data-testid={`coach-card-${coach.id}`} className="hover:shadow-md transition-shadow">
               <CardContent className="p-5 space-y-4">
@@ -209,7 +211,20 @@ export default function Coaches() {
                     <span className="text-base font-bold text-[#ffc700]">{coach.name.charAt(0)}</span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold">{coach.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold truncate">{coach.name}</p>
+                      {coachTotalSlotsToday > 0 && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          {Array.from({ length: coachTotalSlotsToday }).map((_, i) => (
+                            <div 
+                              key={i} 
+                              className={`w-2.5 h-2.5 rounded-full border ${i < checkInsTodayCount ? 'bg-emerald-500 border-emerald-600' : 'bg-transparent border-gray-400'}`} 
+                              title={`Slot ${i + 1} of ${coachTotalSlotsToday}`}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <div className="flex items-center gap-1 flex-wrap mt-1">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${paymentTypeColors[coach.payment_type]}`}>
                         {paymentTypeLabels[coach.payment_type]}
@@ -225,25 +240,44 @@ export default function Coaches() {
                     </button>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="p-2.5 rounded-lg bg-muted/50 text-center">
-                    <p className="text-lg font-bold">{sessions}</p>
-                    <p className="text-xs text-muted-foreground">Sessions (Month)</p>
+                
+                {coach.payment_type !== 'commission' && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="p-2.5 rounded-lg bg-muted/50 text-center flex flex-col justify-center">
+                      <p className="text-lg font-bold">{stats.scheduledSlotsInMonth}</p>
+                      <p className="text-xs text-muted-foreground">Expected Slots</p>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-muted/50 text-center flex flex-col justify-center">
+                      <p className="text-lg font-bold">{stats.attendedSessions}</p>
+                      <p className="text-xs text-muted-foreground">Attended Slots</p>
+                    </div>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-muted/50 text-center">
-                    <p className="text-lg font-bold">
-                      {coach.payment_type === 'salary' ? `${coach.rate.toLocaleString()}` :
-                       coach.payment_type === 'per_session' ? `${coach.rate}/ses` : `${coach.rate}%`}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Rate</p>
+                )}
+                
+                {coach.payment_type === 'commission' && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="p-2.5 rounded-lg bg-muted/50 text-center">
+                      <p className="text-lg font-bold">{sessions}</p>
+                      <p className="text-xs text-muted-foreground">Check-ins</p>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-muted/50 text-center">
+                      <p className="text-lg font-bold">{coach.rate}%</p>
+                      <p className="text-xs text-muted-foreground">Rate</p>
+                    </div>
                   </div>
-                </div>
+                )}
+
                 <div className="p-3 rounded-lg border bg-card">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2"><DollarSign className="w-4 h-4 text-primary" /><span className="text-sm font-medium">Monthly Payroll</span></div>
-                    <span className="text-base font-bold">{earnings.toLocaleString()} EGP</span>
+                    <span className="text-base font-bold">{stats.calculatedAmount.toLocaleString()} EGP</span>
                   </div>
-                  {coach.payment_type === 'per_session' && <p className="text-xs text-muted-foreground mt-1">{sessions} × {coach.rate} EGP</p>}
+                  {stats.missedSessions > 0 && coach.payment_type !== 'commission' && (
+                    <div className="text-xs text-red-500 font-semibold mt-1">
+                      Deducted {Math.round(stats.deduction).toLocaleString()} EGP for {stats.missedSessions} missed session(s)
+                    </div>
+                  )}
+                  {coach.payment_type === 'per_session' && stats.missedSessions === 0 && <p className="text-xs text-muted-foreground mt-1">{sessions} sessions × {coach.rate} EGP</p>}
                   {coach.payment_type === 'commission' && (
                     <p className="text-xs text-muted-foreground mt-1">
                       {coach.rate}% of {coach.commission_base === 'members' ? `${newMembersThisMonth} new members (×1000)` : `${monthlyRevenue.toLocaleString()} EGP revenue`}
@@ -263,21 +297,26 @@ export default function Coaches() {
         <CardHeader className="pb-3"><CardTitle className="text-sm font-semibold">Monthly Payroll Summary</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {coaches.map(coach => (
-              <div key={coach.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium">{coach.name}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${paymentTypeColors[coach.payment_type]}`}>{paymentTypeLabels[coach.payment_type]}</span>
-                  {coach.payment_type === 'commission' && (
-                    <span className="text-xs text-muted-foreground">{coach.rate}% on {commissionBaseLabels[coach.commission_base ?? 'revenue']}</span>
-                  )}
+            {coaches.map(coach => {
+              const stats = calculateCoachPayroll(coach, new Date().getMonth(), new Date().getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth);
+              return (
+                <div key={coach.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium">{coach.name}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${paymentTypeColors[coach.payment_type]}`}>{paymentTypeLabels[coach.payment_type]}</span>
+                    {coach.payment_type === 'commission' && (
+                      <span className="text-xs text-muted-foreground">{coach.rate}% on {commissionBaseLabels[coach.commission_base ?? 'revenue']}</span>
+                    )}
+                  </div>
+                  <span className="text-sm font-bold">{stats.calculatedAmount.toLocaleString()} EGP</span>
                 </div>
-                <span className="text-sm font-bold">{calcEarnings(coach).toLocaleString()} EGP</span>
-              </div>
-            ))}
+              );
+            })}
             <div className="flex items-center justify-between py-2 pt-3">
               <span className="text-sm font-bold">Total Payroll</span>
-              <span className="text-base font-bold text-primary">{coaches.reduce((s, c) => s + calcEarnings(c), 0).toLocaleString()} EGP</span>
+              <span className="text-base font-bold text-primary">
+                {coaches.reduce((s, c) => s + calculateCoachPayroll(c, new Date().getMonth(), new Date().getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth).calculatedAmount, 0).toLocaleString()} EGP
+              </span>
             </div>
           </div>
         </CardContent>

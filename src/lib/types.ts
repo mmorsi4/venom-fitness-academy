@@ -82,6 +82,7 @@ export interface SubscriptionPackage {
   freeze_days: number;
   invitations: number;
   inbody_sessions: number;
+  is_clinic: boolean;
   created_at: string;
 }
 
@@ -134,6 +135,7 @@ export interface Lead {
   notes: string[];
   follow_up_date: string;
   assigned_to: string | null;
+  inviting_member_id?: string | null;
   calls_made: number;
   created_at: string;
 }
@@ -235,7 +237,7 @@ export interface Database {
     Tables: {
       profiles: { Row: Profile; Insert: Omit<Profile, 'created_at'>; Update: Partial<Omit<Profile, 'id' | 'created_at'>> };
       members: { Row: Member; Insert: Omit<Member, 'id' | 'created_at' | 'coach_name'>; Update: Partial<Omit<Member, 'id' | 'created_at' | 'coach_name'>> };
-      packages: { Row: SubscriptionPackage; Insert: Omit<SubscriptionPackage, 'id' | 'created_at'>; Update: Partial<Omit<SubscriptionPackage, 'id' | 'created_at'>> };
+      packages: { Row: SubscriptionPackage; Insert: Omit<SubscriptionPackage, 'id' | 'created_at' | 'is_clinic'> & { is_clinic?: boolean }; Update: Partial<Omit<SubscriptionPackage, 'id' | 'created_at'>> };
       invoices: { Row: Invoice; Insert: Omit<Invoice, 'uuid' | 'id' | 'created_at'>; Update: Partial<Omit<Invoice, 'uuid' | 'id' | 'created_at'>> };
       discounts: { Row: Discount; Insert: Omit<Discount, 'id' | 'created_at' | 'member_ids' | 'invoice_ids'>; Update: Partial<Omit<Discount, 'id' | 'created_at' | 'member_ids' | 'invoice_ids'>> };
       coaches: { Row: Coach; Insert: Omit<Coach, 'id' | 'created_at'>; Update: Partial<Omit<Coach, 'id' | 'created_at'>> };

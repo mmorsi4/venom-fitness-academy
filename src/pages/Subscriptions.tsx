@@ -20,11 +20,12 @@ interface PkgForm {
   freezeDays: string;
   invitations: string;
   inBodySessions: string;
+  isClinic: boolean;
 }
 
 const emptyForm: PkgForm = {
   name: "", sessions: "", price: "", validityDays: "30",
-  freezeDays: "7", invitations: "1", inBodySessions: "1",
+  freezeDays: "7", invitations: "1", inBodySessions: "1", isClinic: false,
 };
 
 function pkgToForm(p: SubscriptionPackage): PkgForm {
@@ -32,7 +33,7 @@ function pkgToForm(p: SubscriptionPackage): PkgForm {
     name: p.name, sessions: p.sessions === 999 ? "0" : String(p.sessions),
     price: String(p.price), validityDays: String(p.validity_days),
     freezeDays: String(p.freeze_days), invitations: String(p.invitations),
-    inBodySessions: String(p.inbody_sessions),
+    inBodySessions: String(p.inbody_sessions), isClinic: p.is_clinic || false,
   };
 }
 
@@ -76,6 +77,7 @@ export default function Subscriptions() {
           freeze_days: Number(form.freezeDays) || 7,
           invitations: Number(form.invitations) || 0,
           inbody_sessions: Number(form.inBodySessions) || 0,
+          is_clinic: form.isClinic,
         }
       }, {
         onSuccess: () => {
@@ -93,6 +95,7 @@ export default function Subscriptions() {
         freeze_days: Number(form.freezeDays) || 7,
         invitations: Number(form.invitations) || 0,
         inbody_sessions: Number(form.inBodySessions) || 0,
+        is_clinic: form.isClinic,
       }, {
         onSuccess: () => {
           toast.success(`Package created: ${form.name}`);
@@ -146,7 +149,10 @@ export default function Subscriptions() {
                     <Package className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <CardTitle className="text-base">{pkg.name}</CardTitle>
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-base">{pkg.name}</CardTitle>
+                      {pkg.is_clinic && <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Clinic</Badge>}
+                    </div>
                     <p className="text-sm text-muted-foreground mt-0.5">{pkg.validity_days}-day validity</p>
                   </div>
                 </div>
@@ -237,6 +243,19 @@ export default function Subscriptions() {
             <div className="space-y-1.5">
               <Label>Package Name *</Label>
               <Input placeholder="e.g. 12 Sessions" value={form.name} onChange={f('name')} />
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="is-clinic-pkg"
+                checked={form.isClinic}
+                onChange={(e) => setForm(p => ({ ...p, isClinic: e.target.checked }))}
+                className="rounded border-gray-300 text-primary focus:ring-primary"
+              />
+              <Label htmlFor="is-clinic-pkg" className="text-sm font-medium leading-none">
+                This is a Clinic Package
+              </Label>
             </div>
 
             <div className="space-y-2">

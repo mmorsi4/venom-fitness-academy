@@ -100,6 +100,7 @@ export default function Invoices() {
   const [filterPackage, setFilterPackage] = useState("all");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
+  const [filterClinicOnly, setFilterClinicOnly] = useState(false);
 
   const filtered = invoices.filter(i => {
     // Status tab filter
@@ -135,11 +136,17 @@ export default function Invoices() {
       if (invoiceDate > toDate) return false;
     }
 
+    if (filterClinicOnly) {
+      const pkg = packages.find(p => p.id === i.package_id);
+      if (!pkg?.is_clinic) return false;
+    }
+
     return true;
   });
 
   const selectedPackage = packages.find(p => p.id === form.packageId);
   const selectedMember = members.find(m => m.uuid === form.memberId);
+  const createAvailablePackages = packages.filter(p => selectedMember?.id === -1 ? p.is_clinic : true);
   const activeDiscounts = discounts.filter(d => d.active);
   const selectedGroup = activeDiscounts.find(d => d.id === form.discountGroupId);
 
@@ -331,6 +338,18 @@ export default function Invoices() {
           className="w-36"
           title="To date"
         />
+        <div className="flex items-center space-x-2 bg-muted/30 px-3 rounded-md border border-border/50">
+          <input
+            type="checkbox"
+            id="clinic-invoices-toggle"
+            checked={filterClinicOnly}
+            onChange={(e) => setFilterClinicOnly(e.target.checked)}
+            className="rounded border-gray-300 text-primary focus:ring-primary"
+          />
+          <Label htmlFor="clinic-invoices-toggle" className="text-sm font-medium leading-none cursor-pointer">
+            Clinic Only
+          </Label>
+        </div>
       </div>
 
       {filtered.length === 0 ? (
@@ -435,7 +454,7 @@ export default function Invoices() {
               <Label>Package</Label>
               <Select value={form.packageId} onValueChange={v => setForm(p => ({ ...p, packageId: v }))}>
                 <SelectTrigger data-testid="select-invoice-package"><SelectValue placeholder="Select package..." /></SelectTrigger>
-                <SelectContent>{packages.map(p => <SelectItem key={p.id} value={p.id}>{p.name} — {p.price} EGP</SelectItem>)}</SelectContent>
+                <SelectContent>{createAvailablePackages.map(p => <SelectItem key={p.id} value={p.id}>{p.name} — {p.price} EGP</SelectItem>)}</SelectContent>
               </Select>
             </div>
 
