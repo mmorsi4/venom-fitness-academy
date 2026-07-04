@@ -11,6 +11,7 @@ import {
 import { usePackages, useMembers, useCreatePackage, useUpdatePackage, useDeletePackage } from "@/hooks/use-data";
 import type { SubscriptionPackage } from "@/lib/types";
 import { toast } from "sonner";
+import { useAuth } from "@/lib/auth";
 
 interface PkgForm {
   name: string;
@@ -38,6 +39,7 @@ function pkgToForm(p: SubscriptionPackage): PkgForm {
 }
 
 export default function Subscriptions() {
+  const { isAdmin } = useAuth();
   const { data: packages = [] } = usePackages();
   const { data: members = [] } = useMembers();
   const createPackage = useCreatePackage();
@@ -134,9 +136,11 @@ export default function Subscriptions() {
           <h1 className="text-2xl font-bold text-foreground">Subscription Packages</h1>
           <p className="text-sm text-muted-foreground">Manage available packages and their details</p>
         </div>
-        <Button onClick={openCreate} className="gap-2">
-          <Plus className="w-4 h-4" /> New Package
-        </Button>
+        {isAdmin && (
+          <Button onClick={openCreate} className="gap-2">
+            <Plus className="w-4 h-4" /> New Package
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -159,12 +163,16 @@ export default function Subscriptions() {
                 <div className="flex items-center gap-2">
                   <p className="text-2xl font-bold text-foreground">{pkg.price}<span className="text-sm font-normal text-muted-foreground ml-1">EGP</span></p>
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(pkg)} className="h-7 w-7 p-0">
-                      <Pencil className="w-3.5 h-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(pkg)} className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
+                    {isAdmin && (
+                      <>
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(pkg)} className="h-7 w-7 p-0">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(pkg)} className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

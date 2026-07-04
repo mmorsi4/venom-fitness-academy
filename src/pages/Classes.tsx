@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Pencil, Trash2, Calendar as CalendarIcon, Clock, Users, X, Search, LayoutGrid, CalendarDays } from "lucide-react";
 import { toast } from "sonner";
 import type { Class, ClassSchedule } from "@/lib/types";
+import { useAuth } from "@/lib/auth";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -23,6 +24,7 @@ interface ClassForm {
 const emptyForm: ClassForm = { name: "", sportId: "", coachId: "", schedules: [], capacity: "20" };
 
 export default function Classes() {
+  const { isAdmin } = useAuth();
   const { data: classes = [], isLoading } = useClasses();
   const { data: sports = [] } = useSports();
   const { data: coaches = [] } = useCoaches();
@@ -117,7 +119,9 @@ export default function Classes() {
           <h1 className="text-2xl font-bold text-foreground">Classes</h1>
           <p className="text-sm text-muted-foreground">{classes.length} active classes</p>
         </div>
-        <Button onClick={openAdd} className="gap-2 shrink-0"><Plus className="w-4 h-4" /> Add Class</Button>
+        {isAdmin && (
+          <Button onClick={openAdd} className="gap-2 shrink-0"><Plus className="w-4 h-4" /> Add Class</Button>
+        )}
       </div>
 
       {/* Filters and View Toggle */}
@@ -162,14 +166,16 @@ export default function Classes() {
                       <CardTitle className="text-lg font-bold truncate">{cls.name}</CardTitle>
                       <p className="text-sm text-primary font-medium mt-0.5">{cls.sport_name ?? 'Unknown Sport'}</p>
                     </div>
-                    <div className="flex shrink-0 gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(cls)}>
-                        <Pencil className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => setConfirmDelete(cls)}>
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
+                    {isAdmin && (
+                      <div className="flex shrink-0 gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(cls)}>
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => setConfirmDelete(cls)}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="p-4 pt-2 flex-1 flex flex-col gap-3">

@@ -16,9 +16,9 @@ import {
   useCoachCheckInsToday, useCheckInCoach,
   useCoachCheckInsForMonth, useClasses
 } from "@/hooks/use-data";
-import type { Coach } from "@/lib/types";
 import { toast } from "sonner";
 import { calculateCoachPayroll } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
 
 const paymentTypeColors: Record<string, string> = {
   salary: "bg-blue-100 text-blue-700 border border-blue-200",
@@ -42,8 +42,8 @@ interface CoachForm {
 }
 
 const emptyForm: CoachForm = { name: "", phone: "", paymentType: "salary", rate: "", commissionBase: "revenue" };
-
 export default function Coaches() {
+  const { isAdmin } = useAuth();
   const { data: coaches = [] } = useCoaches();
   const { data: invoices = [] } = useInvoices();
   const { data: members = [] } = useMembers();
@@ -184,9 +184,11 @@ export default function Coaches() {
             onChange={(e) => setMainCoachSearch(e.target.value)}
             className="w-48 sm:w-64"
           />
-          <Button variant="outline" onClick={openAdd} className="gap-2">
-            <Plus className="w-4 h-4" /> Add
-          </Button>
+          {isAdmin && (
+            <Button variant="outline" onClick={openAdd} className="gap-2">
+              <Plus className="w-4 h-4" /> Add
+            </Button>
+          )}
           <Button data-testid="btn-coach-checkin-modal" onClick={() => setCheckInModal(true)} className="gap-2">
             <CheckCircle2 className="w-4 h-4" /> Check-In
           </Button>
@@ -234,11 +236,13 @@ export default function Coaches() {
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button onClick={() => openEdit(coach)} className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground">
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  {isAdmin && (
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button onClick={() => openEdit(coach)} className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
                 
                 {coach.payment_type !== 'commission' && (
@@ -272,7 +276,7 @@ export default function Coaches() {
                     <div className="flex items-center gap-2"><DollarSign className="w-4 h-4 text-primary" /><span className="text-sm font-medium">Monthly Payroll</span></div>
                     <span className="text-base font-bold">{stats.calculatedAmount.toLocaleString()} EGP</span>
                   </div>
-                  {stats.missedSessions > 0 && coach.payment_type !== 'commission' && (
+                  {stats.missedSessions > 0 && coach.payment_type === 'salary' && (
                     <div className="text-xs text-red-500 font-semibold mt-1">
                       Deducted {Math.round(stats.deduction).toLocaleString()} EGP for {stats.missedSessions} missed session(s)
                     </div>

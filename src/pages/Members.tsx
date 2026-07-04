@@ -356,9 +356,9 @@ export default function Members() {
                           </div>
                           <p className="text-xs text-muted-foreground">
                             {m.id === -1 ? (
-                              <span className="text-amber-600 font-medium">Clinic Visitor</span>
+                              <span className="text-teal-600 font-medium">Clinic Visitor</span>
                             ) : (
-                              <>#{m.id ?? '?'}</>
+                              <>{`#${m.id ?? '?'}`}</>
                             )}
                             {m.gender && ` · ${m.gender}`}
                             {age !== null && ` · ${age}y`}
@@ -403,6 +403,11 @@ export default function Members() {
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           Expires: {m.expires_at ? format(new Date(m.expires_at), "dd MMM yyyy") : 'N/A'}
                         </div>
+                        {m.pending_subscription_date && (
+                          <div className="flex items-center gap-2 text-xs text-amber-600 font-medium">
+                            Pending Activation: {format(new Date(m.pending_subscription_date), "dd MMM yyyy")}
+                          </div>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>

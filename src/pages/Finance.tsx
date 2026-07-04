@@ -286,13 +286,11 @@ export default function Finance() {
               {filteredInvoices.length === 0 && (
                 <tr><td colSpan={5} className="py-2 text-center italic text-gray-500">No income recorded for this period.</td></tr>
               )}
-            </tbody>
-            <tfoot>
               <tr className="border-t border-black font-bold text-sm">
                 <td colSpan={4} className="py-2 text-right">TOTAL INCOME</td>
                 <td className="py-2 text-right">{totalIncome.toLocaleString()}</td>
               </tr>
-            </tfoot>
+            </tbody>
           </table>
         </div>
 
@@ -333,7 +331,7 @@ export default function Finance() {
                             Expected: {coach.scheduledSlotsInMonth} slots | Attended: {coach.attendedSessions} slots
                           </p>
                         )}
-                        {coach.missedSessions > 0 && (
+                        {coach.missedSessions > 0 && coach.payment_type === 'salary' && (
                           <p className="text-xs font-semibold text-red-500 mt-0.5">
                             Deduction: -{Math.round(coach.deduction).toLocaleString()} EGP (Missed {coach.missedSessions} slots)
                           </p>
@@ -349,13 +347,11 @@ export default function Finance() {
               {filteredExpenses.length === 0 && coachPayrolls.length === 0 && (
                 <tr><td colSpan={4} className="py-2 text-center italic text-gray-500">No expenses recorded for this period.</td></tr>
               )}
-            </tbody>
-            <tfoot>
               <tr className="border-t border-black font-bold text-sm">
                 <td colSpan={3} className="py-2 text-right">TOTAL EXPENSES</td>
                 <td className="py-2 text-right">{totalExpenses.toLocaleString()}</td>
               </tr>
-            </tfoot>
+            </tbody>
           </table>
         </div>
 
@@ -725,7 +721,7 @@ export default function Finance() {
                                 Expected: {coach.scheduledSlotsInMonth} slots | Attended: {coach.attendedSessions} slots
                               </p>
                             )}
-                            {coach.missedSessions > 0 && (
+                            {coach.missedSessions > 0 && coach.payment_type === 'salary' && (
                               <p className="text-[10px] font-semibold text-red-500 mt-0.5">
                                 Deduction: -{Math.round(coach.deduction).toLocaleString()} EGP (Missed {coach.missedSessions} slots)
                               </p>

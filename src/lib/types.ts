@@ -26,7 +26,6 @@ export type CoachPaymentType = 'salary' | 'per_session' | 'commission';
 export type CommissionBase = 'revenue' | 'members';
 export type LeadStatus = 'New' | 'Contacted' | 'Follow-up' | 'Converted' | 'Lost';
 export type LiabilityType = 'installment' | 'one_time';
-export type DiscountKind = 'seasonal' | 'manual';
 export type DiscountType = 'fixed' | 'percentage';
 export type AuditActionType =
   | 'override_checkin'
@@ -55,9 +54,11 @@ export interface Member {
   gender: Gender | null;
   status: MemberStatus;
   sessions_remaining: number;
+  session_debt: number;
   expires_at: string | null;
   member_since: string;
   last_subscription_date?: string | null;
+  pending_subscription_date?: string | null;
   package_id: string | null;
   package_name: string;
   class_id: string | null;
@@ -101,19 +102,19 @@ export interface Invoice {
   status: InvoiceStatus;
   payment_method: PaymentMethod;
   created_at: string;
+  activation_date: string;
+  is_applied: boolean;
 }
 
 export interface Discount {
   id: string;
   name: string;
-  type: DiscountKind;
   discount_type: DiscountType;
   value: number;
   active: boolean;
+  is_joint: boolean;
+  joint_count: number;
   created_at: string;
-  // Joined / computed
-  member_ids?: string[];
-  invoice_ids?: string[];
 }
 
 export interface Coach {
@@ -249,8 +250,7 @@ export interface Database {
       coach_check_ins: { Row: CoachCheckIn; Insert: Omit<CoachCheckIn, 'id' | 'created_at'>; Update: never };
       classes: { Row: Class; Insert: Omit<Class, 'id' | 'created_at' | 'sport_name' | 'coach_name'>; Update: Partial<Omit<Class, 'id' | 'created_at' | 'sport_name' | 'coach_name'>> };
       sports: { Row: Sport; Insert: Omit<Sport, 'id' | 'created_at'>; Update: Partial<Omit<Sport, 'id' | 'created_at'>> };
-      discount_members: { Row: DiscountMember; Insert: DiscountMember; Update: never };
-      discount_invoices: { Row: DiscountInvoice; Insert: DiscountInvoice; Update: never };
+
       roles: { Row: Role; Insert: Omit<Role, 'id' | 'created_at'>; Update: Partial<Omit<Role, 'id' | 'created_at'>> };
       user_roles: { Row: UserRoleMapping; Insert: Omit<UserRoleMapping, 'created_at'>; Update: Partial<Omit<UserRoleMapping, 'created_at'>> };
     };

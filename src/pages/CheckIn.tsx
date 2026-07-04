@@ -9,15 +9,16 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle
 } from "@/components/ui/alert-dialog";
-import { useMembers, useCheckInMember } from "@/hooks/use-data";
+import { useMembers, useCheckInMember, usePackages } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
-import type { Member } from "@/lib/types";
+import type { Member, SubscriptionPackage } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
 export default function CheckIn() {
   const { data: members = [] } = useMembers();
+  const { data: packages = [] } = usePackages();
   const checkInMutation = useCheckInMember();
   const { currentUser } = useAuth();
   
@@ -61,11 +62,23 @@ export default function CheckIn() {
     setSuccessMember(null);
   };
 
+  const isClinic = selectedMember 
+    ? (selectedMember.id === -1 || (packages.find(p => p.id === selectedMember.package_id)?.is_clinic || false))
+    : false;
+
   const handleCheckInClick = () => {
     if (!selectedMember) return;
     const isFrozen = selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date();
     
+    // 1. If frozen, we allow override check-in
+    // 2. If sessions are 0, -1, or -2, we allow override check-in (up to -3 max)
+    // 3. But NO overrides if the current package is a Clinic package
+
     if (isFrozen) {
+      if (isClinic) {
+        toast.error("Cannot override check-in for clinic packages.");
+        return;
+      }
       checkInMutation.mutate({
         memberId: selectedMember.uuid,
         isOverride: true,
@@ -87,11 +100,45 @@ export default function CheckIn() {
       return;
     }
 
-    const needsOverride = selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999);
+    const needsOverride = selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining > -3 && selectedMember.sessions_remaining !== 999);
+    
     if (needsOverride) {
-      toast.error("Cannot check in: Membership is expired or no sessions remaining.");
+      if (isClinic) {
+        toast.error("Cannot override check-in for clinic packages.");
+        return;
+      }
+      checkInMutation.mutate({
+        memberId: selectedMember.uuid,
+        isOverride: true,
+        payLater: false,
+        performedBy: currentUser?.id,
+        performerName: currentUser?.name
+      }, {
+        onSuccess: () => {
+          setCheckedInToday(prev => [...prev, selectedMember.uuid]);
+          setSuccessMember(selectedMember);
+          setSelectedMember(null);
+          setQuery("");
+          toast.success(`Check-in Override Successful`, { description: `Session debt increased or expired member checked in.` });
+        },
+        onError: (err) => {
+          toast.error(`Check-in override failed: ${err.message}`);
+        }
+      });
       return;
     }
+
+    const cantCheckIn = selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999;
+    if (cantCheckIn) {
+      toast.error("Cannot check in: Reached max session debt (-3).");
+      return;
+    }
+    
+    if (isClinic && selectedMember.sessions_remaining <= 0) {
+      toast.error("Cannot check in: No sessions remaining for clinic package.");
+      return;
+    }
+
     doCheckIn(selectedMember);
   };
 
@@ -133,7 +180,7 @@ export default function CheckIn() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-foreground">{m.name}</p>
-                <p className="text-sm text-muted-foreground">{m.id} · {m.phone}</p>
+                <p className="text-sm text-muted-foreground">{m.id === -1 ? 'Clinic Visitor' : m.id} · {m.phone}</p>
               </div>
               <StatusBadge status={m.status} />
             </button>
@@ -144,8 +191,9 @@ export default function CheckIn() {
       {/* Member card */}
       {selectedMember && (
         <Card className={
-          (selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999)) ? "border-red-300 bg-red-50" :
+          (selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999)) ? "border-red-300 bg-red-50" :
           selectedMember.status === 'expiring_soon' ? "border-amber-300 bg-amber-50" :
+          (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999) ? "border-orange-300 bg-orange-50" :
           "border-emerald-200 bg-emerald-50"
         }>
           <CardHeader className="pb-2">
@@ -163,7 +211,7 @@ export default function CheckIn() {
                     </span>
                   )}
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">{selectedMember.id} · {selectedMember.phone}</p>
+                <p className="text-sm text-muted-foreground">{selectedMember.id === -1 ? 'Clinic Visitor' : selectedMember.id} · {selectedMember.phone}</p>
               </div>
               <button onClick={() => setSelectedMember(null)} className="text-muted-foreground hover:text-foreground">✕</button>
             </div>
@@ -200,10 +248,17 @@ export default function CheckIn() {
               </div>
             )}
 
-            {selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999 && selectedMember.status !== 'expired' && (
+            {selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999 && selectedMember.status !== 'expired' && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-red-100 border border-red-200 text-red-800 text-sm">
                 <XCircle className="w-4 h-4 flex-shrink-0" />
-                <span>This member has no sessions remaining. Cannot check in.</span>
+                <span>This member has reached the maximum allowed session debt (-3). Cannot check in.</span>
+              </div>
+            )}
+
+            {selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining > -3 && selectedMember.sessions_remaining !== 999 && selectedMember.status !== 'expired' && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-orange-100 border border-orange-200 text-orange-800 text-sm">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <span>This member has {selectedMember.sessions_remaining} sessions. Overriding will incur session debt.</span>
               </div>
             )}
             
@@ -222,20 +277,24 @@ export default function CheckIn() {
             )}
 
             <div className="flex gap-2">
-              {!(selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999)) && (
+              {!(selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999) && !(isClinic && selectedMember.sessions_remaining <= 0) && (
                 <Button
                   data-testid="btn-checkin-confirm"
                   onClick={handleCheckInClick}
                   disabled={checkedInToday.includes(selectedMember.uuid) || checkInMutation.isPending}
-                  className={`flex-1 h-11 text-base font-semibold gap-2 ${selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date() ? 'bg-orange-500 hover:bg-orange-600 text-white' : ''}`}
+                  className={`flex-1 h-11 text-base font-semibold gap-2 ${(selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date()) || selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999) ? 'bg-orange-500 hover:bg-orange-600 text-white' : ''}`}
                 >
                   <CheckCircle2 className="w-5 h-5" />
                   {checkedInToday.includes(selectedMember.uuid) 
                     ? 'Already Checked In' 
-                    : (selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date() ? 'Override & Unfreeze' : 'Check In')}
+                    : (selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date()) 
+                        ? 'Override & Unfreeze' 
+                        : (selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999))
+                            ? 'Override Check In'
+                            : 'Check In'}
                 </Button>
               )}
-              <Button data-testid="btn-checkin-cancel" variant="outline" onClick={() => setSelectedMember(null)} className={!(selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999)) ? "" : "flex-1"}>Cancel</Button>
+              <Button data-testid="btn-checkin-cancel" variant="outline" onClick={() => setSelectedMember(null)} className={(!(selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999) && !(isClinic && selectedMember.sessions_remaining <= 0)) ? "" : "flex-1"}>Cancel</Button>
             </div>
           </CardContent>
         </Card>
@@ -248,8 +307,10 @@ export default function CheckIn() {
             <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
             <p className="text-xl font-bold text-emerald-800">{successMember.name}</p>
             <p className="text-sm text-emerald-700">Checked in successfully at {format(new Date(), "HH:mm")}</p>
-            <p className="text-sm text-muted-foreground">
-              {successMember.sessions_remaining === 999 ? "Unlimited sessions" : `${Math.max(0, successMember.sessions_remaining - 1)} sessions remaining`}
+            <p className="text-sm text-emerald-700">
+              {successMember.sessions_remaining === 999 
+                ? "Unlimited sessions" 
+                : `${successMember.sessions_remaining - 1} sessions remaining`}
             </p>
           </CardContent>
         </Card>

@@ -26,17 +26,24 @@ export async function getProfiles() {
 export async function getMembers() {
   // First, clean up any subscriptions that have expired
   await supabase.rpc('cleanup_expired_subscriptions');
+  await supabase.rpc('activate_pending_subscriptions');
 
   const { data, error } = await supabase
     .from('members')
-    .select('*, classes(id, name, schedules, sports(name), coaches(name)), invoices(created_at, package_id)')
+    .select('*, classes(id, name, schedules, sports(name), coaches(name)), invoices(created_at, package_id, is_applied, activation_date)')
     .order('created_at', { ascending: false });
   if (error) throw error;
   
   return (data ?? []).map((m: any) => {
     const validInvoices = (m.invoices || []).filter((i: any) => i.package_id != null);
-    validInvoices.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    const lastSubDate = validInvoices.length > 0 ? validInvoices[0].created_at : null;
+    
+    const appliedInvoices = validInvoices.filter((i: any) => i.is_applied);
+    appliedInvoices.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const lastSubDate = appliedInvoices.length > 0 ? appliedInvoices[0].created_at : null;
+
+    const pendingInvoices = validInvoices.filter((i: any) => !i.is_applied && i.activation_date);
+    pendingInvoices.sort((a: any, b: any) => new Date(a.activation_date).getTime() - new Date(b.activation_date).getTime());
+    const pendingSubDate = pendingInvoices.length > 0 ? pendingInvoices[0].activation_date : null;
 
     let class_info = null;
     if (m.classes) {
@@ -54,6 +61,7 @@ export async function getMembers() {
       coach_name: m.coaches?.name ?? null,
       class_info,
       last_subscription_date: lastSubDate,
+      pending_subscription_date: pendingSubDate,
       coaches: undefined,
       classes: undefined,
       invoices: undefined,
@@ -251,6 +259,7 @@ export async function deletePackage(id: string) {
 // ── Invoices ────────────────────────────────────────────────
 
 export async function getInvoices() {
+  await supabase.rpc('activate_pending_subscriptions');
   const { data, error } = await supabase
     .from('invoices')
     .select('*')
@@ -259,7 +268,7 @@ export async function getInvoices() {
   return data as Invoice[];
 }
 
-export async function createInvoice(inv: Omit<Invoice, 'uuid' | 'created_at' | 'id'>) {
+export async function createInvoice(inv: Omit<Invoice, 'uuid' | 'created_at' | 'id' | 'is_applied'>) {
   const { data, error } = await supabase.from('invoices').insert(inv).select().single();
   if (error) throw error;
   return data as Invoice;
@@ -285,73 +294,27 @@ export async function getDiscounts() {
     .order('created_at', { ascending: false });
   if (error) throw error;
 
-  // Fetch junction table data
-  const { data: dm } = await supabase.from('discount_members').select('*');
-  const { data: di } = await supabase.from('discount_invoices').select('*');
-
-  return (discounts ?? []).map((d: any) => ({
-    ...d,
-    member_ids: (dm ?? []).filter((r: any) => r.discount_id === d.id).map((r: any) => r.member_id),
-    invoice_ids: (di ?? []).filter((r: any) => r.discount_id === d.id).map((r: any) => r.invoice_id),
-  })) as Discount[];
+  return (discounts ?? []) as Discount[];
 }
 
 export async function createDiscount(
-  discount: Omit<Discount, 'id' | 'created_at' | 'member_ids' | 'invoice_ids'>,
-  memberIds: string[]
+  discount: Omit<Discount, 'id' | 'created_at'>
 ) {
   const { data, error } = await supabase.from('discounts').insert(discount).select().single();
   if (error) throw error;
-  if (memberIds.length > 0) {
-    const { error: jErr } = await supabase
-      .from('discount_members')
-      .insert(memberIds.map(mid => ({ discount_id: data.id, member_id: mid })));
-    if (jErr) throw jErr;
-  }
-  return { ...data, member_ids: memberIds, invoice_ids: [] } as Discount;
+  return data as Discount;
 }
 
 export async function updateDiscount(
   id: string,
-  updates: Partial<Discount>,
-  memberIds?: string[]
+  updates: Partial<Discount>
 ) {
-  const { member_ids, invoice_ids, ...clean } = updates as any;
+  const clean = updates;
   const { data, error } = await supabase.from('discounts').update(clean).eq('id', id).select().single();
   if (error) throw error;
-  if (memberIds !== undefined) {
-    await supabase.from('discount_members').delete().eq('discount_id', id);
-    if (memberIds.length > 0) {
-      await supabase
-        .from('discount_members')
-        .insert(memberIds.map(mid => ({ discount_id: id, member_id: mid })));
-    }
-  }
   return data as Discount;
 }
 
-export async function addDiscountInvoice(discountId: string, invoiceId: string) {
-  const { error } = await supabase
-    .from('discount_invoices')
-    .insert({ discount_id: discountId, invoice_id: invoiceId });
-  if (error) throw error;
-}
-
-export async function addDiscountMember(discountId: string, memberId: string) {
-  const { error } = await supabase
-    .from('discount_members')
-    .upsert({ discount_id: discountId, member_id: memberId });
-  if (error) throw error;
-}
-
-export async function removeDiscountMember(discountId: string, memberId: string) {
-  const { error } = await supabase
-    .from('discount_members')
-    .delete()
-    .eq('discount_id', discountId)
-    .eq('member_id', memberId);
-  if (error) throw error;
-}
 
 // ── Coaches ─────────────────────────────────────────────────
 

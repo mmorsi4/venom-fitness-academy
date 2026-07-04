@@ -12,6 +12,7 @@ export interface AppUser {
 
 interface AuthContextType {
   currentUser: AppUser | null;
+  isAdmin: boolean;
   users: AppUser[];
   availableRoles: Role[];
   loading: boolean;
@@ -216,9 +217,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { ok: true };
   };
 
+  const isAdmin = currentUser?.roles.some(r => r.name.toLowerCase() === 'admin') ?? false;
+
   return (
     <AuthContext.Provider value={{ 
-      currentUser, users, availableRoles, loading, 
+      currentUser, isAdmin, users, availableRoles, loading, 
       login, logout, 
       createUser, updateUser, deleteUser, refreshUsers,
       createRole, updateRole, deleteRole, refreshRoles

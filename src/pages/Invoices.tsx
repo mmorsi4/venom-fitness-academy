@@ -48,6 +48,8 @@ const emptyForm = {
   customDiscountValue: "",
   customDiscountDescription: "",
   invoiceDate: "",
+  activationDate: "",
+  customId: "",
 };
 
 export default function Invoices() {
@@ -89,7 +91,7 @@ export default function Invoices() {
 
   // Edit invoice state
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null);
-  const [editForm, setEditForm] = useState({ paidAmount: "", paymentMethod: "Cash" });
+  const [editForm, setEditForm] = useState({ paidAmount: "", paymentMethod: "Cash", status: "paid" as any, activationDate: "" });
 
   // Delete invoice state
   const [confirmDelete, setConfirmDelete] = useState<Invoice | null>(null);
@@ -100,6 +102,8 @@ export default function Invoices() {
   const [filterPackage, setFilterPackage] = useState("all");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
+  const [filterActivationDateFrom, setFilterActivationDateFrom] = useState("");
+  const [filterActivationDateTo, setFilterActivationDateTo] = useState("");
   const [filterClinicOnly, setFilterClinicOnly] = useState(false);
 
   const filtered = invoices.filter(i => {
@@ -141,6 +145,20 @@ export default function Invoices() {
       if (!pkg?.is_clinic) return false;
     }
 
+    // Activation Date range filter
+    if (filterActivationDateFrom) {
+      if (!i.activation_date) return false;
+      const activationDate = new Date(i.activation_date);
+      if (activationDate < new Date(filterActivationDateFrom)) return false;
+    }
+    if (filterActivationDateTo) {
+      if (!i.activation_date) return false;
+      const activationDate = new Date(i.activation_date);
+      const toDate = new Date(filterActivationDateTo);
+      toDate.setHours(23, 59, 59, 999);
+      if (activationDate > toDate) return false;
+    }
+
     return true;
   });
 
@@ -173,6 +191,13 @@ export default function Invoices() {
   const handleCreate = () => {
     if (!form.memberId || !form.packageId) { toast.error("Select a member and package"); return; }
     if (needsDescription) { toast.error("A reason is required for custom discounts"); return; }
+    
+    if (form.invoiceDate && form.activationDate) {
+      if (new Date(form.invoiceDate) > new Date(form.activationDate)) {
+        toast.error("Invoice date cannot be after the activation date.");
+        return;
+      }
+    }
 
     const invStatus: 'paid' | 'partial' | 'unpaid' =
       paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
@@ -192,6 +217,8 @@ export default function Invoices() {
       status: invStatus,
       payment_method: form.paymentMethod,
       created_at: form.invoiceDate ? new Date(form.invoiceDate).toISOString() : new Date().toISOString(),
+      activation_date: form.activationDate ? new Date(form.activationDate).toISOString() : (form.invoiceDate ? new Date(form.invoiceDate).toISOString() : new Date().toISOString()),
+      ...(form.customId.trim() ? { id: form.customId.trim() } : {}),
     } as any, {
       onSuccess: () => {
         toast.success(`Invoice created`);
@@ -209,6 +236,8 @@ export default function Invoices() {
     setEditForm({
       paidAmount: String(inv.paid_amount),
       paymentMethod: inv.payment_method,
+      status: inv.status,
+      activationDate: inv.activation_date ? inv.activation_date.split('T')[0] : "",
     });
   };
 
@@ -218,30 +247,31 @@ export default function Invoices() {
     const newStatus: 'paid' | 'partial' | 'unpaid' =
       newPaid >= editInvoice.total_amount ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
 
-    updateInvoice.mutate({
-      uuid: editInvoice.uuid,
-      updates: {
-        paid_amount: newPaid,
-        payment_method: editForm.paymentMethod as any,
-        status: newStatus,
-      }
-    }, {
-      onSuccess: () => {
-        createAuditLog.mutate({
-          action: 'Edit Invoice',
-          action_type: 'edit_payment',
-          performed_by: currentUser?.id ?? null,
-          performer_name: currentUser?.name ?? 'System',
-          member_id: editInvoice.member_id,
-          member_name: editInvoice.member_name,
-          timestamp: new Date().toISOString(),
-          details: `Edited invoice ${editInvoice.id}: paid ${editInvoice.paid_amount} → ${newPaid} EGP, method: ${editForm.paymentMethod}`,
-        });
-        toast.success(`Invoice ${editInvoice.id} updated`);
-        setEditInvoice(null);
-      },
-      onError: (err) => toast.error(`Error: ${err.message}`),
-    });
+      updateInvoice.mutate({
+        uuid: editInvoice.uuid,
+        updates: {
+          paid_amount: newPaid,
+          payment_method: editForm.paymentMethod as any,
+          status: newStatus,
+          activation_date: editForm.activationDate ? new Date(editForm.activationDate).toISOString() : editInvoice.activation_date,
+        }
+      }, {
+        onSuccess: () => {
+          createAuditLog.mutate({
+            action: 'Edit Invoice',
+            action_type: 'edit_payment',
+            performed_by: currentUser?.id ?? null,
+            performer_name: currentUser?.name ?? 'System',
+            member_id: editInvoice.member_id,
+            member_name: editInvoice.member_name,
+            timestamp: new Date().toISOString(),
+            details: `Edited invoice ${editInvoice.id}: paid ${editInvoice.paid_amount} → ${newPaid} EGP, method: ${editForm.paymentMethod}`,
+          });
+          toast.success(`Invoice ${editInvoice.id} updated`);
+          setEditInvoice(null);
+        },
+        onError: (err: any) => toast.error(`Error: ${err.message}`),
+      });
   };
 
   const handleDeleteInvoice = (inv: Invoice) => {
@@ -350,6 +380,23 @@ export default function Invoices() {
             Clinic Only
           </Label>
         </div>
+        <div className="flex items-center space-x-2">
+          <Label className="text-xs text-muted-foreground shrink-0">Activation Date:</Label>
+          <Input
+            type="date"
+            value={filterActivationDateFrom}
+            onChange={e => setFilterActivationDateFrom(e.target.value)}
+            className="w-36"
+            title="From activation date"
+          />
+          <Input
+            type="date"
+            value={filterActivationDateTo}
+            onChange={e => setFilterActivationDateTo(e.target.value)}
+            className="w-36"
+            title="To activation date"
+          />
+        </div>
       </div>
 
       {filtered.length === 0 ? (
@@ -439,7 +486,7 @@ export default function Invoices() {
                 data-testid="select-invoice-member"
                 options={members.map(m => ({
                   value: m.uuid,
-                  label: `${m.name} (${m.id})`,
+                  label: `${m.name} (${m.id === -1 ? 'Clinic Visitor' : m.id})`,
                   searchTerms: `${m.phone} ${m.id}`,
                 }))}
                 value={form.memberId}
@@ -558,16 +605,38 @@ export default function Invoices() {
               </div>
             </div>
 
-            {/* Invoice Date */}
+            {/* Custom Invoice ID */}
             <div className="space-y-1.5">
-              <Label>Invoice Date</Label>
+              <Label>Custom Invoice ID</Label>
               <Input
-                type="date"
-                data-testid="input-invoice-date"
-                value={form.invoiceDate}
-                onChange={e => setForm(p => ({ ...p, invoiceDate: e.target.value }))}
+                placeholder="Leave empty for auto-generated"
+                value={form.customId}
+                onChange={e => setForm(p => ({ ...p, customId: e.target.value }))}
               />
-              <p className="text-xs text-muted-foreground">Leave empty for today's date</p>
+            </div>
+
+            {/* Invoice Date & Activation Date */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Invoice Date</Label>
+                <Input
+                  type="date"
+                  data-testid="input-invoice-date"
+                  value={form.invoiceDate}
+                  onChange={e => setForm(p => ({ ...p, invoiceDate: e.target.value }))}
+                />
+                <p className="text-[10px] text-muted-foreground">Leave empty for today</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Activation Date</Label>
+                <Input
+                  type="date"
+                  data-testid="input-activation-date"
+                  value={form.activationDate}
+                  onChange={e => setForm(p => ({ ...p, activationDate: e.target.value }))}
+                />
+                <p className="text-[10px] text-muted-foreground">Leave empty to activate today</p>
+              </div>
             </div>
 
             {selectedPackage && (
@@ -617,6 +686,20 @@ export default function Invoices() {
                   {paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5 pt-2">
+              <Label>Activation Date</Label>
+              <Input
+                type="date"
+                value={editForm.activationDate}
+                onChange={e => setEditForm(p => ({ ...p, activationDate: e.target.value }))}
+                disabled={editInvoice?.activation_date ? new Date(editInvoice.activation_date).getTime() <= new Date().getTime() : false}
+              />
+              {editInvoice?.activation_date && new Date(editInvoice.activation_date).getTime() <= new Date().getTime() ? (
+                <p className="text-[10px] text-muted-foreground">Activation date has passed and cannot be changed.</p>
+              ) : (
+                <p className="text-[10px] text-muted-foreground">You can push the activation to a future date.</p>
+              )}
             </div>
           </div>
           <DialogFooter>

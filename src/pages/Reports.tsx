@@ -226,7 +226,7 @@ export default function Reports() {
                             </div>
                             <div>
                               <p className="font-medium text-foreground">{m.name}</p>
-                              <p className="text-xs text-muted-foreground">{m.id}{age !== null && ` · ${age}y`}{m.gender && ` · ${m.gender}`}</p>
+                              <p className="text-xs text-muted-foreground">{m.id === -1 ? 'Clinic Visitor' : m.id}{age !== null && ` · ${age}y`}{m.gender && ` · ${m.gender}`}</p>
                             </div>
                           </div>
                         </td>
