@@ -91,6 +91,7 @@ export interface Invoice {
   id: string;
   member_id: string;
   member_name: string;
+  class_id?: string | null;
   package_id: string | null;
   package_name: string;
   discount_id: string | null;

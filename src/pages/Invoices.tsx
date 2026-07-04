@@ -23,7 +23,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/SearchableSelect";
-import { useInvoices, usePackages, useMembers, useDiscounts, useCreateInvoice, useUpdateInvoice, useDeleteInvoice, useCreateAuditLog } from "@/hooks/use-data";
+import { useInvoices, usePackages, useMembers, useDiscounts, useCreateInvoice, useUpdateInvoice, useDeleteInvoice, useCreateAuditLog, useClasses } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
 import type { Invoice } from "@/lib/types";
 import { toast } from "sonner";
@@ -40,7 +40,7 @@ type DiscountMode = 'none' | 'group' | 'custom';
 type CustomDiscountType = 'fixed' | 'percentage';
 
 const emptyForm = {
-  memberId: "", packageId: "", paymentMethod: "Cash",
+  memberId: "", packageId: "", classId: "", paymentMethod: "Cash",
   paidAmount: "",
   discountMode: "none" as DiscountMode,
   discountGroupId: "",
@@ -56,6 +56,7 @@ export default function Invoices() {
   const { data: invoices = [] } = useInvoices();
   const { data: members = [] } = useMembers();
   const { data: packages = [] } = usePackages();
+  const { data: classes = [] } = useClasses();
   const { data: discounts = [] } = useDiscounts();
   const createInvoice = useCreateInvoice();
   const updateInvoice = useUpdateInvoice();
@@ -98,6 +99,9 @@ export default function Invoices() {
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchField, setSearchField] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [filterPaymentMethod, setFilterPaymentMethod] = useState("all");
   const [filterPackage, setFilterPackage] = useState("all");
   const [filterDateFrom, setFilterDateFrom] = useState("");
@@ -110,15 +114,28 @@ export default function Invoices() {
     // Status tab filter
     if (tab !== "all" && i.status !== tab) return false;
 
-    // Text search (invoice ID, member ID, member name, member phone)
+    // Smart search logic
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       const member = members.find(m => m.uuid === i.member_id);
-      const matchesSearch =
-        i.id.toLowerCase().includes(q) ||
-        member?.id.toString().includes(q) ||
-        i.member_name.toLowerCase().includes(q) ||
-        (member?.phone ?? "").includes(q);
+      const isNumeric = /^\\d+$/.test(searchQuery.trim());
+      let matchesSearch = false;
+      
+      if (searchField === "all") {
+        matchesSearch = i.id.toLowerCase().includes(q) ||
+                        i.member_name.toLowerCase().includes(q) ||
+                        (member?.phone ?? "").includes(searchQuery.trim());
+        if (member?.id !== -1 && isNumeric) {
+          matchesSearch = matchesSearch || member?.id.toString() === searchQuery.trim();
+        }
+      } else if (searchField === "id") {
+        matchesSearch = member?.id?.toString() === searchQuery.trim() || i.id.toLowerCase().includes(q);
+      } else if (searchField === "name") {
+        matchesSearch = i.member_name.toLowerCase().includes(q);
+      } else if (searchField === "phone") {
+        matchesSearch = (member?.phone ?? "").includes(searchQuery.trim());
+      }
+      
       if (!matchesSearch) return false;
     }
 
@@ -207,6 +224,7 @@ export default function Invoices() {
       member_name: selectedMember?.name ?? "",
       package_id: form.packageId,
       package_name: selectedPackage?.name ?? "",
+      class_id: form.classId === 'none' ? null : (form.classId || null),
       discount_id: form.discountMode === 'group' ? form.discountGroupId : null,
       discount_description: form.discountMode === 'custom'
         ? form.customDiscountDescription.trim()
@@ -240,6 +258,9 @@ export default function Invoices() {
       activationDate: inv.activation_date ? inv.activation_date.split('T')[0] : "",
     });
   };
+
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const paginatedInvoices = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const handleEditInvoice = () => {
     if (!editInvoice) return;
@@ -324,16 +345,28 @@ export default function Invoices() {
 
       {/* Filter Bar */}
       <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            data-testid="input-invoice-search"
-            placeholder="Search invoice ID, member ID, member name, or phone..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+            <div className="flex flex-wrap gap-2">
+              <Select value={searchField} onValueChange={setSearchField}>
+                <SelectTrigger className="w-[130px] h-9">
+                  <SelectValue placeholder="Search by..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Fields</SelectItem>
+                  <SelectItem value="id">ID / Invoice #</SelectItem>
+                  <SelectItem value="name">Name</SelectItem>
+                  <SelectItem value="phone">Phone</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="relative w-64">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search invoices..."
+                  className="pl-9 h-9"
+                  value={searchQuery}
+                  onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                />
+              </div>
+            </div>
         <Select value={filterPaymentMethod} onValueChange={setFilterPaymentMethod}>
           <SelectTrigger className="w-36" data-testid="filter-payment-method">
             <SelectValue placeholder="Payment..." />
@@ -417,7 +450,7 @@ export default function Invoices() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map(inv => {
+              {paginatedInvoices.map(inv => {
                 const shortId = members.find(m => m.uuid === inv.member_id)?.id;
                 return (
                   <TableRow key={inv.uuid} data-testid={`invoice-${inv.uuid}`}>
@@ -471,6 +504,45 @@ export default function Invoices() {
               })}
             </TableBody>
           </Table>
+          
+          <div className="flex items-center justify-between p-4 border-t">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Rows per page:</span>
+              <Select value={pageSize.toString()} onValueChange={v => { setPageSize(Number(v)); setCurrentPage(1); }}>
+                <SelectTrigger className="w-[70px] h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground mr-4">
+                Page {currentPage} of {totalPages === 0 ? 1 : totalPages} ({filtered.length} total)
+              </span>
+              <div className="flex gap-1">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages || totalPages === 0}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -502,6 +574,18 @@ export default function Invoices() {
               <Select value={form.packageId} onValueChange={v => setForm(p => ({ ...p, packageId: v }))}>
                 <SelectTrigger data-testid="select-invoice-package"><SelectValue placeholder="Select package..." /></SelectTrigger>
                 <SelectContent>{createAvailablePackages.map(p => <SelectItem key={p.id} value={p.id}>{p.name} — {p.price} EGP</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Class (Optional)</Label>
+              <Select value={form.classId} onValueChange={v => setForm(p => ({ ...p, classId: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {classes.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
 

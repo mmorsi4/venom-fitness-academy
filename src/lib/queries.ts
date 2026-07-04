@@ -29,13 +29,32 @@ export async function getMembers() {
   await supabase.rpc('cleanup_expired_subscriptions');
   await supabase.rpc('activate_pending_subscriptions');
 
-  const { data, error } = await supabase
-    .from('members')
-    .select('*, classes(id, name, schedules, sports(name), coaches(name)), invoices(created_at, package_id, is_applied, activation_date)')
-    .order('created_at', { ascending: false });
-  if (error) throw error;
+  let allData: any[] = [];
+  let page = 0;
+  const limit = 1000;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from('members')
+      .select('*, classes(id, name, schedules, sports(name), coaches(name)), invoices(created_at, package_id, is_applied, activation_date)')
+      .order('created_at', { ascending: false })
+      .range(page * limit, (page + 1) * limit - 1);
+
+    if (error) throw error;
+    if (data) {
+      allData = allData.concat(data);
+      if (data.length < limit) {
+        hasMore = false;
+      } else {
+        page++;
+      }
+    } else {
+      hasMore = false;
+    }
+  }
   
-  return (data ?? []).map((m: any) => {
+  return allData.map((m: any) => {
     const validInvoices = (m.invoices || []).filter((i: any) => i.package_id != null);
     
     const appliedInvoices = validInvoices.filter((i: any) => i.is_applied);

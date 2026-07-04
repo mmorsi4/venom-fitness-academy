@@ -117,17 +117,19 @@ export default function Members() {
     const q = query.toLowerCase();
     let matchSearch = false;
 
+    const isNumeric = /^\\d+$/.test(query.trim());
     if (searchField === "all") {
       matchSearch = m.name.toLowerCase().includes(q) || m.phone.includes(query);
-      if (m.id !== -1) {
-        matchSearch = matchSearch || m.id.toString().includes(q)
+      if (m.id !== -1 && isNumeric) {
+        // Only do EXACT match for ID if user typed a number
+        matchSearch = matchSearch || m.id.toString() === query.trim();
       }
     } else if (searchField === "id" && m.id !== -1) {
-      matchSearch = m.id.toString() === query || m.id.toString().includes(q);
+      matchSearch = m.id.toString() === query.trim();
     } else if (searchField === "name") {
       matchSearch = m.name.toLowerCase().includes(q);
     } else if (searchField === "phone") {
-      matchSearch = m.phone.includes(query);
+      matchSearch = m.phone.includes(query.trim());
     }
 
     const isFrozen = m.frozen_until ? new Date(m.frozen_until) > new Date() : false;
@@ -316,6 +318,7 @@ export default function Members() {
     createInvoice.mutate({
       member_id: upgradeMemberState.uuid,
       member_name: upgradeMemberState.name,
+        class_id: upgradeMemberState.class_id || null,
       package_id: newPkg.id,
       package_name: newPkg.name,
       total_amount: priceDiff,
@@ -346,7 +349,7 @@ export default function Members() {
               performer_name: currentUser?.name ?? 'System',
               member_id: upgradeMemberState.uuid,
               member_name: upgradeMemberState.name,
-              timestamp: new Date().toISOString(),
+                timestamp: new Date().toISOString(),
               details: `Upgraded from ${currentPkg.name} to ${newPkg.name}. Difference paid: ${priceDiff} EGP`,
             });
             toast.success("Package upgraded successfully");
