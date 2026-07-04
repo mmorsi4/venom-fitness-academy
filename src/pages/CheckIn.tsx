@@ -73,6 +73,15 @@ export default function CheckIn() {
     // 1. If frozen, we allow override check-in
     // 2. If sessions are 0, -1, or -2, we allow override check-in (up to -3 max)
     // 3. But NO overrides if the current package is a Clinic package
+    // 4. Hard lock for partial payments older than 14 days
+
+    if (selectedMember.status === 'has_debt' && selectedMember.last_subscription_date) {
+      const daysSinceInvoice = (Date.now() - new Date(selectedMember.last_subscription_date).getTime()) / (1000 * 3600 * 24);
+      if (daysSinceInvoice > 14) {
+        toast.error("Cannot check in: Partial payment is overdue (>14 days). Please settle the debt first.");
+        return;
+      }
+    }
 
     if (isFrozen) {
       if (isClinic) {
@@ -229,7 +238,7 @@ export default function CheckIn() {
                 <p className="text-xs text-muted-foreground">Package</p>
               </div>
               <div className="p-2 rounded-lg bg-white/70">
-                <p className="text-sm font-bold text-foreground">{format(new Date(selectedMember.expires_at), "dd MMM")}</p>
+                <p className="text-sm font-bold text-foreground">{selectedMember.expires_at ? format(new Date(selectedMember.expires_at), "dd MMM") : "—"}</p>
                 <p className="text-xs text-muted-foreground">Expires</p>
               </div>
             </div>
@@ -244,7 +253,7 @@ export default function CheckIn() {
             {selectedMember.status === 'expired' && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-red-100 border border-red-200 text-red-800 text-sm">
                 <XCircle className="w-4 h-4 flex-shrink-0" />
-                <span>Membership expired on {format(new Date(selectedMember.expires_at), "MMM d, yyyy")}. Cannot check in.</span>
+                <span>Membership expired on {selectedMember.expires_at ? format(new Date(selectedMember.expires_at), "MMM d, yyyy") : "unknown date"}. Cannot check in.</span>
               </div>
             )}
 

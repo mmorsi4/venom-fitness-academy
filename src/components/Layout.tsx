@@ -126,7 +126,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-white truncate">{currentUser.name}</p>
-              <p className="text-xs text-sidebar-foreground/50 truncate capitalize">{currentUser.role}</p>
+              <p className="text-xs text-sidebar-foreground/50 truncate capitalize">{currentUser.roles.map(r => r.name).join(', ')}</p>
             </div>
             <button
               onClick={handleLogout}

@@ -45,13 +45,17 @@ export default function Leads() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [editLead, setEditLead] = useState<Lead | null>(null);
   const [newNote, setNewNote] = useState("");
-  const [form, setForm] = useState({ name: "", phone: "", source: "Walk-in", invitingMemberId: "" });
+  const [form, setForm] = useState({ name: "", phone: "", source: "Walk-in", invitingMemberId: "", interest: "" });
   const [filterSource, setFilterSource] = useState("all");
+  const [filterInterest, setFilterInterest] = useState("all");
 
   const filtered = leads.filter(l =>
     (tab === "all" || l.status === tab) &&
-    (filterSource === "all" || l.source === filterSource)
+    (filterSource === "all" || l.source === filterSource) &&
+    (filterInterest === "all" || l.interest === filterInterest)
   );
+
+  const uniqueInterests = [...new Set(leads.map(l => l.interest).filter(Boolean) as string[])];
 
   const counts = STATUSES.reduce((acc, s) => {
     acc[s] = leads.filter(l => l.status === s).length;
@@ -91,6 +95,7 @@ export default function Leads() {
       calls_made: 0,
       follow_up_date: new Date(Date.now() + 86400000).toISOString(),
       assigned_to: null,
+      interest: form.interest || null,
       inviting_member_id: form.source === "Invitation" ? form.invitingMemberId : null,
     }, {
       onSuccess: () => {
@@ -104,7 +109,7 @@ export default function Leads() {
           }
         }
         toast.success(`Lead added: ${form.name}`);
-        setForm({ name: "", phone: "", source: "Walk-in", invitingMemberId: "" });
+        setForm({ name: "", phone: "", source: "Walk-in", invitingMemberId: "", interest: "" });
         setShowAdd(false);
       },
       onError: (err) => toast.error(`Error adding lead: ${err.message}`)
@@ -167,12 +172,13 @@ export default function Leads() {
       updates: {
         name: form.name.trim(),
         phone: form.phone.trim(),
-        source: form.source
+        source: form.source,
+        interest: form.interest || null
       }
     }, {
       onSuccess: () => {
         if (selectedLead?.id === editLead.id) {
-          setSelectedLead(prev => prev ? { ...prev, name: form.name.trim(), phone: form.phone.trim(), source: form.source } : null);
+          setSelectedLead(prev => prev ? { ...prev, name: form.name.trim(), phone: form.phone.trim(), source: form.source, interest: form.interest || null } : null);
         }
         toast.success(`Lead updated`);
         setEditLead(null);
@@ -262,15 +268,27 @@ return (
         </TabsList>
       </Tabs>
 
-      <Select value={filterSource} onValueChange={setFilterSource}>
-        <SelectTrigger className="w-[180px]">
-          <SelectValue placeholder="Source..." />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Sources</SelectItem>
-          {SOURCES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-        </SelectContent>
-      </Select>
+      <div className="flex gap-2">
+        <Select value={filterSource} onValueChange={setFilterSource}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="Source..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Sources</SelectItem>
+            {SOURCES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        
+        <Select value={filterInterest} onValueChange={setFilterInterest}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="Interest..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Interests</SelectItem>
+            {uniqueInterests.map(i => <SelectItem key={i} value={i}>{i}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
     </div>
 
     {/* Leads list */}
@@ -344,7 +362,7 @@ return (
                         onClick={(e) => { 
                           e.stopPropagation(); 
                           setEditLead(lead);
-                          setForm({ name: lead.name, phone: lead.phone, source: lead.source, invitingMemberId: lead.inviting_member_id || "" }); 
+                          setForm({ name: lead.name, phone: lead.phone, source: lead.source, invitingMemberId: lead.inviting_member_id || "", interest: lead.interest || "" }); 
                           setShowEdit(true); 
                         }}
                         className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
@@ -390,6 +408,10 @@ return (
               <SelectTrigger data-testid="select-lead-source"><SelectValue /></SelectTrigger>
               <SelectContent>{SOURCES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
             </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Interest</Label>
+            <Input placeholder="E.g. Kickboxing, CrossFit..." value={form.interest} onChange={e => setForm(p => ({ ...p, interest: e.target.value }))} />
           </div>
           {form.source === "Invitation" && (
             <div className="space-y-1.5">
@@ -522,6 +544,10 @@ return (
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>{SOURCES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
             </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Interest</Label>
+            <Input placeholder="E.g. Kickboxing, CrossFit..." value={form.interest} onChange={e => setForm(p => ({ ...p, interest: e.target.value }))} />
           </div>
         </div>
         <DialogFooter>

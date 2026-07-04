@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Plus, Search, Phone, Calendar, Pencil, Trash2, Snowflake, Unlock } from "lucide-react";
+import { Plus, Search, Phone, Calendar, Pencil, Trash2, Snowflake, Unlock, ArrowUpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog, useFreezeMember, useUnfreezeMember } from "@/hooks/use-data";
+import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog, useFreezeMember, useUnfreezeMember, usePackages, useCreateInvoice } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
 import type { Member, Gender } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
@@ -93,6 +93,8 @@ export default function Members() {
   const createAuditLog = useCreateAuditLog();
   const freezeMember = useFreezeMember();
   const unfreezeMember = useUnfreezeMember();
+  const { data: packages = [] } = usePackages();
+  const createInvoice = useCreateInvoice();
   const { currentUser } = useAuth();
   const [, navigate] = useLocation();
 
@@ -104,14 +106,30 @@ export default function Members() {
   const [confirmDelete, setConfirmDelete] = useState<Member | null>(null);
   const [freezeMemberState, setFreezeMemberState] = useState<Member | null>(null);
   const [freezeDaysInput, setFreezeDaysInput] = useState("");
+  const [upgradeMemberState, setUpgradeMemberState] = useState<Member | null>(null);
+  const [upgradePackageId, setUpgradePackageId] = useState("");
+
+  const [searchField, setSearchField] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const filtered = members.filter(m => {
     const q = query.toLowerCase();
-    let matchSearch = m.name.toLowerCase().includes(q) || m.phone.includes(query);
-    // Allow ID search only for non-clinic visitors
-    if (m.id !== -1) {
-      matchSearch = matchSearch || m.id.toString().includes(q)
+    let matchSearch = false;
+
+    if (searchField === "all") {
+      matchSearch = m.name.toLowerCase().includes(q) || m.phone.includes(query);
+      if (m.id !== -1) {
+        matchSearch = matchSearch || m.id.toString().includes(q)
+      }
+    } else if (searchField === "id" && m.id !== -1) {
+      matchSearch = m.id.toString() === query || m.id.toString().includes(q);
+    } else if (searchField === "name") {
+      matchSearch = m.name.toLowerCase().includes(q);
+    } else if (searchField === "phone") {
+      matchSearch = m.phone.includes(query);
     }
+
     const isFrozen = m.frozen_until ? new Date(m.frozen_until) > new Date() : false;
     let matchStatus = false;
     if (statusFilter === "all") matchStatus = true;
@@ -121,6 +139,9 @@ export default function Members() {
     
     return matchSearch && matchStatus;
   });
+
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const paginatedMembers = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const counts: Record<string, number> = {
     all: members.length,
@@ -188,10 +209,15 @@ export default function Members() {
         class_id: form.isClinicVisitor || form.classId === '__none__' ? null : (form.classId || null),
         status: 'new',
         sessions_remaining: 0,
+        session_debt: 0,
         expires_at: null,
         member_since: new Date().toISOString(),
+        package_id: null,
         package_name: "None",
         freeze_days_remaining: 0,
+        invitations_remaining: 0,
+        inbody_sessions_remaining: 0,
+        sport: null,
         id: form.isClinicVisitor ? -1 : 0,
       }, {
         onSuccess: () => {
@@ -274,6 +300,65 @@ export default function Members() {
     });
   };
 
+  const handleUpgrade = async () => {
+    if (!upgradeMemberState || !upgradePackageId) return;
+    const currentPkg = packages.find(p => p.name === upgradeMemberState.package_name);
+    const newPkg = packages.find(p => p.id.toString() === upgradePackageId);
+    if (!currentPkg || !newPkg) {
+      toast.error("Package data missing");
+      return;
+    }
+    
+    const priceDiff = Math.max(0, newPkg.price - currentPkg.price);
+    const newSessions = newPkg.sessions === 999 ? 999 : newPkg.sessions;
+    const newExpiresAt = new Date(Date.now() + newPkg.validity_days * 86400000).toISOString();
+
+    createInvoice.mutate({
+      member_id: upgradeMemberState.uuid,
+      member_name: upgradeMemberState.name,
+      package_id: newPkg.id,
+      package_name: newPkg.name,
+      total_amount: priceDiff,
+      paid_amount: priceDiff,
+      status: 'paid',
+      discount_id: null,
+      discount_description: null,
+      discount_amount: 0,
+      payment_method: 'Cash',
+      activation_date: new Date().toISOString()
+    }, {
+      onSuccess: () => {
+        updateMember.mutate({
+          id: upgradeMemberState.uuid,
+          updates: {
+            package_name: newPkg.name,
+            package_id: newPkg.id,
+            sessions_remaining: newSessions,
+            expires_at: newExpiresAt,
+            status: 'active'
+          }
+        }, {
+          onSuccess: () => {
+            createAuditLog.mutate({
+              action: 'Upgrade Package',
+              action_type: 'edit_payment',
+              performed_by: currentUser?.id ?? null,
+              performer_name: currentUser?.name ?? 'System',
+              member_id: upgradeMemberState.uuid,
+              member_name: upgradeMemberState.name,
+              timestamp: new Date().toISOString(),
+              details: `Upgraded from ${currentPkg.name} to ${newPkg.name}. Difference paid: ${priceDiff} EGP`,
+            });
+            toast.success("Package upgraded successfully");
+            setUpgradeMemberState(null);
+            setUpgradePackageId("");
+          }
+        });
+      },
+      onError: (err: any) => toast.error(`Error upgrading: ${err.message}`)
+    });
+  };
+
   const f = (key: keyof MemberForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(p => ({ ...p, [key]: e.target.value }));
 
@@ -291,15 +376,31 @@ export default function Members() {
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            data-testid="input-member-search"
-            placeholder="Search by name, ID, or phone..."
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            className="pl-9"
-          />
+        <div className="relative flex-1 flex gap-2">
+          <Select value={searchField} onValueChange={setSearchField}>
+            <SelectTrigger className="w-[120px]">
+              <SelectValue placeholder="Search by..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Any</SelectItem>
+              <SelectItem value="id">ID</SelectItem>
+              <SelectItem value="name">Name</SelectItem>
+              <SelectItem value="phone">Phone</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              data-testid="input-member-search"
+              placeholder={`Search ${searchField === 'all' ? 'by name, ID, or phone' : `by ${searchField}`}...`}
+              value={query}
+              onChange={e => {
+                setQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="pl-9"
+            />
+          </div>
         </div>
         <Tabs value={statusFilter} onValueChange={setStatusFilter}>
           <TabsList className="h-9 flex-wrap">
@@ -335,7 +436,7 @@ export default function Members() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map(m => {
+              {paginatedMembers.map(m => {
                 const age = calcAge(m.birth_date);
                 return (
                   <TableRow key={m.uuid} data-testid={`member-row-${m.uuid}`}>
@@ -452,6 +553,16 @@ export default function Members() {
                             <Snowflake className="w-4 h-4" />
                           </button>
                         )}
+                        {m.last_subscription_date && new Date(m.last_subscription_date).getTime() > Date.now() - 7 * 86400000 && (
+                          <button
+                            data-testid={`btn-upgrade-member-${m.uuid}`}
+                            onClick={() => setUpgradeMemberState(m)}
+                            className="p-1.5 rounded-md hover:bg-emerald-50 transition-colors text-muted-foreground hover:text-emerald-600"
+                            title="Upgrade Package"
+                          >
+                            <ArrowUpCircle className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           data-testid={`btn-edit-member-${m.uuid}`}
                           onClick={() => openEdit(m)}
@@ -475,6 +586,46 @@ export default function Members() {
               })}
             </TableBody>
           </Table>
+          
+          <div className="flex items-center justify-between p-4 border-t">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Rows per page:</span>
+              <Select value={pageSize.toString()} onValueChange={v => { setPageSize(Number(v)); setCurrentPage(1); }}>
+                <SelectTrigger className="w-[70px] h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages} (Total: {filtered.length})
+              </span>
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages || totalPages === 0}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -703,6 +854,47 @@ export default function Members() {
           <DialogFooter>
             <Button variant="outline" onClick={() => { setFreezeMemberState(null); setFreezeDaysInput(""); }}>Cancel</Button>
             <Button onClick={handleFreeze} disabled={freezeMember.isPending}>Freeze Membership</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upgrade Member Dialog */}
+      <Dialog open={!!upgradeMemberState} onOpenChange={o => { if (!o) { setUpgradeMemberState(null); setUpgradePackageId(""); }}}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Upgrade Package</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="px-3 py-2 rounded-lg bg-muted/50 text-sm space-y-1">
+              <div className="flex justify-between"><span className="text-muted-foreground">Member</span><span>{upgradeMemberState?.name}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Current Package</span><span className="font-bold">{upgradeMemberState?.package_name}</span></div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Select New Package</Label>
+              <Select value={upgradePackageId} onValueChange={setUpgradePackageId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select package" />
+                </SelectTrigger>
+                <SelectContent>
+                  {packages.filter(p => p.name !== upgradeMemberState?.package_name).map((p) => {
+                    return <SelectItem key={p.id} value={p.id.toString()}>{p.name} - {p.price} EGP</SelectItem>
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+            {upgradePackageId && upgradeMemberState?.package_name && (
+              <div className="px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100 text-sm space-y-1">
+                <div className="flex justify-between"><span className="text-muted-foreground">Difference to Pay</span>
+                  <span className="font-bold text-emerald-600">
+                    {Math.max(0, (packages.find(p => p.id.toString() === upgradePackageId)?.price || 0) - (packages.find(p => p.name === upgradeMemberState.package_name)?.price || 0))} EGP
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setUpgradeMemberState(null); setUpgradePackageId(""); }}>Cancel</Button>
+            <Button onClick={handleUpgrade} disabled={createInvoice.isPending || updateMember.isPending}>Upgrade Now</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

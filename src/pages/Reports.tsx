@@ -9,11 +9,10 @@ import {
 import { Label } from "@/components/ui/label";
 import StatusBadge from "@/components/StatusBadge";
 import type { MemberStatus } from "@/lib/types";
-import { useMembers } from "@/hooks/use-data";
+import { useMembers, useInvoices, useExpenses, useCoaches } from "@/hooks/use-data";
 import { format, differenceInYears, parseISO } from "date-fns";
 
 const ALL_STATUSES: MemberStatus[] = ['active', 'expired', 'expiring_soon', 'has_debt'];
-const SOURCES = ["Walk-in", "Referral", "Facebook", "Instagram", "WhatsApp"];
 
 function calcAge(birthDate?: string | null) {
   if (!birthDate) return null;
@@ -22,9 +21,35 @@ function calcAge(birthDate?: string | null) {
 
 export default function Reports() {
   const { data: members = [] } = useMembers();
+  const { data: invoices = [] } = useInvoices();
+  const { data: expenses = [] } = useExpenses();
+  const { data: coaches = [] } = useCoaches();
+
+  const profitabilityByCoach = useMemo(() => {
+    return coaches.map(coach => {
+      const coachMembers = members.filter(m => m.coach_name === coach.name);
+      const memberIds = new Set(coachMembers.map(m => m.uuid));
+
+      const revenue = invoices
+        .filter(inv => memberIds.has(inv.member_id) && inv.status === 'paid')
+        .reduce((sum, inv) => sum + inv.paid_amount, 0);
+
+      const coachExpenses = expenses
+        .filter(exp => exp.category === coach.name || exp.description.includes(coach.name))
+        .reduce((sum, exp) => sum + exp.amount, 0);
+
+      return {
+        name: coach.name,
+        membersCount: coachMembers.length,
+        revenue,
+        expenses: coachExpenses,
+        net: revenue - coachExpenses
+      };
+    }).sort((a, b) => b.net - a.net);
+  }, [coaches, members, invoices, expenses]);
 
   const [filters, setFilters] = useState({
-    status: "all", gender: "all", source: "all",
+    status: "all", gender: "all",
     package: "all", coach: "all", expiringWithin: "all",
   });
 
@@ -35,11 +60,11 @@ export default function Reports() {
     return members.filter(m => {
       if (filters.status !== 'all' && m.status !== filters.status) return false;
       if (filters.gender !== 'all' && m.gender !== filters.gender) return false;
-      if (filters.source !== 'all' && m.source !== filters.source) return false;
       if (filters.package !== 'all' && m.package_name !== filters.package) return false;
       if (filters.coach !== 'all' && m.coach_name !== filters.coach) return false;
       if (filters.expiringWithin !== 'all') {
         const days = Number(filters.expiringWithin);
+        if (!m.expires_at) return false;
         const daysUntilExpiry = Math.ceil((new Date(m.expires_at).getTime() - Date.now()) / 86400000);
         if (daysUntilExpiry > days || daysUntilExpiry < 0) return false;
       }
@@ -62,7 +87,7 @@ export default function Reports() {
 
   const activeFiltersCount = Object.values(filters).filter(v => v !== 'all').length;
   const handleClearFilters = () =>
-    setFilters({ status: "all", gender: "all", source: "all", package: "all", coach: "all", expiringWithin: "all" });
+    setFilters({ status: "all", gender: "all", package: "all", coach: "all", expiringWithin: "all" });
 
   // ---- Export helpers ----
   const exportToExcel = async () => {
@@ -78,10 +103,9 @@ export default function Reports() {
       "Status": m.status,
       "Package": m.package_name,
       "Sessions Remaining": m.sessions_remaining === 999 ? "Unlimited" : m.sessions_remaining,
-      "Expires": format(new Date(m.expires_at), "dd MMM yyyy"),
+      "Expires": m.expires_at ? format(new Date(m.expires_at), "dd MMM yyyy") : "—",
       "Member Since": format(new Date(m.member_since), "dd MMM yyyy"),
       "Coach": m.coach_name ?? "",
-      "Source": m.source,
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -101,16 +125,15 @@ export default function Reports() {
 
     autoTable(doc, {
       startY: 28,
-      head: [['ID', 'Name', 'Phone', 'Gender', 'Status', 'Package', 'Sessions', 'Expires', 'Coach', 'Source']],
+      head: [['ID', 'Name', 'Phone', 'Gender', 'Status', 'Package', 'Sessions', 'Expires', 'Coach']],
       body: filtered.map(m => [
         m.id, m.name, m.phone,
         m.gender ?? '—',
         m.status.replace('_', ' '),
         m.package_name,
         m.sessions_remaining === 999 ? '∞' : m.sessions_remaining,
-        format(new Date(m.expires_at), 'dd MMM yy'),
+        m.expires_at ? format(new Date(m.expires_at), 'dd MMM yy') : '—',
         m.coach_name ?? '—',
-        m.source,
       ]),
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [37, 99, 235], textColor: 255, fontSize: 8 },
@@ -156,7 +179,6 @@ export default function Reports() {
             {[
               { key: 'status', label: 'Status', options: [['all', 'All Statuses'], ...ALL_STATUSES.map(s => [s, s.replace('_', ' ')])] },
               { key: 'gender', label: 'Gender', options: [['all', 'All Genders'], ['male', 'Male'], ['female', 'Female']] },
-              { key: 'source', label: 'Source', options: [['all', 'All Sources'], ...SOURCES.map(s => [s, s])] },
               { key: 'package', label: 'Package', options: [['all', 'All Packages'], ...uniquePackages.map(p => [p, p])] },
               { key: 'coach', label: 'Coach', options: [['all', 'All Coaches'], ...uniqueCoaches.map(c => [c, c])] },
               { key: 'expiringWithin', label: 'Expiring Within', options: [['all', 'Any Time'], ['7', '7 days'], ['14', '14 days'], ['30', '30 days']] },
@@ -193,6 +215,45 @@ export default function Reports() {
         ))}
       </div>
 
+      {/* Profitability Analytics */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-emerald-600" />
+            Profitability by Coach
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/30">
+                  <th className="text-left p-3 text-xs font-semibold text-muted-foreground">Coach</th>
+                  <th className="text-right p-3 text-xs font-semibold text-muted-foreground">Members</th>
+                  <th className="text-right p-3 text-xs font-semibold text-emerald-600">Total Revenue</th>
+                  <th className="text-right p-3 text-xs font-semibold text-red-600">Total Expenses</th>
+                  <th className="text-right p-3 text-xs font-semibold text-primary">Net Profit/Loss</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {profitabilityByCoach.map(p => (
+                  <tr key={p.name} className="hover:bg-muted/30 transition-colors">
+                    <td className="p-3 font-medium text-foreground">{p.name}</td>
+                    <td className="p-3 text-right">{p.membersCount}</td>
+                    <td className="p-3 text-right text-emerald-600">{p.revenue.toLocaleString()} EGP</td>
+                    <td className="p-3 text-right text-red-600">{p.expenses.toLocaleString()} EGP</td>
+                    <td className="p-3 text-right font-bold text-primary">{p.net.toLocaleString()} EGP</td>
+                  </tr>
+                ))}
+                {profitabilityByCoach.length === 0 && (
+                  <tr><td colSpan={5} className="text-center py-6 text-muted-foreground">No coaches found</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Results table */}
       <Card>
         <CardHeader className="pb-3">
@@ -209,7 +270,7 @@ export default function Reports() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/30">
-                    {['Member', 'Contact', 'Status', 'Package', 'Coach', 'Sessions', 'Expires', 'Source'].map(h => (
+                    {['Member', 'Contact', 'Status', 'Package', 'Coach', 'Sessions', 'Expires'].map(h => (
                       <th key={h} className="text-left p-3 text-xs font-semibold text-muted-foreground">{h}</th>
                     ))}
                   </tr>
@@ -242,8 +303,7 @@ export default function Reports() {
                             {m.sessions_remaining === 999 ? '∞' : m.sessions_remaining}
                           </p>
                         </td>
-                        <td className="p-3"><p className="text-foreground">{format(new Date(m.expires_at), "dd MMM yyyy")}</p></td>
-                        <td className="p-3"><Badge variant="outline" className="text-xs">{m.source}</Badge></td>
+                        <td className="p-3"><p className="text-foreground">{m.expires_at ? format(new Date(m.expires_at), "dd MMM yyyy") : "—"}</p></td>
                       </tr>
                     );
                   })}
@@ -254,30 +314,7 @@ export default function Reports() {
         </CardContent>
       </Card>
 
-      {filtered.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-muted-foreground" /> Source Breakdown (filtered)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              {SOURCES.map(source => {
-                const count = filtered.filter(m => m.source === source).length;
-                const pct = filtered.length > 0 ? Math.round((count / filtered.length) * 100) : 0;
-                return (
-                  <div key={source} className="p-3 rounded-lg border bg-muted/30 text-center">
-                    <p className="text-lg font-bold text-foreground">{count}</p>
-                    <p className="text-xs text-muted-foreground">{source}</p>
-                    {pct > 0 && <p className="text-xs text-primary font-medium mt-0.5">{pct}%</p>}
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+
     </div>
   );
 }

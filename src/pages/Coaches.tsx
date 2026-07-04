@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 import { calculateCoachPayroll } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
+import type { Coach } from "@/lib/types";
 
 const paymentTypeColors: Record<string, string> = {
   salary: "bg-blue-100 text-blue-700 border border-blue-200",

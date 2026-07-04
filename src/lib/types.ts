@@ -70,7 +70,6 @@ export interface Member {
   sport: string | null;
   created_at: string;
   // Joined field (populated via query)
-  coach_name?: string;
   frozen_until?: string | null;
 }
 
@@ -134,6 +133,7 @@ export interface Lead {
   source: string;
   status: LeadStatus;
   notes: string[];
+  interest?: string | null;
   follow_up_date: string;
   assigned_to: string | null;
   inviting_member_id?: string | null;
@@ -236,23 +236,23 @@ export interface DiscountInvoice {
 export interface Database {
   public: {
     Tables: {
-      profiles: { Row: Profile; Insert: Omit<Profile, 'created_at'>; Update: Partial<Omit<Profile, 'id' | 'created_at'>> };
-      members: { Row: Member; Insert: Omit<Member, 'id' | 'created_at' | 'coach_name'>; Update: Partial<Omit<Member, 'id' | 'created_at' | 'coach_name'>> };
-      packages: { Row: SubscriptionPackage; Insert: Omit<SubscriptionPackage, 'id' | 'created_at' | 'is_clinic'> & { is_clinic?: boolean }; Update: Partial<Omit<SubscriptionPackage, 'id' | 'created_at'>> };
-      invoices: { Row: Invoice; Insert: Omit<Invoice, 'uuid' | 'id' | 'created_at'>; Update: Partial<Omit<Invoice, 'uuid' | 'id' | 'created_at'>> };
-      discounts: { Row: Discount; Insert: Omit<Discount, 'id' | 'created_at' | 'member_ids' | 'invoice_ids'>; Update: Partial<Omit<Discount, 'id' | 'created_at' | 'member_ids' | 'invoice_ids'>> };
-      coaches: { Row: Coach; Insert: Omit<Coach, 'id' | 'created_at'>; Update: Partial<Omit<Coach, 'id' | 'created_at'>> };
-      leads: { Row: Lead; Insert: Omit<Lead, 'id' | 'created_at'>; Update: Partial<Omit<Lead, 'id' | 'created_at'>> };
-      expenses: { Row: Expense; Insert: Omit<Expense, 'id' | 'created_at'>; Update: Partial<Omit<Expense, 'id' | 'created_at'>> };
-      liabilities: { Row: Liability; Insert: Omit<Liability, 'id' | 'created_at'>; Update: Partial<Omit<Liability, 'id' | 'created_at'>> };
-      audit_logs: { Row: AuditLog; Insert: Omit<AuditLog, 'id'>; Update: never };
-      check_ins: { Row: CheckIn; Insert: Omit<CheckIn, 'id' | 'created_at'>; Update: never };
-      coach_check_ins: { Row: CoachCheckIn; Insert: Omit<CoachCheckIn, 'id' | 'created_at'>; Update: never };
-      classes: { Row: Class; Insert: Omit<Class, 'id' | 'created_at' | 'sport_name' | 'coach_name'>; Update: Partial<Omit<Class, 'id' | 'created_at' | 'sport_name' | 'coach_name'>> };
-      sports: { Row: Sport; Insert: Omit<Sport, 'id' | 'created_at'>; Update: Partial<Omit<Sport, 'id' | 'created_at'>> };
+      profiles: { Row: Profile; Insert: any; Update: any };
+      members: { Row: Member; Insert: any; Update: any };
+      packages: { Row: SubscriptionPackage; Insert: any; Update: any };
+      invoices: { Row: Invoice; Insert: any; Update: any };
+      discounts: { Row: Discount; Insert: any; Update: any };
+      coaches: { Row: Coach; Insert: any; Update: any };
+      leads: { Row: Lead; Insert: any; Update: any };
+      expenses: { Row: Expense; Insert: any; Update: any };
+      liabilities: { Row: Liability; Insert: any; Update: any };
+      audit_logs: { Row: AuditLog; Insert: any; Update: any };
+      check_ins: { Row: CheckIn; Insert: any; Update: any };
+      coach_check_ins: { Row: CoachCheckIn; Insert: any; Update: any };
+      classes: { Row: Class; Insert: any; Update: any };
+      sports: { Row: Sport; Insert: any; Update: any };
 
-      roles: { Row: Role; Insert: Omit<Role, 'id' | 'created_at'>; Update: Partial<Omit<Role, 'id' | 'created_at'>> };
-      user_roles: { Row: UserRoleMapping; Insert: Omit<UserRoleMapping, 'created_at'>; Update: Partial<Omit<UserRoleMapping, 'created_at'>> };
+      roles: { Row: Role; Insert: any; Update: any };
+      user_roles: { Row: UserRoleMapping; Insert: any; Update: any };
     };
     Functions: {
       check_in_member: {

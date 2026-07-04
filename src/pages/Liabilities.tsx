@@ -97,7 +97,7 @@ export default function Liabilities() {
     } else {
       createLiability.mutate({
         name: form.name.trim(),
-        description: form.description.trim() || null,
+        description: form.description.trim() || "",
         type: form.type,
         total_amount: total,
         paid_amount: 0,

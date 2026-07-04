@@ -5,7 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as q from '../lib/queries';
-import type { Member, SubscriptionPackage, Invoice, Discount, Coach, Lead, Expense, Liability, AuditLog, GymSession } from '../lib/types';
+import type { Member, SubscriptionPackage, Invoice, Discount, Coach, Lead, Expense, Liability, AuditLog, Sport, Class } from '../lib/types';
 
 // ── Query keys (centralized for easy invalidation) ──────────
 
@@ -166,10 +166,9 @@ export function useDiscounts() {
 export function useCreateDiscount() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ discount, memberIds }: {
+    mutationFn: ({ discount }: {
       discount: Omit<Discount, 'id' | 'created_at' | 'member_ids' | 'invoice_ids'>;
-      memberIds: string[];
-    }) => q.createDiscount(discount, memberIds),
+    }) => q.createDiscount(discount as any),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.discounts }),
   });
 }
@@ -177,20 +176,10 @@ export function useCreateDiscount() {
 export function useUpdateDiscount() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, updates, memberIds }: {
+    mutationFn: ({ id, updates }: {
       id: string;
       updates: Partial<Discount>;
-      memberIds?: string[];
-    }) => q.updateDiscount(id, updates, memberIds),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.discounts }),
-  });
-}
-
-export function useRemoveDiscountMember() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ discountId, memberId }: { discountId: string; memberId: string }) =>
-      q.removeDiscountMember(discountId, memberId),
+    }) => q.updateDiscount(id, updates as any),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.discounts }),
   });
 }

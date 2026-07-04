@@ -12,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useDiscounts, useMembers, useInvoices, useCreateDiscount, useUpdateDiscount, useRemoveDiscountMember } from "@/hooks/use-data";
+import { useDiscounts, useMembers, useInvoices, useCreateDiscount, useUpdateDiscount } from "@/hooks/use-data";
 import type { Discount } from "@/lib/types";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
@@ -40,7 +40,7 @@ export default function Discounts() {
   const { data: invoices = [] } = useInvoices();
   const createDiscount = useCreateDiscount();
   const updateDiscount = useUpdateDiscount();
-  const removeDiscountMember = useRemoveDiscountMember();
+  
 
   const [showCreate, setShowCreate] = useState(false);
   const [editDiscount, setEditDiscount] = useState<Discount | null>(null);

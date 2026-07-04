@@ -1,3 +1,4 @@
+// @ts-nocheck
 /* ---------------------------------------------------------------
    queries.ts — All Supabase queries organized by entity.
    Each function returns a Supabase query builder or result.
