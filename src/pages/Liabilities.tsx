@@ -366,7 +366,9 @@ export default function Liabilities() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>Cancel</Button>
-            <Button onClick={handleSave} disabled={createLiability.isPending || updateLiability.isPending}>{editLiability ? 'Save Changes' : 'Create Liability'}</Button>
+            <Button onClick={handleSave} disabled={createLiability.isPending || updateLiability.isPending}>
+              {createLiability.isPending || updateLiability.isPending ? "Saving..." : editLiability ? 'Save Changes' : 'Create Liability'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -294,13 +294,15 @@ export default function CheckIn() {
                   className={`flex-1 h-11 text-base font-semibold gap-2 ${(selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date()) || selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999) ? 'bg-orange-500 hover:bg-orange-600 text-white' : ''}`}
                 >
                   <CheckCircle2 className="w-5 h-5" />
-                  {checkedInToday.includes(selectedMember.uuid) 
-                    ? 'Already Checked In' 
-                    : (selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date()) 
-                        ? 'Override & Unfreeze' 
-                        : (selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999))
-                            ? 'Override Check In'
-                            : 'Check In'}
+                  {checkInMutation.isPending
+                    ? 'Checking In...'
+                    : checkedInToday.includes(selectedMember.uuid) 
+                      ? 'Already Checked In' 
+                      : (selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date()) 
+                          ? 'Override & Unfreeze' 
+                          : (selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999))
+                              ? 'Override Check In'
+                              : 'Check In'}
                 </Button>
               )}
               <Button data-testid="btn-checkin-cancel" variant="outline" onClick={() => setSelectedMember(null)} className={(!(selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999) && !(isClinic && selectedMember.sessions_remaining <= 0)) ? "" : "flex-1"}>Cancel</Button>

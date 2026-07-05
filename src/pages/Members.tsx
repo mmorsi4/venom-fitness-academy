@@ -805,8 +805,12 @@ export default function Members() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialogs}>Cancel</Button>
-            <Button data-testid="btn-save-member" onClick={handleSave}>
-              {editMember ? "Save Changes" : "Create Member"}
+            <Button 
+              data-testid="btn-save-member" 
+              onClick={handleSave}
+              disabled={createMember.isPending || updateMember.isPending}
+            >
+              {createMember.isPending || updateMember.isPending ? "Saving..." : editMember ? "Save Changes" : "Create Member"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -829,8 +833,9 @@ export default function Members() {
             <AlertDialogAction
               onClick={() => confirmDelete && handleDelete(confirmDelete)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteMember.isPending}
             >
-              Delete Permanently
+              {deleteMember.isPending ? "Deleting..." : "Delete Permanently"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -867,7 +872,9 @@ export default function Members() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setFreezeMemberState(null); setFreezeDaysInput(""); }}>Cancel</Button>
-            <Button onClick={handleFreeze} disabled={freezeMember.isPending}>Freeze Membership</Button>
+            <Button onClick={handleFreeze} disabled={freezeMember.isPending}>
+              {freezeMember.isPending ? "Freezing..." : "Freeze Membership"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -908,7 +915,9 @@ export default function Members() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setUpgradeMemberState(null); setUpgradePackageId(""); }}>Cancel</Button>
-            <Button onClick={handleUpgrade} disabled={createInvoice.isPending || updateMember.isPending}>Upgrade Now</Button>
+            <Button onClick={handleUpgrade} disabled={createInvoice.isPending || updateMember.isPending}>
+              {createInvoice.isPending || updateMember.isPending ? "Upgrading..." : "Upgrade Now"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

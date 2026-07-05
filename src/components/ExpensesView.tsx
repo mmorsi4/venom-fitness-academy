@@ -424,7 +424,7 @@ export function ExpensesView() {
           <DialogFooter>
             <Button variant="outline" onClick={() => { resetForm(); setShowCreate(false); }}>Cancel</Button>
             <Button onClick={handleCreate} disabled={createExpense.isPending}>
-              {isLiabilityPayment ? 'Record Payment' : 'Record Expense'}
+              {createExpense.isPending ? "Saving..." : isLiabilityPayment ? 'Record Payment' : 'Record Expense'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -489,7 +489,9 @@ export function ExpensesView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditExpense(null)}>Cancel</Button>
-            <Button onClick={handleSaveEdit} disabled={updateExpense.isPending}>Save Changes</Button>
+            <Button onClick={handleSaveEdit} disabled={updateExpense.isPending}>
+              {updateExpense.isPending ? "Saving..." : "Save Changes"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -298,8 +298,8 @@ export default function Discounts() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>Cancel</Button>
-            <Button data-testid="btn-save-discount" onClick={handleSave}>
-              {editDiscount ? 'Save Changes' : 'Create Group'}
+            <Button data-testid="btn-save-discount" onClick={handleSave} disabled={createDiscount.isPending || updateDiscount.isPending}>
+              {createDiscount.isPending || updateDiscount.isPending ? "Saving..." : editDiscount ? 'Save Changes' : 'Create Group'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -374,7 +374,9 @@ export default function Coaches() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>Cancel</Button>
-            <Button onClick={handleSave} disabled={createCoach.isPending || updateCoach.isPending}>{editCoach ? 'Save Changes' : 'Add Coach'}</Button>
+            <Button onClick={handleSave} disabled={createCoach.isPending || updateCoach.isPending}>
+              {createCoach.isPending || updateCoach.isPending ? "Saving..." : editCoach ? 'Save Changes' : 'Add Coach'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

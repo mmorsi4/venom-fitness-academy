@@ -371,7 +371,9 @@ export default function Classes() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialogs}>Cancel</Button>
-            <Button onClick={handleSave} disabled={createClass.isPending || updateClass.isPending}>{editClass ? "Save Changes" : "Create Class"}</Button>
+            <Button onClick={handleSave} disabled={createClass.isPending || updateClass.isPending}>
+              {createClass.isPending || updateClass.isPending ? "Saving..." : editClass ? "Save Changes" : "Create Class"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -385,7 +387,9 @@ export default function Classes() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmDelete(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={deleteClass.isPending}>Delete</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleteClass.isPending}>
+              {deleteClass.isPending ? "Deleting..." : "Delete"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

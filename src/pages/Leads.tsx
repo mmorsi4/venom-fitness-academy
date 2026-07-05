@@ -440,7 +440,9 @@ return (
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
-          <Button data-testid="btn-save-lead" onClick={handleAddLead} disabled={createLead.isPending}>Create Lead</Button>
+          <Button data-testid="btn-save-lead" onClick={handleAddLead} disabled={createLead.isPending}>
+            {createLead.isPending ? "Creating..." : "Create Lead"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -564,7 +566,9 @@ return (
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setShowEdit(false)}>Cancel</Button>
-          <Button onClick={handleEditLead} disabled={updateLead.isPending}>Save Changes</Button>
+          <Button onClick={handleEditLead} disabled={updateLead.isPending}>
+            {updateLead.isPending ? "Saving..." : "Save Changes"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

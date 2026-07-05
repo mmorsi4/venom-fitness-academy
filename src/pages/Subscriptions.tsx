@@ -316,7 +316,9 @@ export default function Subscriptions() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>Cancel</Button>
-            <Button onClick={handleSave}>{editPkg ? 'Save Changes' : 'Create Package'}</Button>
+            <Button onClick={handleSave} disabled={createPackage.isPending || updatePackage.isPending}>
+              {createPackage.isPending || updatePackage.isPending ? "Saving..." : editPkg ? 'Save Changes' : 'Create Package'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -333,7 +335,9 @@ export default function Subscriptions() {
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmDelete(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => confirmDelete && handleDelete(confirmDelete)}>Delete</Button>
+            <Button variant="destructive" onClick={() => confirmDelete && handleDelete(confirmDelete)} disabled={deletePackage.isPending}>
+              {deletePackage.isPending ? "Deleting..." : "Delete"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

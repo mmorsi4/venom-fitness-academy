@@ -855,7 +855,9 @@ export default function Invoices() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { resetForm(); setShowCreate(false); }}>Cancel</Button>
-            <Button data-testid="btn-save-invoice" onClick={handleCreate} disabled={createInvoice.isPending}>Create Invoice</Button>
+            <Button data-testid="btn-save-invoice" onClick={handleCreate} disabled={createInvoice.isPending}>
+              {createInvoice.isPending ? "Creating..." : "Create Invoice"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -905,7 +907,9 @@ export default function Invoices() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditInvoice(null)}>Cancel</Button>
-            <Button onClick={handleEditInvoice} disabled={updateInvoice.isPending}>Save Changes</Button>
+            <Button onClick={handleEditInvoice} disabled={updateInvoice.isPending}>
+              {updateInvoice.isPending ? "Saving..." : "Save Changes"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -925,7 +929,9 @@ export default function Invoices() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowVerificationDialog(false)}>Cancel</Button>
-            <Button onClick={verifyAndCreate}>Verify & Create</Button>
+            <Button onClick={verifyAndCreate} disabled={createInvoice.isPending}>
+              {createInvoice.isPending ? "Creating..." : "Verify & Create"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -946,8 +952,9 @@ export default function Invoices() {
             <AlertDialogAction
               onClick={() => confirmDelete && handleDeleteInvoice(confirmDelete)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteInvoice.isPending}
             >
-              Delete Invoice
+              {deleteInvoice.isPending ? "Deleting..." : "Delete Invoice"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

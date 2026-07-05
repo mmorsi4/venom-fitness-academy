@@ -132,7 +132,9 @@ export default function Sports() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialogs}>Cancel</Button>
-            <Button onClick={handleSave} disabled={createSport.isPending || updateSport.isPending}>{editSport ? "Save" : "Add Sport"}</Button>
+            <Button onClick={handleSave} disabled={createSport.isPending || updateSport.isPending}>
+              {createSport.isPending || updateSport.isPending ? "Saving..." : editSport ? "Save" : "Add Sport"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
