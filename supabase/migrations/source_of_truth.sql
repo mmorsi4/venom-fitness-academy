@@ -155,6 +155,11 @@ create table public.discounts (
 
 -- ── Invoices ────────────────────────────────────────────────
 
+create table public.joint_invoice_groups (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now()
+);
+
 -- Sequence for human-readable invoice IDs
 create sequence public.invoice_display_id_seq start with 1001;
 
@@ -175,6 +180,7 @@ create table public.invoices (
   payment_method       text not null default 'Cash'
                        check (payment_method in ('Cash', 'Visa', 'InstaPay', 'Split')),
   split_payments       jsonb,
+  joint_invoice_group_id uuid references public.joint_invoice_groups(id) on delete set null,
   created_at           timestamptz not null default now()
 );
 
@@ -1589,3 +1595,4 @@ CREATE TRIGGER trg_set_member_id
   FOR EACH ROW
   EXECUTE FUNCTION public.set_member_id();
 
+GRANT ALL ON TABLE public.joint_invoice_groups TO anon, authenticated, service_role;

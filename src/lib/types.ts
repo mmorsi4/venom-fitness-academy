@@ -103,6 +103,7 @@ export interface Invoice {
   created_at: string;
   activation_date: string;
   is_applied: boolean;
+  joint_invoice_group_id?: string | null;
 }
 
 export interface Discount {

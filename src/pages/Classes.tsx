@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useClasses, useCreateClass, useUpdateClass, useDeleteClass, useSports, useCoaches } from "@/hooks/use-data";
+import { useClasses, useCreateClass, useUpdateClass, useDeleteClass, useSports, useCoaches, useMembers } from "@/hooks/use-data";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +28,7 @@ export default function Classes() {
   const { data: classes = [], isLoading } = useClasses();
   const { data: sports = [] } = useSports();
   const { data: coaches = [] } = useCoaches();
+  const { data: members = [] } = useMembers();
   const createClass = useCreateClass();
   const updateClass = useUpdateClass();
   const deleteClass = useDeleteClass();
@@ -38,15 +39,20 @@ export default function Classes() {
   const [form, setForm] = useState<ClassForm>(emptyForm);
   const [confirmDelete, setConfirmDelete] = useState<Class | null>(null);
 
-  const filtered = classes.filter(c => {
+  const filtered = classes.map(c => {
+    const isFrozen = (m: any) => m.frozen_until && new Date(m.frozen_until) > new Date();
+    const activeMembersCount = members.filter(m => m.class_id === c.id && m.status === 'active' && !isFrozen(m)).length;
+    return {
+      ...c,
+      attendance_count: activeMembersCount,
+      schedules: Array.isArray(c.schedules) ? c.schedules.filter(s => s && s.day && s.time) : []
+    };
+  }).filter(c => {
     const q = query.toLowerCase();
     return c.name.toLowerCase().includes(q) ||
            c.sport_name?.toLowerCase().includes(q) ||
            c.coach_name?.toLowerCase().includes(q);
-  }).map(c => ({
-    ...c,
-    schedules: Array.isArray(c.schedules) ? c.schedules.filter(s => s && s.day && s.time) : []
-  }));
+  });
 
   const openAdd = () => { setForm(emptyForm); setShowAdd(true); };
   const openEdit = (c: Class) => {

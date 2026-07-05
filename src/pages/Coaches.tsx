@@ -130,7 +130,7 @@ export default function Coaches() {
 
   const handleSave = () => {
     if (!form.name.trim() || !form.rate) { toast.error("Name and rate are required"); return; }
-    if (!/^\d{11}$/.test(form.phone.trim())) { toast.error("Phone number must be exactly 11 digits"); return; }
+    if (form.phone.trim() && !/^\d{11}$/.test(form.phone.trim())) { toast.error("Phone number must be exactly 11 digits"); return; }
     
     if (editCoach) {
       updateCoach.mutate({

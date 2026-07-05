@@ -236,6 +236,7 @@ export default function Members() {
   };
 
   const handleDelete = (member: Member) => {
+    if (!confirm("Are you sure you want to permanently delete this member?")) return;
     deleteMember.mutate(member.uuid, {
       onSuccess: () => {
         createAuditLog.mutate({
@@ -251,7 +252,32 @@ export default function Members() {
         toast.success(`Member ${member.name} deleted`);
         setConfirmDelete(null);
       },
-      onError: (err) => toast.error(`Error deleting: ${err.message}`),
+      onError: (err) => toast.error(`Error deleting: ${err.message}`)
+    });
+  };
+
+  const handleDecrement = (member: Member, field: 'invitations_remaining' | 'inbody_sessions_remaining') => {
+    const currentVal = member[field] ?? 0;
+    if (currentVal <= 0) return;
+    updateMember.mutate({
+      id: member.uuid,
+      updates: { [field]: currentVal - 1 }
+    }, {
+      onSuccess: () => {
+        const typeStr = field === 'invitations_remaining' ? 'invitation' : 'InBody session';
+        toast.success(`Used 1 ${typeStr} for ${member.name}`);
+        createAuditLog.mutate({
+          action: `Decrement ${typeStr}`,
+          action_type: 'other',
+          performed_by: currentUser?.id ?? null,
+          performer_name: currentUser?.name ?? 'System',
+          member_id: member.uuid,
+          member_name: member.name,
+          timestamp: new Date().toISOString(),
+          details: `Decremented ${typeStr} for member ${member.id} (${member.name}). Remaining: ${currentVal - 1}`,
+        });
+      },
+      onError: (err) => toast.error(`Error: ${err.message}`)
     });
   };
 
@@ -511,7 +537,7 @@ export default function Members() {
                       <div className="space-y-1">
                         {m.class_info ? (
                           <div className="text-sm">
-                            <span className="font-semibold text-primary">{m.class_info.sport_name ?? 'No Sport'}</span>
+                            <span className="font-semibold text-primary">{m.class_info.name ?? 'No Sport'}</span>
                             <span className="text-muted-foreground mx-1">-</span>
                             <span>{m.class_info.coach_name ?? 'No Coach'}</span>
                             <div className="text-xs text-muted-foreground mt-1">
@@ -563,8 +589,8 @@ export default function Members() {
                       <div className="flex items-center gap-1">
                         {m.invitations_remaining > 0 ?
                         (<button
-                          data-testid={`btn-edit-member-${m.uuid}`}
-                          onClick={() => openEdit(m)}
+                          data-testid={`btn-invite-member-${m.uuid}`}
+                          onClick={() => handleDecrement(m, 'invitations_remaining')}
                           className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                           title="Invite"
                         >
@@ -573,8 +599,8 @@ export default function Members() {
                         }
                         {m.inbody_sessions_remaining > 0 ?
                         (<button
-                          data-testid={`btn-edit-member-${m.uuid}`}
-                          onClick={() => openEdit(m)}
+                          data-testid={`btn-inbody-member-${m.uuid}`}
+                          onClick={() => handleDecrement(m, 'inbody_sessions_remaining')}
                           className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                           title="InBody"
                         >

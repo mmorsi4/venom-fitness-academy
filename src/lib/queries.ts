@@ -562,3 +562,8 @@ export async function deleteClass(id: string) {
   const { error } = await supabase.from('classes').delete().eq('id', id);
   if (error) throw error;
 }
+export async function createJointInvoiceGroup() {
+  const { data, error } = await supabase.from('joint_invoice_groups').insert({}).select().single();
+  if (error) throw error;
+  return data as { id: string; created_at: string };
+}

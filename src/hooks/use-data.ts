@@ -1,4 +1,4 @@
-/* ---------------------------------------------------------------
+﻿/* ---------------------------------------------------------------
    use-data.ts — React Query hooks for all entities.
    Wraps queries.ts with useQuery / useMutation + cache invalidation.
    --------------------------------------------------------------- */
@@ -404,4 +404,9 @@ export function useDeleteClass() {
 
 export function useProfiles() {
   return useQuery({ queryKey: queryKeys.profiles, queryFn: q.getProfiles });
+}
+export function useCreateJointInvoiceGroup() {
+  return useMutation({
+    mutationFn: () => q.createJointInvoiceGroup(),
+  });
 }

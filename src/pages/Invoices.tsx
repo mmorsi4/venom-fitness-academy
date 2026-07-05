@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
 import { Plus, FileText, CreditCard, Tag, Trash2, Pencil, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { ExpensesView } from "@/components/ExpensesView";
-import { useInvoices, usePackages, useMembers, useDiscounts, useCreateInvoice, useUpdateInvoice, useDeleteInvoice, useCreateAuditLog, useClasses } from "@/hooks/use-data";
+import { useInvoices, usePackages, useMembers, useDiscounts, useCreateInvoice, useUpdateInvoice, useDeleteInvoice, useCreateAuditLog, useClasses, useCreateJointInvoiceGroup } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
 import type { Invoice } from "@/lib/types";
 import { toast } from "sonner";
@@ -68,6 +68,7 @@ export default function Invoices() {
   const updateInvoice = useUpdateInvoice();
   const deleteInvoice = useDeleteInvoice();
   const createAuditLog = useCreateAuditLog();
+  const createJointGroup = useCreateJointInvoiceGroup();
   const { currentUser } = useAuth();
 
   const [activeMainTab, setActiveMainTab] = useState("invoices");
@@ -144,7 +145,7 @@ export default function Invoices() {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       const member = members.find(m => m.uuid === i.member_id);
-      const isNumeric = /^\\d+$/.test(searchQuery.trim());
+      const isNumeric = /^\d+$/.test(searchQuery.trim());
       let matchesSearch = false;
 
       if (searchField === "all") {
@@ -272,12 +273,12 @@ export default function Invoices() {
       if (!form.memberId || !form.packageId) { toast.error("Select a member and package"); return; }
       if (needsDescription) { toast.error("A reason is required for custom discounts"); return; }
 
-      if (form.invoiceDate && form.activationDate) {
-        if (new Date(form.invoiceDate) > new Date(form.activationDate)) {
-          toast.error("Invoice date cannot be after the activation date.");
-          return;
-        }
-      }
+      // if (form.invoiceDate && form.activationDate) {
+      //   if (new Date(form.invoiceDate) > new Date(form.activationDate)) {
+      //     toast.error("Invoice date cannot be after the activation date.");
+      //     return;
+      //   }
+      // }
 
       if (form.discountMode === 'custom' && discountAmount > 0) {
         setVerificationAction('create');
@@ -320,10 +321,7 @@ export default function Invoices() {
     else submitEdit();
   };
 
-  const submitCreate = () => {
-    const invStatus: 'paid' | 'partial' | 'unpaid' =
-      paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
-
+  const submitCreate = async () => {
     const jointCount = selectedGroup?.is_joint ? selectedGroup.joint_count : 1;
     
     const allMembersData = [{
@@ -344,6 +342,17 @@ export default function Invoices() {
     if (selectedGroup?.is_joint && allMembersData.length < jointCount) {
       toast.error(`Please select all ${jointCount} members for this joint discount.`);
       return;
+    }
+
+    let jointGroupId: string | null = null;
+    if (jointCount > 1) {
+      try {
+        const group = await createJointGroup.mutateAsync();
+        jointGroupId = group.id;
+      } catch (err: any) {
+        toast.error(`Error creating joint group: ${err.message}`);
+        return;
+      }
     }
 
     const promises = allMembersData.map((data: any, index) => {
@@ -382,17 +391,19 @@ export default function Invoices() {
         split_payments: memPaymentMethod === 'Split' ? memSplitPayments.map((sp: any) => ({ method: sp.method as any, amount: Number(sp.amount) || 0 })) : null,
         created_at: data.invoiceDate ? new Date(data.invoiceDate).toISOString() : new Date().toISOString(),
         activation_date: data.activationDate ? new Date(data.activationDate).toISOString() : (data.invoiceDate ? new Date(data.invoiceDate).toISOString() : new Date().toISOString()),
+        joint_invoice_group_id: jointGroupId,
         ...(isMain && form.customId.trim() ? { id: form.customId.trim() } : {}),
       } as any);
     });
 
-    Promise.all(promises).then(() => {
+    try {
+      await Promise.all(promises);
       toast.success(`Invoices created`);
       resetForm();
       setShowCreate(false);
-    }).catch((err: any) => {
+    } catch (err: any) {
       toast.error(`Error creating invoice: ${err.message}`);
-    });
+    }
   };
 
   const openEditInvoice = (inv: Invoice) => {
@@ -669,11 +680,26 @@ export default function Invoices() {
                 <TableBody>
                   {paginatedInvoices.map(inv => {
                     const shortId = members.find(m => m.uuid === inv.member_id)?.id;
+                    const jointRelated = inv.joint_invoice_group_id ? invoices.filter(i => i.joint_invoice_group_id === inv.joint_invoice_group_id && i.uuid !== inv.uuid) : [];
+                    
                     return (
                       <TableRow key={inv.uuid} data-testid={`invoice-${inv.uuid}`}>
-                        <TableCell className="font-bold text-xs text-muted-foreground">{inv.id}</TableCell>
+                        <TableCell className="font-bold text-xs text-muted-foreground">
+                          {inv.id}
+                        </TableCell>
                         <TableCell className="text-sm font-medium text-muted-foreground">{shortId === -1 ? 'Clinic Visitor' : (shortId ?? '?')}</TableCell>
-                        <TableCell className="font-medium text-sm">{inv.member_name}</TableCell>
+                        <TableCell className="font-medium text-sm">
+                          {inv.member_name}
+                          {jointRelated.length > 0 && (
+                            <div className="mt-1 flex flex-col gap-0.5">
+                              {jointRelated.map(j => (
+                                <span key={j.uuid} className="text-[10px] text-primary/80 bg-primary/10 px-1.5 py-0.5 rounded-md inline-block max-w-fit">
+                                  Joint with: {j.id} - {j.member_name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell className="text-sm">{inv.package_name}</TableCell>
                         <TableCell className="text-sm">{format(new Date(inv.created_at), "dd/MM/yyyy")}</TableCell>
                         <TableCell>
