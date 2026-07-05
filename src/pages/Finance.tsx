@@ -20,7 +20,7 @@ import {
 } from "@/hooks/use-data";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { calculateCoachPayroll, calculateIncomeByMethod } from "../lib/utils";
+import { calculateCoachPayroll, calculateIncomeByMethod, calculateExpenseByMethod } from "../lib/utils";
 
 const BASE_CATEGORIES = ["Government Bills", "Maintenance", "Salaries", "Loans/Debts", "Purchases", "Other"];
 const LIABILITY_CATEGORY = "Liability Payment";
@@ -70,6 +70,11 @@ export default function Finance() {
         .reduce((s, e) => s + e.amount, 0),
     };
   });
+
+  // Global Account Balances (All Time)
+  const globalCashBalance = calculateIncomeByMethod(invoices, 'Cash') - calculateExpenseByMethod(expenses, 'Cash');
+  const globalVisaBalance = calculateIncomeByMethod(invoices, 'Visa') - calculateExpenseByMethod(expenses, 'Visa');
+  const globalInstapayBalance = calculateIncomeByMethod(invoices, 'InstaPay') - calculateExpenseByMethod(expenses, 'InstaPay');
 
   // Filter invoices and expenses by selected month/year
   const filteredInvoices = invoices.filter(i => {
@@ -316,6 +321,28 @@ export default function Finance() {
             <Printer className="w-4 h-4" /> Print Report
           </Button>
         </div>
+      </div>
+
+      {/* Global Account Balances */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card className="border-amber-200 shadow-sm bg-amber-50/30">
+          <CardContent className="p-5">
+            <p className="text-sm font-semibold text-amber-800 uppercase tracking-wider mb-1">Cash Balance (All-Time)</p>
+            <p className="text-3xl font-bold text-amber-700">{globalCashBalance.toLocaleString()} EGP</p>
+          </CardContent>
+        </Card>
+        <Card className="border-blue-200 shadow-sm bg-blue-50/30">
+          <CardContent className="p-5">
+            <p className="text-sm font-semibold text-blue-800 uppercase tracking-wider mb-1">Visa Balance (All-Time)</p>
+            <p className="text-3xl font-bold text-blue-700">{globalVisaBalance.toLocaleString()} EGP</p>
+          </CardContent>
+        </Card>
+        <Card className="border-violet-200 shadow-sm bg-violet-50/30">
+          <CardContent className="p-5">
+            <p className="text-sm font-semibold text-violet-800 uppercase tracking-wider mb-1">InstaPay Balance (All-Time)</p>
+            <p className="text-3xl font-bold text-violet-700">{globalInstapayBalance.toLocaleString()} EGP</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Global Yearly Line Chart (Top) */}

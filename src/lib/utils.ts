@@ -102,3 +102,15 @@ export function calculateIncomeByMethod(invoices: Invoice[], method: PaymentMeth
     return sum;
   }, 0);
 }
+
+export function calculateExpenseByMethod(expenses: Expense[], method: PaymentMethod): number {
+  return expenses.reduce((sum, exp) => {
+    if (exp.payment_method === 'Split' && exp.split_payments) {
+      return sum + exp.split_payments.filter(sp => sp.method === method).reduce((s, sp) => s + sp.amount, 0);
+    }
+    if (exp.payment_method === method) {
+      return sum + exp.amount;
+    }
+    return sum;
+  }, 0);
+}

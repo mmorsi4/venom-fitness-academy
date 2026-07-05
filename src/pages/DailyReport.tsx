@@ -307,7 +307,7 @@ export default function DailyReport() {
                   <div key={e.id} className="flex items-center justify-between p-3 rounded-lg bg-red-50 border border-red-100">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-foreground">{e.description || e.category}</p>
-                      <p className="text-xs text-muted-foreground">{e.category}</p>
+                      <p className="text-xs text-muted-foreground">{e.id} · {e.category}</p>
                     </div>
                     <p className="text-sm font-bold text-red-600 flex-shrink-0">{e.amount.toLocaleString()} EGP</p>
                   </div>
