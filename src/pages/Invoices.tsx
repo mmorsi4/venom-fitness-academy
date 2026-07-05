@@ -52,7 +52,10 @@ const emptyForm = {
   activationDate: "",
   customId: "",
   splitPayments: [] as { method: string, amount: string }[],
-  jointMemberIds: [] as string[],
+  jointMembersData: [] as { 
+    memberId: string, classId: string, invoiceDate: string, activationDate: string, 
+    packageId: string, paidAmount: string, paymentMethod: string, splitPayments: { method: string, amount: string }[] 
+  }[],
 };
 
 export default function Invoices() {
@@ -74,6 +77,7 @@ export default function Invoices() {
   const [verificationAction, setVerificationAction] = useState<'create' | 'edit'>('create');
   const [verificationPassword, setVerificationPassword] = useState("");
   const [form, setForm] = useState(emptyForm);
+  const [jointStep, setJointStep] = useState(1);
   const [, navigate] = useLocation();
   const searchString = useSearch();
   const hasConsumedParams = useRef(false);
@@ -111,7 +115,9 @@ export default function Invoices() {
     paidAmount: "", 
     paymentMethod: "Cash", 
     status: "paid" as any, 
-    activationDate: "" 
+    activationDate: "",
+    invoiceDate: "",
+    customId: "",
   });
 
   // Delete invoice state
@@ -205,25 +211,39 @@ export default function Invoices() {
   const activeDiscounts = discounts.filter(d => d.active);
   const selectedGroup = activeDiscounts.find(d => d.id === form.discountGroupId);
 
-  // Compute discount amount
-  let discountAmount = 0;
-  if (form.discountMode === 'group' && selectedGroup && selectedPackage) {
-    discountAmount = selectedGroup.discount_type === 'fixed'
-      ? selectedGroup.value
-      : Math.round(selectedPackage.price * selectedGroup.value / 100);
-  } else if (form.discountMode === 'custom' && form.customDiscountValue) {
-    if (form.customDiscountType === 'fixed') {
-      discountAmount = Number(form.customDiscountValue) || 0;
-    } else if (selectedPackage) {
-      discountAmount = Math.round(selectedPackage.price * (Number(form.customDiscountValue) || 0) / 100);
+  const computeDiscountAmount = (pkg: any) => {
+    if (!pkg) return 0;
+    if (form.discountMode === 'group' && selectedGroup) {
+      return selectedGroup.discount_type === 'fixed'
+        ? selectedGroup.value
+        : Math.round(pkg.price * selectedGroup.value / 100);
+    } else if (form.discountMode === 'custom' && form.customDiscountValue) {
+      if (form.customDiscountType === 'fixed') {
+        return Number(form.customDiscountValue) || 0;
+      } else {
+        return Math.round(pkg.price * (Number(form.customDiscountValue) || 0) / 100);
+      }
     }
-  }
+    return 0;
+  };
+
+  const discountAmount = computeDiscountAmount(selectedPackage);
 
   const total = selectedPackage ? Math.max(0, selectedPackage.price - discountAmount) : 0;
   const paid = form.paymentMethod === 'Split'
     ? form.splitPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
-    : (Number(form.paidAmount) || 0);
+    : (form.paidAmount !== "" ? Number(form.paidAmount) : total);
   const needsDescription = form.discountMode === 'custom' && discountAmount > 0 && !form.customDiscountDescription.trim();
+
+  // Joint Member Derived State
+  const currentJointIndex = jointStep - 2;
+  const jointData = currentJointIndex >= 0 ? (form.jointMembersData[currentJointIndex] || {}) : {} as any;
+  const jointPkg = currentJointIndex >= 0 ? packages.find(p => p.id === (jointData.packageId || form.packageId)) : null;
+  const jointDiscountAmount = computeDiscountAmount(jointPkg);
+  const jointTotal = jointPkg ? Math.max(0, jointPkg.price - jointDiscountAmount) : 0;
+  const jointPaid = jointData.paymentMethod === 'Split'
+    ? (jointData.splitPayments || []).reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0)
+    : (jointData.paidAmount !== undefined && jointData.paidAmount !== "" ? Number(jointData.paidAmount) : jointTotal);
 
   // Edit form derived state
   const selectedEditPackage = packages.find(p => p.id === editForm.packageId);
@@ -245,26 +265,47 @@ export default function Invoices() {
   const editTotal = selectedEditPackage ? Math.max(0, selectedEditPackage.price - editDiscountAmount) : 0;
   const editNeedsDescription = editForm.discountMode === 'custom' && editDiscountAmount > 0 && !editForm.customDiscountDescription.trim();
 
-  const resetForm = () => setForm(emptyForm);
+  const resetForm = () => { setForm(emptyForm); setJointStep(1); };
 
   const handleCreate = () => {
-    if (!form.memberId || !form.packageId) { toast.error("Select a member and package"); return; }
-    if (needsDescription) { toast.error("A reason is required for custom discounts"); return; }
+    if (jointStep === 1) {
+      if (!form.memberId || !form.packageId) { toast.error("Select a member and package"); return; }
+      if (needsDescription) { toast.error("A reason is required for custom discounts"); return; }
 
-    if (form.invoiceDate && form.activationDate) {
-      if (new Date(form.invoiceDate) > new Date(form.activationDate)) {
-        toast.error("Invoice date cannot be after the activation date.");
+      if (form.invoiceDate && form.activationDate) {
+        if (new Date(form.invoiceDate) > new Date(form.activationDate)) {
+          toast.error("Invoice date cannot be after the activation date.");
+          return;
+        }
+      }
+
+      if (form.discountMode === 'custom' && discountAmount > 0) {
+        setVerificationAction('create');
+        setShowVerificationDialog(true);
         return;
+      }
+    } else {
+      const currentJointIndex = jointStep - 2;
+      const data = form.jointMembersData[currentJointIndex];
+      if (!data || !data.memberId) { toast.error(`Please select Member #${jointStep}`); return; }
+      if (data.invoiceDate && data.activationDate) {
+        if (new Date(data.invoiceDate) > new Date(data.activationDate)) {
+          toast.error("Invoice date cannot be after the activation date.");
+          return;
+        }
       }
     }
 
-    if (form.discountMode === 'custom' && discountAmount > 0) {
-      setVerificationAction('create');
-      setShowVerificationDialog(true);
-      return;
-    }
+    proceedCreate();
+  };
 
-    submitCreate();
+  const proceedCreate = () => {
+    const jointCount = selectedGroup?.is_joint ? selectedGroup.joint_count : 1;
+    if (jointStep < jointCount) {
+      setJointStep(jointStep + 1);
+    } else {
+      submitCreate();
+    }
   };
 
   const verifyAndSubmit = () => {
@@ -275,7 +316,7 @@ export default function Invoices() {
     }
     setShowVerificationDialog(false);
     setVerificationPassword("");
-    if (verificationAction === 'create') submitCreate();
+    if (verificationAction === 'create') proceedCreate();
     else submitEdit();
   };
 
@@ -284,37 +325,63 @@ export default function Invoices() {
       paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
 
     const jointCount = selectedGroup?.is_joint ? selectedGroup.joint_count : 1;
-    const allMemberIds = [form.memberId, ...form.jointMemberIds].slice(0, jointCount).filter(Boolean);
+    
+    const allMembersData = [{
+      memberId: form.memberId,
+      classId: form.classId,
+      invoiceDate: form.invoiceDate,
+      activationDate: form.activationDate
+    }];
 
-    if (selectedGroup?.is_joint && allMemberIds.length < jointCount) {
-      toast.error(`Please select ${jointCount} members for this joint discount.`);
+    if (jointCount > 1) {
+      for (let i = 0; i < jointCount - 1; i++) {
+        if (form.jointMembersData[i]) {
+          allMembersData.push(form.jointMembersData[i]);
+        }
+      }
+    }
+
+    if (selectedGroup?.is_joint && allMembersData.length < jointCount) {
+      toast.error(`Please select all ${jointCount} members for this joint discount.`);
       return;
     }
 
-    const promises = allMemberIds.map((mId, index) => {
-      const m = members.find(x => x.uuid === mId);
+    const promises = allMembersData.map((data: any, index) => {
+      const m = members.find(x => x.uuid === data.memberId);
       if (!m) return Promise.resolve();
 
       const isMain = index === 0;
 
+      const memPkg = isMain ? selectedPackage : packages.find(p => p.id === (data.packageId || form.packageId));
+      const memDiscount = isMain ? discountAmount : computeDiscountAmount(memPkg);
+      const memTotal = memPkg ? Math.max(0, memPkg.price - memDiscount) : 0;
+      
+      const memPaid = isMain ? paid : (data.paymentMethod === 'Split'
+        ? (data.splitPayments || []).reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0)
+        : (data.paidAmount !== undefined && data.paidAmount !== "" ? Number(data.paidAmount) : memTotal));
+        
+      const memInvStatus = memPaid >= memTotal ? 'paid' : memPaid > 0 ? 'partial' : 'unpaid';
+      const memPaymentMethod = isMain ? form.paymentMethod : (data.paymentMethod || form.paymentMethod);
+      const memSplitPayments = isMain ? form.splitPayments : (data.splitPayments || []);
+
       return createInvoice.mutateAsync({
-        member_id: mId,
+        member_id: data.memberId,
         member_name: m.name,
-        package_id: form.packageId,
-        package_name: selectedPackage?.name ?? "",
-        class_id: form.classId === 'none' ? null : (form.classId || null),
+        package_id: memPkg?.id || null,
+        package_name: memPkg?.name ?? "",
+        class_id: data.classId === 'none' ? null : (data.classId || null),
         discount_id: form.discountMode === 'group' ? form.discountGroupId : null,
         discount_description: form.discountMode === 'custom'
           ? form.customDiscountDescription.trim()
           : (selectedGroup?.name ?? null),
-        discount_amount: discountAmount,
-        total_amount: total,
-        paid_amount: paid,
-        status: invStatus,
-        payment_method: form.paymentMethod as any,
-        split_payments: form.paymentMethod === 'Split' ? form.splitPayments.map(sp => ({ method: sp.method as any, amount: Number(sp.amount) || 0 })) : null,
-        created_at: form.invoiceDate ? new Date(form.invoiceDate).toISOString() : new Date().toISOString(),
-        activation_date: form.activationDate ? new Date(form.activationDate).toISOString() : (form.invoiceDate ? new Date(form.invoiceDate).toISOString() : new Date().toISOString()),
+        discount_amount: memDiscount,
+        total_amount: memTotal,
+        paid_amount: memPaid,
+        status: memInvStatus,
+        payment_method: memPaymentMethod as any,
+        split_payments: memPaymentMethod === 'Split' ? memSplitPayments.map((sp: any) => ({ method: sp.method as any, amount: Number(sp.amount) || 0 })) : null,
+        created_at: data.invoiceDate ? new Date(data.invoiceDate).toISOString() : new Date().toISOString(),
+        activation_date: data.activationDate ? new Date(data.activationDate).toISOString() : (data.invoiceDate ? new Date(data.invoiceDate).toISOString() : new Date().toISOString()),
         ...(isMain && form.customId.trim() ? { id: form.customId.trim() } : {}),
       } as any);
     });
@@ -359,6 +426,8 @@ export default function Invoices() {
       paymentMethod: inv.payment_method,
       status: inv.status,
       activationDate: inv.activation_date ? inv.activation_date.split('T')[0] : "",
+      invoiceDate: inv.created_at ? inv.created_at.split('T')[0] : "",
+      customId: inv.id,
     });
   };
 
@@ -404,6 +473,8 @@ export default function Invoices() {
         payment_method: editForm.paymentMethod as any,
         status: newStatus,
         activation_date: editForm.activationDate ? new Date(editForm.activationDate).toISOString() : editInvoice.activation_date,
+        created_at: editForm.invoiceDate ? new Date(editForm.invoiceDate).toISOString() : editInvoice.created_at,
+        id: editForm.customId.trim() || undefined,
       }
     }, {
       onSuccess: () => {
@@ -589,7 +660,7 @@ export default function Invoices() {
                     <TableHead>Member ID</TableHead>
                     <TableHead>Member Name</TableHead>
                     <TableHead>Package</TableHead>
-                    <TableHead>Date</TableHead>
+                    <TableHead>Creation Date</TableHead>
                     <TableHead>Status & Payment</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
                     <TableHead className="w-[80px]"></TableHead>
@@ -705,11 +776,13 @@ export default function Invoices() {
           {/* Create Invoice Dialog */}
           <Dialog open={showCreate} onOpenChange={v => { if (!v) resetForm(); setShowCreate(v); }}>
             <DialogContent className="max-w-md">
-              <DialogHeader><DialogTitle>New Invoice</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle>{jointStep === 1 ? "New Invoice" : `Member #${jointStep}`}</DialogTitle></DialogHeader>
               <div className="space-y-4 py-2 max-h-[72vh] overflow-y-auto pr-1">
 
-                <div className="space-y-1.5">
-                  <Label>{selectedGroup?.is_joint ? "Main Member" : "Member"}</Label>
+                {jointStep === 1 ? (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label>{selectedGroup?.is_joint ? "Primary Member" : "Member"}</Label>
                   <SearchableSelect
                     data-testid="select-invoice-member"
                     options={members.map(m => ({
@@ -725,32 +798,7 @@ export default function Invoices() {
                   />
                 </div>
 
-                {selectedGroup?.is_joint && selectedGroup.joint_count > 1 && (
-                  <div className="space-y-3 p-3 border border-emerald-200 bg-emerald-50/30 rounded-lg">
-                    <Label className="text-emerald-700">Joint Members ({selectedGroup.joint_count - 1} more required)</Label>
-                    {Array.from({ length: selectedGroup.joint_count - 1 }).map((_, idx) => (
-                      <div key={idx} className="space-y-1.5">
-                        <Label className="text-xs">Member {idx + 2}</Label>
-                        <SearchableSelect
-                          options={members.map(m => ({
-                            value: m.uuid,
-                            label: `${m.name} (${m.id === -1 ? 'Clinic Visitor' : m.id})`,
-                            searchTerms: `${m.phone} ${m.id}`,
-                          }))}
-                          value={form.jointMemberIds[idx] || ""}
-                          onValueChange={v => {
-                            const newIds = [...form.jointMemberIds];
-                            newIds[idx] = v;
-                            setForm(p => ({ ...p, jointMemberIds: newIds }));
-                          }}
-                          placeholder="Search secondary member..."
-                          searchPlaceholder="Type name, phone, or member ID..."
-                          emptyMessage="No members found"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
+
 
                 <div className="space-y-1.5">
                   <Label>Package</Label>
@@ -980,11 +1028,211 @@ export default function Invoices() {
                     <div className="flex justify-between text-muted-foreground"><span>Status</span><span className="capitalize">{paid >= total ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid'}</span></div>
                   </div>
                 )}
+                  </>
+                ) : (
+                  <>
+                    {/* Secondary Member Fields */}
+                    <div className="space-y-1.5">
+                      <Label>Member #{jointStep}</Label>
+                      <SearchableSelect
+                        options={members.map(m => ({
+                          value: m.uuid,
+                          label: `${m.name} (${m.id === -1 ? 'Clinic Visitor' : m.id})`,
+                          searchTerms: `${m.phone} ${m.id}`,
+                        }))}
+                        value={form.jointMembersData[jointStep - 2]?.memberId || ""}
+                        onValueChange={v => {
+                          const newData = [...form.jointMembersData];
+                          if (!newData[jointStep - 2]) newData[jointStep - 2] = { memberId: v, classId: "", invoiceDate: "", activationDate: "" };
+                          else newData[jointStep - 2].memberId = v;
+                          setForm(p => ({ ...p, jointMembersData: newData }));
+                        }}
+                        placeholder="Search member by name, phone, or ID..."
+                        searchPlaceholder="Type name, phone, or member ID..."
+                        emptyMessage="No members found"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Class (Optional)</Label>
+                      <Select 
+                        value={form.jointMembersData[jointStep - 2]?.classId || ""} 
+                        onValueChange={v => {
+                          const newData = [...form.jointMembersData];
+                          if (!newData[jointStep - 2]) newData[jointStep - 2] = { memberId: "", classId: v, invoiceDate: "", activationDate: "" };
+                          else newData[jointStep - 2].classId = v;
+                          setForm(p => ({ ...p, jointMembersData: newData }));
+                        }}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {classes.map(c => (
+                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Package</Label>
+                      <Select 
+                        value={form.jointMembersData[jointStep - 2]?.packageId || form.packageId} 
+                        onValueChange={v => {
+                          const newData = [...form.jointMembersData];
+                          if (!newData[jointStep - 2]) newData[jointStep - 2] = { memberId: "", classId: "", invoiceDate: "", activationDate: "", packageId: v, paidAmount: "", paymentMethod: "Cash", splitPayments: [] };
+                          else newData[jointStep - 2].packageId = v;
+                          setForm(p => ({ ...p, jointMembersData: newData }));
+                        }}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select package..." /></SelectTrigger>
+                        <SelectContent>{createAvailablePackages.map(p => <SelectItem key={p.id} value={p.id}>{p.name} — {p.price} EGP</SelectItem>)}</SelectContent>
+                      </Select>
+                      <p className="text-[10px] font-medium text-emerald-600">Discount applied: -{jointDiscountAmount} EGP (Total: {jointTotal} EGP)</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label>Invoice Date</Label>
+                        <Input
+                          type="date"
+                          value={form.jointMembersData[jointStep - 2]?.invoiceDate || ""}
+                          onChange={e => {
+                            const newData = [...form.jointMembersData];
+                            if (!newData[jointStep - 2]) newData[jointStep - 2] = { memberId: "", classId: "", invoiceDate: e.target.value, activationDate: "", packageId: form.packageId, paidAmount: "", paymentMethod: form.paymentMethod, splitPayments: [] };
+                            else newData[jointStep - 2].invoiceDate = e.target.value;
+                            setForm(p => ({ ...p, jointMembersData: newData }));
+                          }}
+                        />
+                        <p className="text-[10px] text-muted-foreground">Leave empty to mirror primary</p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Activation Date</Label>
+                        <Input
+                          type="date"
+                          value={form.jointMembersData[jointStep - 2]?.activationDate || ""}
+                          onChange={e => {
+                            const newData = [...form.jointMembersData];
+                            if (!newData[jointStep - 2]) newData[jointStep - 2] = { memberId: "", classId: "", invoiceDate: "", activationDate: e.target.value, packageId: form.packageId, paidAmount: "", paymentMethod: form.paymentMethod, splitPayments: [] };
+                            else newData[jointStep - 2].activationDate = e.target.value;
+                            setForm(p => ({ ...p, jointMembersData: newData }));
+                          }}
+                        />
+                        <p className="text-[10px] text-muted-foreground">Leave empty to mirror primary</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label>Payment Method</Label>
+                        <Select 
+                          value={form.jointMembersData[jointStep - 2]?.paymentMethod || form.paymentMethod} 
+                          onValueChange={v => {
+                            const newData = [...form.jointMembersData];
+                            if (!newData[jointStep - 2]) newData[jointStep - 2] = { memberId: "", classId: "", invoiceDate: "", activationDate: "", packageId: form.packageId, paidAmount: "", paymentMethod: v, splitPayments: v === 'Split' ? [{ method: 'Cash', amount: '' }] : [] };
+                            else {
+                              newData[jointStep - 2].paymentMethod = v;
+                              if (v === 'Split' && (!newData[jointStep - 2].splitPayments || newData[jointStep - 2].splitPayments.length === 0)) {
+                                newData[jointStep - 2].splitPayments = [{ method: 'Cash', amount: '' }];
+                              }
+                            }
+                            setForm(p => ({ ...p, jointMembersData: newData }));
+                          }}
+                        >
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>{paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Amount Paid (EGP)</Label>
+                        {(form.jointMembersData[jointStep - 2]?.paymentMethod || form.paymentMethod) === 'Split' ? (
+                          <div className="flex h-9 items-center px-3 border rounded-md bg-muted/50 text-muted-foreground text-sm">
+                            {jointPaid}
+                          </div>
+                        ) : (
+                          <Input
+                            type="number" placeholder={String(jointTotal)}
+                            value={form.jointMembersData[jointStep - 2]?.paidAmount ?? ""}
+                            onChange={e => {
+                              const newData = [...form.jointMembersData];
+                              if (!newData[jointStep - 2]) newData[jointStep - 2] = { memberId: "", classId: "", invoiceDate: "", activationDate: "", packageId: form.packageId, paidAmount: e.target.value, paymentMethod: form.paymentMethod, splitPayments: [] };
+                              else newData[jointStep - 2].paidAmount = e.target.value;
+                              setForm(p => ({ ...p, jointMembersData: newData }));
+                            }}
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    {(form.jointMembersData[jointStep - 2]?.paymentMethod || form.paymentMethod) === 'Split' && (
+                      <div className="space-y-3 p-3 border rounded-md bg-muted/20">
+                        <div className="flex items-center justify-between">
+                          <Label>Split Payment Details</Label>
+                          <Button
+                            variant="outline" size="sm" className="h-7 text-xs"
+                            onClick={() => {
+                              const newData = [...form.jointMembersData];
+                              if (!newData[jointStep - 2]) newData[jointStep - 2] = { memberId: "", classId: "", invoiceDate: "", activationDate: "", packageId: form.packageId, paidAmount: "", paymentMethod: "Split", splitPayments: [{ method: 'Cash', amount: '' }] };
+                              else {
+                                if (!newData[jointStep - 2].splitPayments) newData[jointStep - 2].splitPayments = [];
+                                newData[jointStep - 2].splitPayments.push({ method: 'Cash', amount: '' });
+                              }
+                              setForm(p => ({ ...p, jointMembersData: newData }));
+                            }}
+                          >
+                            <Plus className="w-3 h-3 mr-1" /> Add Payment
+                          </Button>
+                        </div>
+                        {(form.jointMembersData[jointStep - 2]?.splitPayments || form.splitPayments || []).map((sp, idx) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <Select
+                              value={sp.method}
+                              onValueChange={v => {
+                                const newData = [...form.jointMembersData];
+                                if (!newData[jointStep - 2]) return;
+                                if (!newData[jointStep - 2].splitPayments) newData[jointStep - 2].splitPayments = [];
+                                newData[jointStep - 2].splitPayments[idx].method = v;
+                                setForm(p => ({ ...p, jointMembersData: newData }));
+                              }}
+                            >
+                              <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {["Cash", "Visa", "InstaPay"].map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <Input
+                              type="number" placeholder="Amount"
+                              value={sp.amount}
+                              onChange={e => {
+                                const newData = [...form.jointMembersData];
+                                if (!newData[jointStep - 2]) return;
+                                if (!newData[jointStep - 2].splitPayments) newData[jointStep - 2].splitPayments = [];
+                                newData[jointStep - 2].splitPayments[idx].amount = e.target.value;
+                                setForm(p => ({ ...p, jointMembersData: newData }));
+                              }}
+                            />
+                            <Button
+                              variant="ghost" size="icon" className="text-red-500 shrink-0"
+                              disabled={(form.jointMembersData[jointStep - 2]?.splitPayments || form.splitPayments || []).length <= 1}
+                              onClick={() => {
+                                const newData = [...form.jointMembersData];
+                                if (!newData[jointStep - 2]) return;
+                                if (!newData[jointStep - 2].splitPayments) return;
+                                newData[jointStep - 2].splitPayments = newData[jointStep - 2].splitPayments.filter((_, i) => i !== idx);
+                                setForm(p => ({ ...p, jointMembersData: newData }));
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => { resetForm(); setShowCreate(false); }}>Cancel</Button>
                 <Button data-testid="btn-save-invoice" onClick={handleCreate} disabled={createInvoice.isPending}>
-                  {createInvoice.isPending ? "Creating..." : "Create Invoice"}
+                  {createInvoice.isPending ? "Processing..." : (jointStep < (selectedGroup?.is_joint ? selectedGroup.joint_count : 1) ? `Next: Member #${jointStep + 1}` : "Create Invoice" )}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -1141,12 +1389,31 @@ export default function Invoices() {
                   </div>
                 </div>
                 <div className="space-y-1.5 pt-2">
-                  <Label>Activation Date</Label>
+                  <Label>Invoice ID</Label>
                   <Input
-                    type="date"
-                    value={editForm.activationDate}
-                    onChange={e => setEditForm(p => ({ ...p, activationDate: e.target.value }))}
+                    placeholder="Leave empty for auto-generated"
+                    value={editForm.customId}
+                    onChange={e => setEditForm(p => ({ ...p, customId: e.target.value }))}
                   />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div className="space-y-1.5">
+                    <Label>Creation Date</Label>
+                    <Input
+                      type="date"
+                      value={editForm.invoiceDate}
+                      onChange={e => setEditForm(p => ({ ...p, invoiceDate: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Activation Date</Label>
+                    <Input
+                      type="date"
+                      value={editForm.activationDate}
+                      onChange={e => setEditForm(p => ({ ...p, activationDate: e.target.value }))}
+                    />
+                  </div>
                 </div>
               </div>
               <DialogFooter>

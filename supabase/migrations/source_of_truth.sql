@@ -1482,6 +1482,8 @@ DECLARE
   v_max_id int;
 BEGIN
   IF NEW.id IS NULL OR NEW.id = '' THEN
+    -- Acquire transaction-level advisory lock to prevent concurrent inserts from generating the same ID
+    PERFORM pg_advisory_xact_lock('invoices'::regclass::oid::int);
     SELECT max(NULLIF(regexp_replace(id, '\D', '', 'g'), '')::int) INTO v_max_id FROM public.invoices;
     IF v_max_id IS NULL THEN
       v_max_id := 1000;

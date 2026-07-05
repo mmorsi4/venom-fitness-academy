@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Plus, Search, Phone, Calendar, Pencil, Trash2, Snowflake, Unlock, ArrowUpCircle } from "lucide-react";
+import { Plus, Search, Phone, Calendar, Pencil, Trash2, Snowflake, Unlock, ArrowUpCircle, BicepsFlexed, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -67,7 +67,7 @@ function memberToForm(m: Member): MemberForm {
   return {
     name: m.name, phone: m.phone, parentPhone: m.parent_phone ?? "",
     id: m.id,
-    customId: "",
+    customId: m.id !== -1 ? String(m.id) : "",
     classId: m.class_id ?? "",
     isClinicVisitor: m.id === -1,
     sessions_remaining: String(m.sessions_remaining ?? 0),
@@ -191,6 +191,8 @@ export default function Members() {
 
       if (!form.isClinicVisitor && editMember.id === -1) {
         updates.id = 0; // Signals queries.ts to auto-assign a new ID
+      } else if (!form.isClinicVisitor && form.customId && editMember.id !== Number(form.customId)) {
+        updates.id = Number(form.customId);
       }
 
       updateMember.mutate({ id: editMember.uuid, updates }, {
@@ -533,6 +535,26 @@ export default function Members() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
+                        {m.invitations_remaining > 0 ?
+                        (<button
+                          data-testid={`btn-edit-member-${m.uuid}`}
+                          onClick={() => openEdit(m)}
+                          className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                          title="Invite"
+                        >
+                          <Mail className="w-4 h-4" />
+                        </button>) : ("")
+                        }
+                        {m.inbody_sessions_remaining > 0 ?
+                        (<button
+                          data-testid={`btn-edit-member-${m.uuid}`}
+                          onClick={() => openEdit(m)}
+                          className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                          title="InBody"
+                        >
+                          <BicepsFlexed className="w-4 h-4" />
+                        </button>) : ("")
+                        }
                         {m.frozen_until && new Date(m.frozen_until) > new Date() ? (
                           <button
                             data-testid={`btn-unfreeze-member-${m.uuid}`}
@@ -649,9 +671,9 @@ export default function Members() {
             </div>
 
             {/* Custom ID (Optional) */}
-            {!editMember && !form.isClinicVisitor && (
+            {!form.isClinicVisitor && (
               <div className="space-y-1.5">
-                <Label htmlFor="m-custom-id">Custom Member ID (Optional)</Label>
+                <Label htmlFor="m-custom-id">Member ID</Label>
                 <Input
                   id="m-custom-id"
                   placeholder="Leave empty for auto-generation"
