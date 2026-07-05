@@ -109,6 +109,8 @@ export default function Members() {
   const [upgradePackageId, setUpgradePackageId] = useState("");
 
   const [searchField, setSearchField] = useState<string>("all");
+  const [classFilter, setClassFilter] = useState<string>("all");
+  const [packageFilter, setPackageFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
@@ -138,7 +140,10 @@ export default function Members() {
     else if (statusFilter === "active") matchStatus = m.status === 'active' && !isFrozen;
     else matchStatus = m.status === statusFilter;
 
-    return matchSearch && matchStatus;
+    const matchClass = classFilter === "all" || m.class_id === classFilter;
+    const matchPackage = packageFilter === "all" || m.package_id === packageFilter;
+
+    return matchSearch && matchStatus && matchClass && matchPackage;
   });
 
   const totalPages = Math.ceil(filtered.length / pageSize);
@@ -415,6 +420,27 @@ export default function Members() {
             <TabsTrigger value="new" className="text-xs">New ({counts.new})</TabsTrigger>
           </TabsList>
         </Tabs>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <Select value={classFilter} onValueChange={setClassFilter}>
+          <SelectTrigger className="w-full sm:w-[200px]">
+            <SelectValue placeholder="Filter by class" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Classes</SelectItem>
+            {classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={packageFilter} onValueChange={setPackageFilter}>
+          <SelectTrigger className="w-full sm:w-[200px]">
+            <SelectValue placeholder="Filter by subscription" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Subscriptions</SelectItem>
+            {packages.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Members grid */}
