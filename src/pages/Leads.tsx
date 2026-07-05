@@ -15,7 +15,8 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/SearchableSelect";
-import { useLeads, useCreateLead, useUpdateLead, useMembers, useUpdateMember, useDeleteLead } from "@/hooks/use-data";
+import { useLeads, useCreateLead, useUpdateLead, useMembers, useUpdateMember, useDeleteLead, useSports } from "@/hooks/use-data";
+import { MultiSelect } from "@/components/MultiSelect";
 import type { Lead } from "@/lib/types";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -34,6 +35,7 @@ const statusColors: Record<string, string> = {
 export default function Leads() {
   const { data: leads = [] } = useLeads();
   const { data: members = [] } = useMembers();
+  const { data: sports = [] } = useSports();
   const createLead = useCreateLead();
   const updateLead = useUpdateLead();
   const updateMember = useUpdateMember();
@@ -52,10 +54,10 @@ export default function Leads() {
   const filtered = leads.filter(l =>
     (tab === "all" || l.status === tab) &&
     (filterSource === "all" || l.source === filterSource) &&
-    (filterInterest === "all" || l.interest === filterInterest)
+    (filterInterest === "all" || (l.interest && l.interest.includes(filterInterest)))
   );
 
-  const uniqueInterests = [...new Set(leads.map(l => l.interest).filter(Boolean) as string[])];
+  const sportsOptions = sports.map(s => ({ value: s.name, label: s.name }));
 
   const counts = STATUSES.reduce((acc, s) => {
     acc[s] = leads.filter(l => l.status === s).length;
@@ -285,7 +287,7 @@ return (
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Interests</SelectItem>
-            {uniqueInterests.map(i => <SelectItem key={i} value={i}>{i}</SelectItem>)}
+            {sports.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
@@ -411,7 +413,12 @@ return (
           </div>
           <div className="space-y-1.5">
             <Label>Interest</Label>
-            <Input placeholder="E.g. Kickboxing, CrossFit..." value={form.interest} onChange={e => setForm(p => ({ ...p, interest: e.target.value }))} />
+            <MultiSelect
+              options={sportsOptions}
+              selected={form.interest ? form.interest.split(",").map(s => s.trim()).filter(Boolean) : []}
+              onChange={(selected) => setForm(p => ({ ...p, interest: selected.join(", ") }))}
+              placeholder="Select sports..."
+            />
           </div>
           {form.source === "Invitation" && (
             <div className="space-y-1.5">
@@ -547,7 +554,12 @@ return (
           </div>
           <div className="space-y-1.5">
             <Label>Interest</Label>
-            <Input placeholder="E.g. Kickboxing, CrossFit..." value={form.interest} onChange={e => setForm(p => ({ ...p, interest: e.target.value }))} />
+            <MultiSelect
+              options={sportsOptions}
+              selected={form.interest ? form.interest.split(",").map(s => s.trim()).filter(Boolean) : []}
+              onChange={(selected) => setForm(p => ({ ...p, interest: selected.join(", ") }))}
+              placeholder="Select sports..."
+            />
           </div>
         </div>
         <DialogFooter>

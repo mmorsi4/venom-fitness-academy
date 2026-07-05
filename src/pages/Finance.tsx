@@ -15,12 +15,12 @@ import {
   PieChart, Pie, Cell
 } from "recharts";
 import { 
-  useInvoices, useExpenses, useLiabilities, useCreateExpense,
+  useInvoices, useExpenses, useLiabilities,
   useCoaches, useMembers, useCoachCheckInsForMonth, useClasses, usePackages
 } from "@/hooks/use-data";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { calculateCoachPayroll } from "@/lib/utils";
+import { calculateCoachPayroll, calculateIncomeByMethod } from "../lib/utils";
 
 const BASE_CATEGORIES = ["Government Bills", "Maintenance", "Salaries", "Loans/Debts", "Purchases", "Other"];
 const LIABILITY_CATEGORY = "Liability Payment";
@@ -28,13 +28,6 @@ const INCOME_COLORS = ['#047857', '#34d399', '#064e3b', '#6ee7b7', '#10b981', '#
 const EXPENSE_COLORS = ['#dc2626', '#fca5a5', '#7f1d1d', '#f87171', '#ef4444', '#fecaca'];
 const PAYMENT_COLORS = ['#0284c7', '#7dd3fc', '#0c4a6e', '#38bdf8'];
 
-const emptyForm = {
-  category: "Maintenance",
-  customCategory: "",
-  amount: "",
-  description: "",
-  liabilityId: "",
-};
 
 export default function Finance() {
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
@@ -48,10 +41,6 @@ export default function Finance() {
   const { data: classes = [] } = useClasses();
   const { data: packages = [] } = usePackages();
   const { data: checkInsThisMonth = [] } = useCoachCheckInsForMonth(filterMonth, filterYear);
-  const createExpense = useCreateExpense();
-
-  const [showAddExpense, setShowAddExpense] = useState(false);
-  const [form, setForm] = useState(emptyForm);
   const [isCoachPayrollExpanded, setIsCoachPayrollExpanded] = useState(false);
   const [isLiabilityExpanded, setIsLiabilityExpanded] = useState(false);
   const [clinicOnly, setClinicOnly] = useState(false);
@@ -60,9 +49,6 @@ export default function Finance() {
   const dynamicCategories = [...new Set([...BASE_CATEGORIES, ...uniqueExistingCategories])].filter(c => c !== LIABILITY_CATEGORY);
   const allCategories = [...dynamicCategories, LIABILITY_CATEGORY, "CUSTOM"];
 
-  const isLiabilityPayment = form.category === LIABILITY_CATEGORY;
-  const activeLiabilities = liabilities.filter(l => !l.is_complete);
-  const selectedLiability = activeLiabilities.find(l => l.id === form.liabilityId);
 
   // Global Yearly Data (Ignores month/year filter)
   const currentYear = new Date().getFullYear();
@@ -122,9 +108,9 @@ export default function Finance() {
   const totalExpenses = totalBaseExpenses + totalCoachPayroll;
   const netBalance = totalIncome - totalExpenses;
 
-  const cashIncome = filteredInvoices.filter(i => i.payment_method === 'Cash').reduce((s, i) => s + i.paid_amount, 0);
-  const visaIncome = filteredInvoices.filter(i => i.payment_method === 'Visa').reduce((s, i) => s + i.paid_amount, 0);
-  const instapayIncome = filteredInvoices.filter(i => i.payment_method === 'InstaPay').reduce((s, i) => s + i.paid_amount, 0);
+  const cashIncome = calculateIncomeByMethod(filteredInvoices, 'Cash');
+  const visaIncome = calculateIncomeByMethod(filteredInvoices, 'Visa');
+  const instapayIncome = calculateIncomeByMethod(filteredInvoices, 'InstaPay');
 
   const paymentMethods = [
     { name: "Cash", amount: cashIncome },
@@ -142,9 +128,9 @@ export default function Finance() {
   });
   const breakdownTotalIncome = breakdownInvoices.reduce((s, i) => s + i.paid_amount, 0);
 
-  const breakdownCashIncome = breakdownInvoices.filter(i => i.payment_method === 'Cash').reduce((s, i) => s + i.paid_amount, 0);
-  const breakdownVisaIncome = breakdownInvoices.filter(i => i.payment_method === 'Visa').reduce((s, i) => s + i.paid_amount, 0);
-  const breakdownInstapayIncome = breakdownInvoices.filter(i => i.payment_method === 'InstaPay').reduce((s, i) => s + i.paid_amount, 0);
+  const breakdownCashIncome = calculateIncomeByMethod(breakdownInvoices, 'Cash');
+  const breakdownVisaIncome = calculateIncomeByMethod(breakdownInvoices, 'Visa');
+  const breakdownInstapayIncome = calculateIncomeByMethod(breakdownInvoices, 'InstaPay');
 
   const breakdownPaymentMethods = [
     { name: "Cash", amount: breakdownCashIncome },
@@ -184,55 +170,6 @@ export default function Finance() {
     })
     .sort((a, b) => b.amount - a.amount);
 
-  const handleCategoryChange = (cat: string) => {
-    setForm(p => ({
-      ...p, category: cat, liabilityId: "", customCategory: "",
-      amount: cat === LIABILITY_CATEGORY ? "" : p.amount,
-      description: cat === LIABILITY_CATEGORY ? "" : p.description,
-    }));
-  };
-
-  const handleLiabilitySelect = (id: string) => {
-    const l = activeLiabilities.find(x => x.id === id);
-    setForm(p => ({
-      ...p, liabilityId: id,
-      amount: l ? String(l.installment_amount) : "",
-      description: l ? `${l.type === 'one_time' ? 'Payment' : 'Installment'} — ${l.name}` : "",
-    }));
-  };
-
-  const handleAddExpense = () => {
-    if (form.category === 'CUSTOM' && !form.customCategory.trim()) { toast.error("Enter a custom category name"); return; }
-    if (!form.amount || Number(form.amount) <= 0) { toast.error("Enter a valid amount"); return; }
-    if (isLiabilityPayment && !form.liabilityId) { toast.error("Select a liability to pay"); return; }
-
-    const finalCategory = form.category === 'CUSTOM' ? form.customCategory.trim() : form.category;
-
-    createExpense.mutate({
-      category: finalCategory,
-      amount: Number(form.amount),
-      description: form.description || finalCategory,
-      date: new Date().toISOString(),
-      liability_id: isLiabilityPayment ? form.liabilityId : null,
-    }, {
-      onSuccess: () => {
-        if (isLiabilityPayment && selectedLiability) {
-          const newPaid = selectedLiability.paid_amount + Number(form.amount);
-          const complete = newPaid >= selectedLiability.total_amount;
-          toast.success(`Payment recorded for "${selectedLiability.name}"`, {
-            description: complete
-              ? "Liability fully paid off! 🎉"
-              : `${Math.round((newPaid / selectedLiability.total_amount) * 100)}% of total paid`,
-          });
-        } else {
-          toast.success(`Expense recorded: ${finalCategory}`, { description: `${Number(form.amount).toLocaleString()} EGP` });
-        }
-        setForm(emptyForm);
-        setShowAddExpense(false);
-      },
-      onError: (err) => toast.error(`Error recording expense: ${err.message}`)
-    });
-  };
 
   const prevMonth = () => {
     if (filterMonth === 0) { setFilterMonth(11); setFilterYear(y => y - 1); }
@@ -324,13 +261,11 @@ export default function Finance() {
                       <div>
                         <span className="font-medium text-foreground">{coach.name}</span>
                         <span className="text-xs text-muted-foreground ml-2">
-                          ({coach.payment_type === 'salary' ? 'Salary' : coach.payment_type === 'per_session' ? 'Per Session' : 'Commission'})
+                          ({coach.payment_type === 'salary' ? 'Salary' : 'Per Session'})
                         </span>
-                        {coach.payment_type !== 'commission' && (
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            Expected: {coach.scheduledSlotsInMonth} slots | Attended: {coach.attendedSessions} slots
-                          </p>
-                        )}
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Expected: {coach.scheduledSlotsInMonth} slots | Attended: {coach.attendedSessions} slots
+                        </p>
                         {coach.missedSessions > 0 && coach.payment_type === 'salary' && (
                           <p className="text-xs font-semibold text-red-500 mt-0.5">
                             Deduction: -{Math.round(coach.deduction).toLocaleString()} EGP (Missed {coach.missedSessions} slots)
@@ -379,9 +314,6 @@ export default function Finance() {
         <div className="flex items-center gap-3">
           <Button variant="outline" onClick={() => window.print()} className="gap-2">
             <Printer className="w-4 h-4" /> Print Report
-          </Button>
-          <Button data-testid="btn-add-expense" onClick={() => setShowAddExpense(true)} className="gap-2">
-            <Plus className="w-4 h-4" /> Add Expense
           </Button>
         </div>
       </div>
@@ -714,13 +646,11 @@ export default function Finance() {
                           <div>
                             <span className="font-medium text-foreground">{coach.name}</span>
                             <span className="text-xs text-muted-foreground ml-2">
-                              ({coach.payment_type === 'salary' ? 'Salary' : coach.payment_type === 'per_session' ? 'Per Session' : 'Commission'})
+                              ({coach.payment_type === 'salary' ? 'Salary' : 'Per Session'})
                             </span>
-                            {coach.payment_type !== 'commission' && (
-                              <p className="text-[10px] text-muted-foreground mt-0.5">
-                                Expected: {coach.scheduledSlotsInMonth} slots | Attended: {coach.attendedSessions} slots
-                              </p>
-                            )}
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                              Expected: {coach.scheduledSlotsInMonth} slots | Attended: {coach.attendedSessions} slots
+                            </p>
                             {coach.missedSessions > 0 && coach.payment_type === 'salary' && (
                               <p className="text-[10px] font-semibold text-red-500 mt-0.5">
                                 Deduction: -{Math.round(coach.deduction).toLocaleString()} EGP (Missed {coach.missedSessions} slots)
@@ -785,107 +715,7 @@ export default function Finance() {
           </Card>
         </div>
       </div>
-      </div>
-
-      {/* Add Expense Dialog */}
-      <Dialog open={showAddExpense} onOpenChange={v => { if (!v) setForm(emptyForm); setShowAddExpense(v); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Record Expense</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Category</Label>
-              <Select value={form.category} onValueChange={handleCategoryChange}>
-                <SelectTrigger data-testid="select-expense-category"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {allCategories.map(c => (
-                    <SelectItem key={c} value={c}>
-                      {c === 'CUSTOM' ? 'Add Custom Category...' : c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {form.category === 'CUSTOM' && (
-              <div className="space-y-1.5">
-                <Label>Custom Category Name *</Label>
-                <Input
-                  autoFocus
-                  placeholder="e.g., Water Bill"
-                  value={form.customCategory}
-                  onChange={e => setForm(p => ({ ...p, customCategory: e.target.value }))}
-                />
-              </div>
-            )}
-
-            {isLiabilityPayment && (
-              <div className="space-y-1.5">
-                <Label>Select Liability *</Label>
-                {activeLiabilities.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-2">No active liabilities to pay</p>
-                ) : (
-                  <Select value={form.liabilityId} onValueChange={handleLiabilitySelect}>
-                    <SelectTrigger><SelectValue placeholder="Pick a liability..." /></SelectTrigger>
-                    <SelectContent>
-                      {activeLiabilities.map(l => (
-                        <SelectItem key={l.id} value={l.id}>
-                          {l.name} — {l.installment_amount.toLocaleString()} EGP {l.type === 'installment' ? 'installment' : 'one-time'}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-                {selectedLiability && (
-                  <div className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-amber-700">Paid so far</span>
-                      <span className="font-medium">{selectedLiability.paid_amount.toLocaleString()} / {selectedLiability.total_amount.toLocaleString()} EGP</span>
-                    </div>
-                    <div className="h-1.5 bg-amber-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-amber-500 rounded-full"
-                        style={{ width: `${Math.round((selectedLiability.paid_amount / selectedLiability.total_amount) * 100)}%` }}
-                      />
-                    </div>
-                    <p className="text-amber-700">{Math.round((selectedLiability.paid_amount / selectedLiability.total_amount) * 100)}% paid</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <Label>Amount (EGP) *</Label>
-              <Input
-                data-testid="input-expense-amount"
-                type="number" placeholder="0"
-                value={form.amount}
-                onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}
-              />
-              {isLiabilityPayment && selectedLiability && (
-                <p className="text-xs text-muted-foreground">
-                  Suggested: {selectedLiability.installment_amount.toLocaleString()} EGP ({selectedLiability.type === 'one_time' ? 'full amount' : `${FREQUENCY_LABELS[selectedLiability.frequency_days] ?? `${selectedLiability.frequency_days}d`} installment`})
-                </p>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label>Description</Label>
-              <Input
-                data-testid="input-expense-description"
-                placeholder="Optional description"
-                value={form.description}
-                onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setForm(emptyForm); setShowAddExpense(false); }}>Cancel</Button>
-            <Button data-testid="btn-save-expense" onClick={handleAddExpense} disabled={createExpense.isPending}>
-              {isLiabilityPayment ? 'Record Payment' : 'Record Expense'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+          </div>    </div>
   );
 }
 

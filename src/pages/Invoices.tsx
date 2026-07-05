@@ -23,13 +23,14 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/SearchableSelect";
+import { ExpensesView } from "@/components/ExpensesView";
 import { useInvoices, usePackages, useMembers, useDiscounts, useCreateInvoice, useUpdateInvoice, useDeleteInvoice, useCreateAuditLog, useClasses } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
 import type { Invoice } from "@/lib/types";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
-const paymentMethods = ["Cash", "Visa", "InstaPay"];
+const paymentMethods = ["Cash", "Visa", "InstaPay", "Split"];
 const paymentStatuses: Record<string, string> = {
   paid: "bg-emerald-100 text-emerald-700 border-emerald-200",
   partial: "bg-amber-100 text-amber-700 border-amber-200",
@@ -50,6 +51,7 @@ const emptyForm = {
   invoiceDate: "",
   activationDate: "",
   customId: "",
+  splitPayments: [] as { method: string, amount: string }[],
 };
 
 export default function Invoices() {
@@ -64,8 +66,11 @@ export default function Invoices() {
   const createAuditLog = useCreateAuditLog();
   const { currentUser } = useAuth();
 
+  const [activeMainTab, setActiveMainTab] = useState("invoices");
   const [tab, setTab] = useState("all");
   const [showCreate, setShowCreate] = useState(false);
+  const [showVerificationDialog, setShowVerificationDialog] = useState(false);
+  const [verificationPassword, setVerificationPassword] = useState("");
   const [form, setForm] = useState(emptyForm);
   const [, navigate] = useLocation();
   const searchString = useSearch();
@@ -200,7 +205,9 @@ export default function Invoices() {
   }
 
   const total = selectedPackage ? Math.max(0, selectedPackage.price - discountAmount) : 0;
-  const paid = Number(form.paidAmount) || 0;
+  const paid = form.paymentMethod === 'Split' 
+    ? form.splitPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+    : (Number(form.paidAmount) || 0);
   const needsDescription = form.discountMode === 'custom' && discountAmount > 0 && !form.customDiscountDescription.trim();
 
   const resetForm = () => setForm(emptyForm);
@@ -216,6 +223,26 @@ export default function Invoices() {
       }
     }
 
+    if (form.discountMode === 'custom' && discountAmount > 0) {
+      setShowVerificationDialog(true);
+      return;
+    }
+
+    submitCreate();
+  };
+
+  const verifyAndCreate = () => {
+    const correctPassword = import.meta.env.VITE_CUSTOM_DISCOUNT_PASSWORD || "01102611117";
+    if (verificationPassword !== correctPassword) {
+      toast.error("Incorrect verification password");
+      return;
+    }
+    setShowVerificationDialog(false);
+    setVerificationPassword("");
+    submitCreate();
+  };
+
+  const submitCreate = () => {
     const invStatus: 'paid' | 'partial' | 'unpaid' =
       paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
 
@@ -233,7 +260,8 @@ export default function Invoices() {
       total_amount: total,
       paid_amount: paid,
       status: invStatus,
-      payment_method: form.paymentMethod,
+      payment_method: form.paymentMethod as any,
+      split_payments: form.paymentMethod === 'Split' ? form.splitPayments.map(sp => ({ method: sp.method as any, amount: Number(sp.amount) || 0 })) : null,
       created_at: form.invoiceDate ? new Date(form.invoiceDate).toISOString() : new Date().toISOString(),
       activation_date: form.activationDate ? new Date(form.activationDate).toISOString() : (form.invoiceDate ? new Date(form.invoiceDate).toISOString() : new Date().toISOString()),
       ...(form.customId.trim() ? { id: form.customId.trim() } : {}),
@@ -324,15 +352,32 @@ export default function Invoices() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Invoices</h1>
-          <p className="text-sm text-muted-foreground">{invoices.length} total invoices</p>
+          <h1 className="text-2xl font-bold text-foreground">Accounting</h1>
+          <p className="text-sm text-muted-foreground">Manage your invoices and expenses</p>
         </div>
-        <Button data-testid="btn-create-invoice" onClick={() => setShowCreate(true)} className="gap-2">
-          <Plus className="w-4 h-4" /> New Invoice
-        </Button>
+        <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="w-full sm:w-auto">
+          <TabsList className="grid w-full sm:w-[300px] grid-cols-2">
+            <TabsTrigger value="invoices">Invoices</TabsTrigger>
+            <TabsTrigger value="expenses">Expenses</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
+
+      {activeMainTab === 'expenses' ? (
+        <ExpensesView />
+      ) : (
+        <div className="space-y-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-foreground">Invoices List</h2>
+              <p className="text-sm text-muted-foreground">{invoices.length} total invoices</p>
+            </div>
+            <Button data-testid="btn-create-invoice" onClick={() => setShowCreate(true)} className="gap-2">
+              <Plus className="w-4 h-4" /> New Invoice
+            </Button>
+          </div>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
@@ -464,8 +509,18 @@ export default function Invoices() {
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${paymentStatuses[inv.status]}`}>
                           {inv.status}
                         </span>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <CreditCard className="w-3 h-3" /> {inv.payment_method}
+                        <div className="flex flex-col gap-0.5 text-xs text-muted-foreground mt-1">
+                          {inv.payment_method === 'Split' && inv.split_payments ? (
+                            inv.split_payments.map((sp, idx) => (
+                              <div key={idx} className="flex items-center gap-1 text-[10px]">
+                                <CreditCard className="w-3 h-3" /> {sp.method}: {sp.amount}
+                              </div>
+                            ))
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <CreditCard className="w-3 h-3" /> {inv.payment_method}
+                            </div>
+                          )}
                         </div>
                         {inv.status === 'partial' && (
                           <p className="text-[10px] text-muted-foreground">Paid: {inv.paid_amount} / {inv.total_amount}</p>
@@ -672,22 +727,84 @@ export default function Invoices() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Amount Paid (EGP)</Label>
-                <Input
-                  data-testid="input-invoice-paid"
-                  type="number" placeholder={String(total)}
-                  value={form.paidAmount}
-                  onChange={e => setForm(p => ({ ...p, paidAmount: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1.5">
                 <Label>Payment Method</Label>
-                <Select value={form.paymentMethod} onValueChange={v => setForm(p => ({ ...p, paymentMethod: v }))}>
+                <Select value={form.paymentMethod} onValueChange={v => {
+                  setForm(p => ({ 
+                    ...p, 
+                    paymentMethod: v,
+                    splitPayments: v === 'Split' && p.splitPayments.length === 0 ? [{ method: 'Cash', amount: '' }] : p.splitPayments
+                  }));
+                }}>
                   <SelectTrigger data-testid="select-invoice-method"><SelectValue /></SelectTrigger>
                   <SelectContent>{paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
+              <div className="space-y-1.5">
+                <Label>Amount Paid (EGP)</Label>
+                {form.paymentMethod === 'Split' ? (
+                  <div className="flex h-9 items-center px-3 border rounded-md bg-muted/50 text-muted-foreground text-sm">
+                    {paid}
+                  </div>
+                ) : (
+                  <Input
+                    data-testid="input-invoice-paid"
+                    type="number" placeholder={String(total)}
+                    value={form.paidAmount}
+                    onChange={e => setForm(p => ({ ...p, paidAmount: e.target.value }))}
+                  />
+                )}
+              </div>
             </div>
+
+            {form.paymentMethod === 'Split' && (
+              <div className="space-y-3 p-3 border rounded-md bg-muted/20">
+                <div className="flex items-center justify-between">
+                  <Label>Split Payment Details</Label>
+                  <Button 
+                    variant="outline" size="sm" className="h-7 text-xs"
+                    onClick={() => setForm(p => ({ ...p, splitPayments: [...p.splitPayments, { method: 'Cash', amount: '' }] }))}
+                  >
+                    <Plus className="w-3 h-3 mr-1" /> Add Payment
+                  </Button>
+                </div>
+                {form.splitPayments.map((sp, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <Select 
+                      value={sp.method} 
+                      onValueChange={v => {
+                        const newSp = [...form.splitPayments];
+                        newSp[idx].method = v;
+                        setForm(p => ({ ...p, splitPayments: newSp }));
+                      }}
+                    >
+                      <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {["Cash", "Visa", "InstaPay"].map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <Input 
+                      type="number" placeholder="Amount" 
+                      value={sp.amount}
+                      onChange={e => {
+                        const newSp = [...form.splitPayments];
+                        newSp[idx].amount = e.target.value;
+                        setForm(p => ({ ...p, splitPayments: newSp }));
+                      }}
+                    />
+                    <Button 
+                      variant="ghost" size="icon" className="text-red-500 shrink-0"
+                      disabled={form.splitPayments.length <= 1}
+                      onClick={() => {
+                        const newSp = form.splitPayments.filter((_, i) => i !== idx);
+                        setForm(p => ({ ...p, splitPayments: newSp }));
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Custom Invoice ID */}
             <div className="space-y-1.5">
@@ -793,6 +910,26 @@ export default function Invoices() {
         </DialogContent>
       </Dialog>
 
+      {/* Verification Dialog */}
+      <Dialog open={showVerificationDialog} onOpenChange={setShowVerificationDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Admin Verification</DialogTitle></DialogHeader>
+          <div className="py-4 space-y-3">
+            <p className="text-sm text-muted-foreground">Please confirm with the admin and enter the verification password</p>
+            <Input 
+              type="password" 
+              placeholder="Verification password" 
+              value={verificationPassword}
+              onChange={(e) => setVerificationPassword(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowVerificationDialog(false)}>Cancel</Button>
+            <Button onClick={verifyAndCreate}>Verify & Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Delete Invoice Confirmation */}
       <AlertDialog open={!!confirmDelete} onOpenChange={o => !o && setConfirmDelete(null)}>
         <AlertDialogContent>
@@ -815,6 +952,8 @@ export default function Invoices() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+        </div>
+      )}
     </div>
   );
 }

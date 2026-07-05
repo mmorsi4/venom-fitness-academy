@@ -19,11 +19,10 @@ export interface UserRoleMapping {
   role?: Role;
 }
 export type MemberStatus = 'active' | 'expired' | 'expiring_soon' | 'has_debt' | 'new';
-export type Gender = 'male' | 'female' | 'other';
+export type Gender = 'male' | 'female';
 export type InvoiceStatus = 'paid' | 'partial' | 'unpaid';
-export type PaymentMethod = 'Cash' | 'Visa' | 'InstaPay';
-export type CoachPaymentType = 'salary' | 'per_session' | 'commission';
-export type CommissionBase = 'revenue' | 'members';
+export type PaymentMethod = 'Cash' | 'Visa' | 'InstaPay' | 'Split';
+export type CoachPaymentType = 'salary' | 'per_session';
 export type LeadStatus = 'New' | 'Contacted' | 'Follow-up' | 'Converted' | 'Lost';
 export type LiabilityType = 'installment' | 'one_time';
 export type DiscountType = 'fixed' | 'percentage';
@@ -67,7 +66,6 @@ export interface Member {
   freeze_days_remaining: number;
   invitations_remaining: number;
   inbody_sessions_remaining: number;
-  sport: string | null;
   created_at: string;
   // Joined field (populated via query)
   frozen_until?: string | null;
@@ -101,6 +99,7 @@ export interface Invoice {
   paid_amount: number;
   status: InvoiceStatus;
   payment_method: PaymentMethod;
+  split_payments?: { method: PaymentMethod; amount: number }[] | null;
   created_at: string;
   activation_date: string;
   is_applied: boolean;
@@ -123,7 +122,6 @@ export interface Coach {
   phone: string;
   payment_type: CoachPaymentType;
   rate: number;
-  commission_base: CommissionBase | null;
   created_at: string;
 }
 
@@ -143,6 +141,7 @@ export interface Lead {
 }
 
 export interface Expense {
+  uuid: string;
   id: string;
   category: string;
   amount: number;

@@ -43,7 +43,10 @@ export default function Classes() {
     return c.name.toLowerCase().includes(q) ||
            c.sport_name?.toLowerCase().includes(q) ||
            c.coach_name?.toLowerCase().includes(q);
-  });
+  }).map(c => ({
+    ...c,
+    schedules: Array.isArray(c.schedules) ? c.schedules.filter(s => s && s.day && s.time) : []
+  }));
 
   const openAdd = () => { setForm(emptyForm); setShowAdd(true); };
   const openEdit = (c: Class) => {
@@ -190,10 +193,10 @@ export default function Classes() {
                       {cls.schedules?.map((s, i) => (
                         <div key={i} className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs font-medium">
                           <CalendarIcon className="w-3 h-3 text-muted-foreground" />
-                          {s.day.slice(0, 3)}
+                          {s?.day?.slice(0, 3)}
                           <Clock className="w-3 h-3 ml-1 text-muted-foreground" />
                           {(() => {
-                            const [h, m] = s.time.split(':');
+                            const [h, m] = (s?.time || "00:00").split(':');
                             let hour = parseInt(h, 10);
                             const ampm = hour >= 12 ? 'PM' : 'AM';
                             hour = hour % 12 || 12;

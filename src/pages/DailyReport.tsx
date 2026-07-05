@@ -3,6 +3,7 @@ import {
   CalendarDays, Users, DollarSign, TrendingDown, TrendingUp,
   Clock, CheckCircle2, CreditCard, AlertTriangle
 } from "lucide-react";
+import { calculateIncomeByMethod } from "../lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,10 +56,9 @@ export default function DailyReport() {
   const totalExpenses = expensesForDay.reduce((s, e) => s + e.amount, 0);
   const netBalance = totalIncome - totalExpenses;
   const totalAttendance = classesForDay.reduce((s, c) => s + c.attendance_count, 0);
-
-  const cashIncome = invoicesForDay.filter(i => i.payment_method === 'Cash').reduce((s, i) => s + i.paid_amount, 0);
-  const visaIncome = invoicesForDay.filter(i => i.payment_method === 'Visa').reduce((s, i) => s + i.paid_amount, 0);
-  const instapayIncome = invoicesForDay.filter(i => i.payment_method === 'InstaPay').reduce((s, i) => s + i.paid_amount, 0);
+  const cashIncome = calculateIncomeByMethod(invoicesForDay, 'Cash');
+  const visaIncome = calculateIncomeByMethod(invoicesForDay, 'Visa');
+  const instapayIncome = calculateIncomeByMethod(invoicesForDay, 'InstaPay');
 
   const prevDay = () => setSelectedDate(d => subDays(d, 1));
   const nextDay = () => setSelectedDate(d => {

@@ -70,7 +70,7 @@ export async function getMembers() {
       class_info = {
         id: m.classes.id,
         name: m.classes.name,
-        schedules: m.classes.schedules,
+        schedules: Array.isArray(m.classes.schedules) ? m.classes.schedules.filter((s: any) => s && s.day && s.time) : [],
         sport_name: m.classes.sports?.name ?? null,
         coach_name: m.classes.coaches?.name ?? null,
       };
@@ -92,20 +92,12 @@ export async function getMembers() {
 export async function createMember(member: Omit<Member, 'uuid' | 'created_at' | 'coach_name'>) {
   const memberData: any = { ...member };
 
-  // Auto-assign numeric id if not set (and not -1 for clinic visitors)
-  if (!member.id || member.id <= 0) {
-    if (member.id === -1) {
-      memberData.id = -1;
-    } else {
-      const { data: maxData } = await supabase
-        .from('members')
-        .select('id')
-        .gt('id', 0)
-        .order('id', { ascending: false })
-        .limit(1)
-        .single();
-      memberData.id = (maxData?.id ?? 0) + 1;
-    }
+  // Note: the database trigger 'trg_set_member_id' will automatically
+  // assign an auto-incrementing ID if member.id is 0.
+  if (member.id === -1) {
+    memberData.id = -1;
+  } else if (!member.id || member.id <= 0) {
+    memberData.id = 0; // The trigger intercepts 0 and sets it to MAX(id) + 1
   }
 
   const { data, error } = await supabase
@@ -121,6 +113,9 @@ export async function updateMember(uuid: string, updates: Partial<Member>) {
   const { coach_name, ...clean } = updates as any;
   
   if (clean.id === 0) {
+    // A 0 here implies they are transitioning from a Clinic Visitor (-1) to a regular member,
+    // or similarly needs an auto-generated ID. Since update doesn't trigger INSERT, 
+    // we must manually query the DB for the max ID here.
     const { data: maxData } = await supabase
       .from('members')
       .select('id')
@@ -425,7 +420,7 @@ export async function getExpenses() {
   return data as Expense[];
 }
 
-export async function createExpense(expense: Omit<Expense, 'id' | 'created_at'>) {
+export async function createExpense(expense: Omit<Expense, 'uuid' | 'id' | 'created_at'> & { id?: string }) {
   const { data, error } = await supabase.from('expenses').insert(expense).select().single();
   if (error) throw error;
   // If this is a liability payment, call the pay_liability function
@@ -436,6 +431,17 @@ export async function createExpense(expense: Omit<Expense, 'id' | 'created_at'>)
     });
   }
   return data as Expense;
+}
+
+export async function updateExpense(uuid: string, updates: Partial<Expense>) {
+  const { data, error } = await supabase.from('expenses').update(updates).eq('uuid', uuid).select().single();
+  if (error) throw error;
+  return data as Expense;
+}
+
+export async function deleteExpense(uuid: string) {
+  const { error } = await supabase.from('expenses').delete().eq('uuid', uuid);
+  if (error) throw error;
 }
 
 // ── Liabilities ─────────────────────────────────────────────
@@ -531,6 +537,7 @@ export async function getClasses() {
   if (error) throw error;
   return (data ?? []).map((c: any) => ({
     ...c,
+    schedules: Array.isArray(c.schedules) ? c.schedules.filter((s: any) => s && s.day && s.time) : [],
     coach_name: c.coaches?.name ?? null,
     sport_name: c.sports?.name ?? null,
     coaches: undefined,

@@ -36,7 +36,6 @@ import { format, differenceInYears, parseISO } from "date-fns";
 const GENDERS: { value: Gender; label: string }[] = [
   { value: "male", label: "Male" },
   { value: "female", label: "Female" },
-  { value: "other", label: "Other" },
 ];
 
 interface MemberForm {
@@ -44,8 +43,8 @@ interface MemberForm {
   phone: string;
   parentPhone: string;
   birthDate: string;
-  gender: Gender | "";
   id: number;
+  customId: string;
   classId: string;
   isClinicVisitor: boolean;
   
@@ -58,7 +57,7 @@ interface MemberForm {
 
 const emptyForm: MemberForm = {
   name: "", phone: "", parentPhone: "", birthDate: "",
-  gender: "", classId: "", id: 0, isClinicVisitor: false,
+  gender: "", classId: "", id: 0, customId: "", isClinicVisitor: false,
   sessions_remaining: "0",
   freeze_days_remaining: "0",
   invitations_remaining: "0", inbody_sessions_remaining: "0"
@@ -67,8 +66,8 @@ const emptyForm: MemberForm = {
 function memberToForm(m: Member): MemberForm {
   return {
     name: m.name, phone: m.phone, parentPhone: m.parent_phone ?? "",
-    birthDate: m.birth_date ?? "", gender: m.gender ?? "",
     id: m.id,
+    customId: "",
     classId: m.class_id ?? "",
     isClinicVisitor: m.id === -1,
     sessions_remaining: String(m.sessions_remaining ?? 0),
@@ -215,12 +214,10 @@ export default function Members() {
         expires_at: null,
         member_since: new Date().toISOString(),
         package_id: null,
-        package_name: "None",
         freeze_days_remaining: 0,
         invitations_remaining: 0,
         inbody_sessions_remaining: 0,
-        sport: null,
-        id: form.isClinicVisitor ? -1 : 0,
+        id: form.isClinicVisitor ? -1 : (form.customId ? Number(form.customId) : 0),
       }, {
         onSuccess: () => {
           toast.success(`Member ${form.name} created`);
@@ -490,7 +487,7 @@ export default function Members() {
                             <span className="text-muted-foreground mx-1">-</span>
                             <span>{m.class_info.coach_name ?? 'No Coach'}</span>
                             <div className="text-xs text-muted-foreground mt-1">
-                              {m.class_info.schedules?.map(s => `${s.day.slice(0,3)} ${s.time}`).join(', ')}
+                              {m.class_info.schedules?.map(s => `${s?.day?.slice(0,3)} ${s?.time}`).join(', ')}
                             </div>
                           </div>
                         ) : (
@@ -651,6 +648,20 @@ export default function Members() {
               </Label>
             </div>
 
+            {/* Custom ID (Optional) */}
+            {!editMember && !form.isClinicVisitor && (
+              <div className="space-y-1.5">
+                <Label htmlFor="m-custom-id">Custom Member ID (Optional)</Label>
+                <Input
+                  id="m-custom-id"
+                  placeholder="Leave empty for auto-generation"
+                  type="number"
+                  value={form.customId}
+                  onChange={f('customId')}
+                />
+              </div>
+            )}
+
             {/* Name */}
             <div className="space-y-1.5">
               <Label htmlFor="m-name">Full Name *</Label>
@@ -724,7 +735,7 @@ export default function Members() {
                     <SelectItem value="__none__">None</SelectItem>
                     {classes.map(c => (
                       <SelectItem key={c.id} value={c.id}>
-                        {c.sport_name ?? 'Sport'} - {c.coach_name ?? 'Coach'} ({c.schedules?.length || 0} slots)
+                        {c.name ?? 'Class Name'} - {c.coach_name ?? 'Coach'} ({c.schedules?.length || 0} slots)
                       </SelectItem>
                     ))}
                   </SelectContent>

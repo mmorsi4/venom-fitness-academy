@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { eachDayOfInterval, startOfMonth, endOfMonth, isBefore, startOfDay, format } from "date-fns"
-import type { Coach, Class, CoachCheckIn } from "./types"
+import type { Coach, Class, CoachCheckIn, Invoice, PaymentMethod } from "./types"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -78,11 +78,6 @@ export function calculateCoachPayroll(
     baseAmount = coach.rate * attendedSessions;
     deduction = 0;
     finalAmount = baseAmount; 
-  } else {
-    // Commission
-    const base = coach.commission_base === 'members' ? newMembersCount * 1000 : revenue;
-    baseAmount = Math.round((coach.rate / 100) * base);
-    finalAmount = baseAmount;
   }
   
   return {
@@ -94,4 +89,16 @@ export function calculateCoachPayroll(
     deduction,
     calculatedAmount: Math.round(finalAmount),
   };
+}
+
+export function calculateIncomeByMethod(invoices: Invoice[], method: PaymentMethod): number {
+  return invoices.reduce((sum, inv) => {
+    if (inv.payment_method === 'Split' && inv.split_payments) {
+      return sum + inv.split_payments.filter(sp => sp.method === method).reduce((s, sp) => s + sp.amount, 0);
+    }
+    if (inv.payment_method === method) {
+      return sum + inv.paid_amount;
+    }
+    return sum;
+  }, 0);
 }

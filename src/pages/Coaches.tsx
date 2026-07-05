@@ -24,25 +24,20 @@ import type { Coach } from "@/lib/types";
 const paymentTypeColors: Record<string, string> = {
   salary: "bg-blue-100 text-blue-700 border border-blue-200",
   per_session: "bg-violet-100 text-violet-700 border border-violet-200",
-  commission: "bg-amber-100 text-amber-700 border border-amber-200",
 };
 const paymentTypeLabels: Record<string, string> = {
-  salary: "Monthly Salary", per_session: "Per Session", commission: "Commission",
-};
-const commissionBaseLabels: Record<string, string> = {
-  revenue: "Total Revenue", members: "New Members",
+  salary: "Monthly Salary", per_session: "Per Session",
 };
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 interface CoachForm {
   name: string;
   phone: string;
-  paymentType: "salary" | "per_session" | "commission";
+  paymentType: "salary" | "per_session";
   rate: string;
-  commissionBase: "revenue" | "members";
 }
 
-const emptyForm: CoachForm = { name: "", phone: "", paymentType: "salary", rate: "", commissionBase: "revenue" };
+const emptyForm: CoachForm = { name: "", phone: "", paymentType: "salary", rate: "" };
 export default function Coaches() {
   const { isAdmin } = useAuth();
   const { data: coaches = [] } = useCoaches();
@@ -128,7 +123,7 @@ export default function Coaches() {
   const openAdd = () => { setForm(emptyForm); setEditCoach(null); setShowCoachDialog(true); };
   const openEdit = (c: Coach) => {
     setEditCoach(c);
-    setForm({ name: c.name, phone: c.phone || "", paymentType: c.payment_type, rate: String(c.rate), commissionBase: c.commission_base ?? 'revenue' });
+    setForm({ name: c.name, phone: c.phone || "", paymentType: c.payment_type as "salary" | "per_session", rate: String(c.rate) });
     setShowCoachDialog(true);
   };
   const closeDialog = () => { setShowCoachDialog(false); setEditCoach(null); };
@@ -144,8 +139,7 @@ export default function Coaches() {
           name: form.name.trim(),
           phone: form.phone.trim(),
           payment_type: form.paymentType,
-          rate: Number(form.rate),
-          commission_base: form.paymentType === 'commission' ? form.commissionBase : null
+          rate: Number(form.rate)
         }
       }, {
         onSuccess: () => {
@@ -160,7 +154,6 @@ export default function Coaches() {
         phone: form.phone.trim(),
         payment_type: form.paymentType,
         rate: Number(form.rate),
-        commission_base: form.paymentType === 'commission' ? form.commissionBase : null,
       }, {
         onSuccess: () => {
           toast.success(`Coach added: ${form.name}`);
@@ -232,9 +225,6 @@ export default function Coaches() {
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${paymentTypeColors[coach.payment_type]}`}>
                         {paymentTypeLabels[coach.payment_type]}
                       </span>
-                      {coach.payment_type === 'commission' && coach.commission_base && (
-                        <span className="text-xs text-muted-foreground">on {commissionBaseLabels[coach.commission_base]}</span>
-                      )}
                     </div>
                   </div>
                   {isAdmin && (
@@ -246,7 +236,6 @@ export default function Coaches() {
                   )}
                 </div>
                 
-                {coach.payment_type !== 'commission' && (
                   <div className="grid grid-cols-2 gap-2">
                     <div className="p-2.5 rounded-lg bg-muted/50 text-center flex flex-col justify-center">
                       <p className="text-lg font-bold">{stats.scheduledSlotsInMonth}</p>
@@ -257,20 +246,6 @@ export default function Coaches() {
                       <p className="text-xs text-muted-foreground">Attended Slots</p>
                     </div>
                   </div>
-                )}
-                
-                {coach.payment_type === 'commission' && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="p-2.5 rounded-lg bg-muted/50 text-center">
-                      <p className="text-lg font-bold">{sessions}</p>
-                      <p className="text-xs text-muted-foreground">Check-ins</p>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-muted/50 text-center">
-                      <p className="text-lg font-bold">{coach.rate}%</p>
-                      <p className="text-xs text-muted-foreground">Rate</p>
-                    </div>
-                  </div>
-                )}
 
                 <div className="p-3 rounded-lg border bg-card">
                   <div className="flex items-center justify-between mb-1">
@@ -283,11 +258,6 @@ export default function Coaches() {
                     </div>
                   )}
                   {coach.payment_type === 'per_session' && stats.missedSessions === 0 && <p className="text-xs text-muted-foreground mt-1">{sessions} sessions × {coach.rate} EGP</p>}
-                  {coach.payment_type === 'commission' && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {coach.rate}% of {coach.commission_base === 'members' ? `${newMembersThisMonth} new members (×1000)` : `${monthlyRevenue.toLocaleString()} EGP revenue`}
-                    </p>
-                  )}
                 </div>
                 <Button data-testid={`btn-checkin-coach-${coach.id}`} variant="outline" size="sm" className="w-full gap-2" onClick={() => openClassCheckIn(coach)}>
                   <Dumbbell className="w-3.5 h-3.5" /> Check In for Today
@@ -309,9 +279,6 @@ export default function Coaches() {
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-medium">{coach.name}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full ${paymentTypeColors[coach.payment_type]}`}>{paymentTypeLabels[coach.payment_type]}</span>
-                    {coach.payment_type === 'commission' && (
-                      <span className="text-xs text-muted-foreground">{coach.rate}% on {commissionBaseLabels[coach.commission_base ?? 'revenue']}</span>
-                    )}
                   </div>
                   <span className="text-sm font-bold">{stats.calculatedAmount.toLocaleString()} EGP</span>
                 </div>
@@ -392,29 +359,16 @@ export default function Coaches() {
             <div className="space-y-1.5"><Label>Phone</Label><Input placeholder="01XXXXXXXXX" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></div>
             <div className="space-y-1.5">
               <Label>Payment Type</Label>
-              <Select value={form.paymentType} onValueChange={(v: "salary" | "per_session" | "commission") => setForm(p => ({ ...p, paymentType: v }))}>
+              <Select value={form.paymentType} onValueChange={(v: "salary" | "per_session") => setForm(p => ({ ...p, paymentType: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="salary">Monthly Salary</SelectItem>
                   <SelectItem value="per_session">Per Session</SelectItem>
-                  <SelectItem value="commission">Commission (%)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            {form.paymentType === 'commission' && (
-              <div className="space-y-1.5">
-                <Label>Commission Base</Label>
-                <Select value={form.commissionBase} onValueChange={(v: "revenue" | "members") => setForm(p => ({ ...p, commissionBase: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="revenue">% of Monthly Revenue</SelectItem>
-                    <SelectItem value="members">% of New Members Value</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
             <div className="space-y-1.5">
-              <Label>{form.paymentType === 'salary' ? 'Monthly Rate (EGP)' : form.paymentType === 'per_session' ? 'Rate per Session (EGP)' : 'Commission Rate (%)'}</Label>
+              <Label>{form.paymentType === 'salary' ? 'Monthly Rate (EGP)' : 'Rate per Session (EGP)'}</Label>
               <Input type="number" placeholder="0" value={form.rate} onChange={e => setForm(p => ({ ...p, rate: e.target.value }))} />
             </div>
           </div>

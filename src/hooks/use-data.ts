@@ -266,7 +266,30 @@ export function useExpenses() {
 export function useCreateExpense() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (expense: Omit<Expense, 'id' | 'created_at'>) => q.createExpense(expense),
+    mutationFn: (expense: Omit<Expense, 'uuid' | 'id' | 'created_at'> & { id?: string }) => q.createExpense(expense as any),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.expenses });
+      qc.invalidateQueries({ queryKey: queryKeys.liabilities });
+    },
+  });
+}
+
+export function useUpdateExpense() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ uuid, updates }: { uuid: string; updates: Partial<Expense> }) =>
+      q.updateExpense(uuid, updates),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.expenses });
+      qc.invalidateQueries({ queryKey: queryKeys.liabilities });
+    },
+  });
+}
+
+export function useDeleteExpense() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (uuid: string) => q.deleteExpense(uuid),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.expenses });
       qc.invalidateQueries({ queryKey: queryKeys.liabilities });

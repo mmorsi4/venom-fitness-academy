@@ -17,7 +17,7 @@ const ALL_NAV_ITEMS = [
   { href: "/checkin", label: "Check-In", icon: LogIn, highlight: true },
   { href: "/members", label: "Members", icon: Users },
   { href: "/subscriptions", label: "Subscriptions", icon: Package },
-  { href: "/invoices", label: "Invoices", icon: FileText },
+  { href: "/invoices", label: "Accounting", icon: FileText },
   { href: "/discounts", label: "Discounts", icon: Tag },
   { href: "/finance", label: "Finance", icon: DollarSign },
   { href: "/daily", label: "Daily Report", icon: CalendarDays },

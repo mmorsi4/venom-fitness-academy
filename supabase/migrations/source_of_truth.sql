@@ -49,9 +49,8 @@ create table public.coaches (
   id                 uuid primary key default gen_random_uuid(),
   name               text not null,
   payment_type       text not null default 'salary'
-                     check (payment_type in ('salary', 'per_session', 'commission')),
+                     check (payment_type in ('salary', 'per_session')),
   rate               numeric not null default 0,
-  commission_base    text check (commission_base in ('revenue', 'members')),
   sessions_this_month int not null default 0,
   created_at         timestamptz not null default now()
 );
@@ -68,7 +67,7 @@ create table public.members (
   phone              text not null,
   parent_phone       text,
   birth_date         date,
-  gender             text check (gender in ('male', 'female', 'other')),
+  gender             text check (gender in ('male', 'female')),
   source             text not null default 'Walk-in',
   status             text not null default 'active'
                      check (status in ('active', 'expired', 'expiring_soon', 'has_debt')),
@@ -129,7 +128,8 @@ create table public.invoices (
   status               text not null default 'unpaid'
                        check (status in ('paid', 'partial', 'unpaid')),
   payment_method       text not null default 'Cash'
-                       check (payment_method in ('Cash', 'Visa', 'InstaPay')),
+                       check (payment_method in ('Cash', 'Visa', 'InstaPay', 'Split')),
+  split_payments       jsonb,
   created_at           timestamptz not null default now()
 );
 
@@ -159,6 +159,8 @@ create table public.leads (
   status         text not null default 'New'
                  check (status in ('New', 'Contacted', 'Follow-up', 'Converted', 'Lost')),
   notes          text[] not null default '{}',
+  interest       text,
+  inviting_member_id uuid references public.members(id) on delete set null,
   follow_up_date timestamptz not null default (now() + interval '1 day'),
   assigned_to    uuid references public.profiles(id) on delete set null,
   calls_made     int not null default 0,
@@ -186,7 +188,8 @@ create table public.liabilities (
 -- ── Expenses ────────────────────────────────────────────────
 
 create table public.expenses (
-  id           uuid primary key default gen_random_uuid(),
+  uuid         uuid primary key default gen_random_uuid(),
+  id           text not null unique default nextval('expense_display_id_seq')::text,
   category     text not null,
   amount       numeric not null default 0,
   description  text not null default '',
@@ -428,10 +431,10 @@ $$ language plpgsql security definer;
 
 -- ── Coaches ─────────────────────────────────────────────────
 
-insert into public.coaches (id, name, payment_type, rate, commission_base, sessions_this_month) values
-  ('00000000-0000-0000-0000-000000000c01', 'Alex Turner',  'salary',     3000, null,      22),
-  ('00000000-0000-0000-0000-000000000c02', 'Bella Nour',   'per_session', 80,  null,      18),
-  ('00000000-0000-0000-0000-000000000c03', 'Chris Maged',  'commission',  10,  'revenue', 25);
+insert into public.coaches (id, name, payment_type, rate, sessions_this_month) values
+  ('00000000-0000-0000-0000-000000000c01', 'John Doe',     'salary',      5000, 40),
+  ('00000000-0000-0000-0000-000000000c02', 'Sarah Smith',  'per_session', 150,  30),
+  ('00000000-0000-0000-0000-000000000c03', 'Chris Maged',  'salary',      6000, 25);
 
 -- ── Packages ────────────────────────────────────────────────
 
@@ -1510,7 +1513,8 @@ DROP COLUMN IF EXISTS sessions_this_month;
  - -   = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 
  
  A L T E R   T A B L E   p u b l i c . c o a c h _ c h e c k _ i n s   
- D R O P   C O N S T R A I N T   I F   E X I S T S   c o a c h _ c h e c k _ i n s _ c o a c h _ i d _ d a t e _ c l a s s _ k e y ;  
+ D R O P   C O N S T R A I N T   I F   E X I S T S   c o a c h _ c h e c k _ i n s _ c o a c h _ i d _ d a t e _ c l a s s _ k e y ; 
+ 
  
 
 -- =====================================================================
@@ -1522,7 +1526,8 @@ DROP COLUMN IF EXISTS sessions_this_month;
  - -   A d d   i s _ c l i n i c   f l a g   t o   p a c k a g e s 
  - -   = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 
  
- A L T E R   T A B L E   p u b l i c . p a c k a g e s   A D D   C O L U M N   i s _ c l i n i c   B O O L E A N   N O T   N U L L   D E F A U L T   f a l s e ;  
+ A L T E R   T A B L E   p u b l i c . p a c k a g e s   A D D   C O L U M N   i s _ c l i n i c   B O O L E A N   N O T   N U L L   D E F A U L T   f a l s e ; 
+ 
  
 
 -- =====================================================================
@@ -1534,7 +1539,8 @@ DROP COLUMN IF EXISTS sessions_this_month;
  - -   A d d   i n v i t i n g _ m e m b e r _ i d   t o   l e a d s 
  - -   = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 
  
- A L T E R   T A B L E   p u b l i c . l e a d s   A D D   C O L U M N   i n v i t i n g _ m e m b e r _ i d   U U I D   R E F E R E N C E S   p u b l i c . m e m b e r s ( u u i d ) ;  
+ A L T E R   T A B L E   p u b l i c . l e a d s   A D D   C O L U M N   i n v i t i n g _ m e m b e r _ i d   U U I D   R E F E R E N C E S   p u b l i c . m e m b e r s ( u u i d ) ; 
+ 
  
 
 -- =====================================================================
@@ -1607,7 +1613,31 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE TRIGGER on_invoice_created_before
   BEFORE INSERT ON public.invoices
   FOR EACH ROW
-  EXECUTE FUNCTION public.handle_invoice_created();
+  EXECUTE FUNCTION public.set_invoice_id();
+
+-- Function to set expense ID to the max number + 1 if not provided
+CREATE OR REPLACE FUNCTION public.set_expense_id()
+RETURNS trigger AS $$
+DECLARE
+  v_max_id int;
+BEGIN
+  IF NEW.id IS NULL OR NEW.id = '' THEN
+    SELECT max(NULLIF(regexp_replace(id, '\D', '', 'g'), '')::int) INTO v_max_id FROM public.expenses;
+    IF v_max_id IS NULL THEN
+      NEW.id := '1';
+    ELSE
+      NEW.id := (v_max_id + 1)::text;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS on_expense_created_before ON public.expenses;
+CREATE TRIGGER on_expense_created_before
+  BEFORE INSERT ON public.expenses
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_expense_id();
 
 -- ── 3. Create activation RPC ───────────────────────────────
 CREATE OR REPLACE FUNCTION public.activate_pending_subscriptions()
@@ -1650,21 +1680,24 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- MIGRATION: 029_discount_groups.sql
 -- =====================================================================
 
-��A L T E R   T A B L E   d i s c o u n t s   A D D   C O L U M N   i s _ j o i n t   B O O L E A N   D E F A U L T   f a l s e ,   A D D   C O L U M N   j o i n t _ c o u n t   I N T E G E R   D E F A U L T   1 ;   D R O P   T A B L E   I F   E X I S T S   d i s c o u n t _ m e m b e r s ;  
+��A L T E R   T A B L E   d i s c o u n t s   A D D   C O L U M N   i s _ j o i n t   B O O L E A N   D E F A U L T   f a l s e ,   A D D   C O L U M N   j o i n t _ c o u n t   I N T E G E R   D E F A U L T   1 ;   D R O P   T A B L E   I F   E X I S T S   d i s c o u n t _ m e m b e r s ; 
+ 
  
 
 -- =====================================================================
 -- MIGRATION: 030_remove_discount_type.sql
 -- =====================================================================
 
-��A L T E R   T A B L E   d i s c o u n t s   D R O P   C O L U M N   I F   E X I S T S   t y p e ;  
+��A L T E R   T A B L E   d i s c o u n t s   D R O P   C O L U M N   I F   E X I S T S   t y p e ; 
+ 
  
 
 -- =====================================================================
 -- MIGRATION: 031_drop_discount_invoices.sql
 -- =====================================================================
 
-��D R O P   T A B L E   I F   E X I S T S   d i s c o u n t _ i n v o i c e s ;  
+��D R O P   T A B L E   I F   E X I S T S   d i s c o u n t _ i n v o i c e s ; 
+ 
  
 
 -- =====================================================================
@@ -1992,6 +2025,8 @@ $$ language plpgsql security definer;
 -- Remove the old sequence default
 ALTER TABLE public.invoices ALTER COLUMN id DROP DEFAULT;
 
+CREATE SEQUENCE IF NOT EXISTS public.expense_display_id_seq START 1;
+
 -- Function to set invoice ID to the max number + 1 if not provided
 CREATE OR REPLACE FUNCTION public.set_invoice_id()
 RETURNS trigger AS $$
@@ -2018,4 +2053,89 @@ CREATE TRIGGER trg_set_invoice_id
 -- Update existing records to remove the 'INV-' prefix
 UPDATE public.invoices SET id = replace(id, 'INV-', '') WHERE id LIKE 'INV-%';
 
+
+-- ── Trigger: auto-rollback member subscription on invoice deletion ──
+
+CREATE OR REPLACE FUNCTION public.handle_invoice_deleted()
+RETURNS trigger AS $$
+DECLARE
+  v_pkg public.packages%rowtype;
+  v_member public.members%rowtype;
+  v_latest_inv public.invoices%rowtype;
+BEGIN
+  -- 1. Only process if the invoice was actually applied
+  IF OLD.is_applied = false THEN
+    RETURN OLD;
+  END IF;
+
+  -- 2. Only process if the invoice had a package
+  IF OLD.package_id IS NULL THEN
+    RETURN OLD;
+  END IF;
+
+  SELECT * INTO v_pkg FROM public.packages WHERE id = OLD.package_id;
+  IF v_pkg IS NULL THEN
+    RETURN OLD;
+  END IF;
+
+  SELECT * INTO v_member FROM public.members WHERE uuid = OLD.member_id;
+  IF v_member IS NULL THEN
+    RETURN OLD;
+  END IF;
+
+  -- 3. Determine if this invoice is the member's current/latest active subscription
+  SELECT * INTO v_latest_inv
+  FROM public.invoices
+  WHERE member_id = OLD.member_id
+    AND is_applied = true
+    AND package_id IS NOT NULL
+  ORDER BY activation_date DESC NULLS LAST, created_at DESC
+  LIMIT 1;
+
+  -- 4. If the invoice being deleted IS the latest applied invoice, roll back the balances
+  IF v_latest_inv.uuid = OLD.uuid THEN
+    UPDATE public.members
+    SET
+      sessions_remaining        = GREATEST(0, v_member.sessions_remaining - v_pkg.sessions),
+      freeze_days_remaining     = GREATEST(0, v_member.freeze_days_remaining - v_pkg.freeze_days),
+      invitations_remaining     = GREATEST(0, v_member.invitations_remaining - v_pkg.invitations),
+      inbody_sessions_remaining = GREATEST(0, v_member.inbody_sessions_remaining - v_pkg.inbody_sessions),
+      package_id                = NULL,
+      package_name              = 'None',
+      status                    = 'expired'
+    WHERE uuid = OLD.member_id;
+  END IF;
+
+  RETURN OLD;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_invoice_deleted_before ON public.invoices;
+CREATE TRIGGER on_invoice_deleted_before
+  BEFORE DELETE ON public.invoices
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_invoice_deleted();
+
+-- Function to set member ID to the max number + 1 if it is 0 or null
+CREATE OR REPLACE FUNCTION public.set_member_id()
+RETURNS trigger AS $$
+DECLARE
+  v_max_id int;
+BEGIN
+  IF NEW.id IS NULL OR NEW.id = 0 THEN
+    SELECT max(id) INTO v_max_id FROM public.members WHERE id > 0;
+    IF v_max_id IS NULL THEN
+      v_max_id := 0;
+    END IF;
+    NEW.id := v_max_id + 1;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_set_member_id ON public.members;
+CREATE TRIGGER trg_set_member_id
+  BEFORE INSERT ON public.members
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_member_id();
 
