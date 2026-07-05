@@ -52,6 +52,7 @@ const emptyForm = {
   activationDate: "",
   customId: "",
   splitPayments: [] as { method: string, amount: string }[],
+  jointMemberIds: [] as string[],
 };
 
 export default function Invoices() {
@@ -70,6 +71,7 @@ export default function Invoices() {
   const [tab, setTab] = useState("all");
   const [showCreate, setShowCreate] = useState(false);
   const [showVerificationDialog, setShowVerificationDialog] = useState(false);
+  const [verificationAction, setVerificationAction] = useState<'create' | 'edit'>('create');
   const [verificationPassword, setVerificationPassword] = useState("");
   const [form, setForm] = useState(emptyForm);
   const [, navigate] = useLocation();
@@ -97,7 +99,20 @@ export default function Invoices() {
 
   // Edit invoice state
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null);
-  const [editForm, setEditForm] = useState({ paidAmount: "", paymentMethod: "Cash", status: "paid" as any, activationDate: "" });
+  const [editForm, setEditForm] = useState({ 
+    memberId: "", 
+    packageId: "", 
+    classId: "",
+    discountMode: "none" as DiscountMode,
+    discountGroupId: "",
+    customDiscountType: "fixed" as CustomDiscountType,
+    customDiscountValue: "",
+    customDiscountDescription: "",
+    paidAmount: "", 
+    paymentMethod: "Cash", 
+    status: "paid" as any, 
+    activationDate: "" 
+  });
 
   // Delete invoice state
   const [confirmDelete, setConfirmDelete] = useState<Invoice | null>(null);
@@ -210,6 +225,26 @@ export default function Invoices() {
     : (Number(form.paidAmount) || 0);
   const needsDescription = form.discountMode === 'custom' && discountAmount > 0 && !form.customDiscountDescription.trim();
 
+  // Edit form derived state
+  const selectedEditPackage = packages.find(p => p.id === editForm.packageId);
+  const selectedEditGroup = activeDiscounts.find(d => d.id === editForm.discountGroupId);
+
+  let editDiscountAmount = 0;
+  if (editForm.discountMode === 'group' && selectedEditGroup && selectedEditPackage) {
+    editDiscountAmount = selectedEditGroup.discount_type === 'fixed'
+      ? selectedEditGroup.value
+      : Math.round(selectedEditPackage.price * selectedEditGroup.value / 100);
+  } else if (editForm.discountMode === 'custom' && editForm.customDiscountValue) {
+    if (editForm.customDiscountType === 'fixed') {
+      editDiscountAmount = Number(editForm.customDiscountValue) || 0;
+    } else if (selectedEditPackage) {
+      editDiscountAmount = Math.round(selectedEditPackage.price * (Number(editForm.customDiscountValue) || 0) / 100);
+    }
+  }
+
+  const editTotal = selectedEditPackage ? Math.max(0, selectedEditPackage.price - editDiscountAmount) : 0;
+  const editNeedsDescription = editForm.discountMode === 'custom' && editDiscountAmount > 0 && !editForm.customDiscountDescription.trim();
+
   const resetForm = () => setForm(emptyForm);
 
   const handleCreate = () => {
@@ -224,6 +259,7 @@ export default function Invoices() {
     }
 
     if (form.discountMode === 'custom' && discountAmount > 0) {
+      setVerificationAction('create');
       setShowVerificationDialog(true);
       return;
     }
@@ -231,7 +267,7 @@ export default function Invoices() {
     submitCreate();
   };
 
-  const verifyAndCreate = () => {
+  const verifyAndSubmit = () => {
     const correctPassword = import.meta.env.VITE_CUSTOM_DISCOUNT_PASSWORD || "01102611117";
     if (verificationPassword !== correctPassword) {
       toast.error("Incorrect verification password");
@@ -239,47 +275,86 @@ export default function Invoices() {
     }
     setShowVerificationDialog(false);
     setVerificationPassword("");
-    submitCreate();
+    if (verificationAction === 'create') submitCreate();
+    else submitEdit();
   };
 
   const submitCreate = () => {
     const invStatus: 'paid' | 'partial' | 'unpaid' =
       paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
 
-    createInvoice.mutate({
-      member_id: form.memberId,
-      member_name: selectedMember?.name ?? "",
-      package_id: form.packageId,
-      package_name: selectedPackage?.name ?? "",
-      class_id: form.classId === 'none' ? null : (form.classId || null),
-      discount_id: form.discountMode === 'group' ? form.discountGroupId : null,
-      discount_description: form.discountMode === 'custom'
-        ? form.customDiscountDescription.trim()
-        : (selectedGroup?.name ?? null),
-      discount_amount: discountAmount,
-      total_amount: total,
-      paid_amount: paid,
-      status: invStatus,
-      payment_method: form.paymentMethod as any,
-      split_payments: form.paymentMethod === 'Split' ? form.splitPayments.map(sp => ({ method: sp.method as any, amount: Number(sp.amount) || 0 })) : null,
-      created_at: form.invoiceDate ? new Date(form.invoiceDate).toISOString() : new Date().toISOString(),
-      activation_date: form.activationDate ? new Date(form.activationDate).toISOString() : (form.invoiceDate ? new Date(form.invoiceDate).toISOString() : new Date().toISOString()),
-      ...(form.customId.trim() ? { id: form.customId.trim() } : {}),
-    } as any, {
-      onSuccess: () => {
-        toast.success(`Invoice created`);
-        resetForm();
-        setShowCreate(false);
-      },
-      onError: (err: any) => {
-        toast.error(`Error creating invoice: ${err.message}`);
-      }
+    const jointCount = selectedGroup?.is_joint ? selectedGroup.joint_count : 1;
+    const allMemberIds = [form.memberId, ...form.jointMemberIds].slice(0, jointCount).filter(Boolean);
+
+    if (selectedGroup?.is_joint && allMemberIds.length < jointCount) {
+      toast.error(`Please select ${jointCount} members for this joint discount.`);
+      return;
+    }
+
+    const promises = allMemberIds.map((mId, index) => {
+      const m = members.find(x => x.uuid === mId);
+      if (!m) return Promise.resolve();
+
+      const isMain = index === 0;
+
+      return createInvoice.mutateAsync({
+        member_id: mId,
+        member_name: m.name,
+        package_id: form.packageId,
+        package_name: selectedPackage?.name ?? "",
+        class_id: form.classId === 'none' ? null : (form.classId || null),
+        discount_id: form.discountMode === 'group' ? form.discountGroupId : null,
+        discount_description: form.discountMode === 'custom'
+          ? form.customDiscountDescription.trim()
+          : (selectedGroup?.name ?? null),
+        discount_amount: discountAmount,
+        total_amount: total,
+        paid_amount: paid,
+        status: invStatus,
+        payment_method: form.paymentMethod as any,
+        split_payments: form.paymentMethod === 'Split' ? form.splitPayments.map(sp => ({ method: sp.method as any, amount: Number(sp.amount) || 0 })) : null,
+        created_at: form.invoiceDate ? new Date(form.invoiceDate).toISOString() : new Date().toISOString(),
+        activation_date: form.activationDate ? new Date(form.activationDate).toISOString() : (form.invoiceDate ? new Date(form.invoiceDate).toISOString() : new Date().toISOString()),
+        ...(isMain && form.customId.trim() ? { id: form.customId.trim() } : {}),
+      } as any);
+    });
+
+    Promise.all(promises).then(() => {
+      toast.success(`Invoices created`);
+      resetForm();
+      setShowCreate(false);
+    }).catch((err: any) => {
+      toast.error(`Error creating invoice: ${err.message}`);
     });
   };
 
   const openEditInvoice = (inv: Invoice) => {
+    let mode: DiscountMode = 'none';
+    let group = "";
+    let customVal = "";
+    let customDesc = "";
+    let customType: CustomDiscountType = "fixed";
+
+    if (inv.discount_id) {
+      mode = 'group';
+      group = inv.discount_id;
+    } else if (inv.discount_amount > 0) {
+      mode = 'custom';
+      customVal = String(inv.discount_amount);
+      customDesc = inv.discount_description || "";
+      customType = "fixed";
+    }
+
     setEditInvoice(inv);
     setEditForm({
+      memberId: inv.member_id,
+      packageId: inv.package_id || "",
+      classId: inv.class_id || "",
+      discountMode: mode,
+      discountGroupId: group,
+      customDiscountType: customType,
+      customDiscountValue: customVal,
+      customDiscountDescription: customDesc,
       paidAmount: String(inv.paid_amount),
       paymentMethod: inv.payment_method,
       status: inv.status,
@@ -292,13 +367,39 @@ export default function Invoices() {
 
   const handleEditInvoice = () => {
     if (!editInvoice) return;
+    if (editNeedsDescription) { toast.error("A reason is required for custom discounts"); return; }
+    
+    if (editForm.discountMode === 'custom' && editDiscountAmount > 0 && String(editDiscountAmount) !== String(editInvoice.discount_amount)) {
+      setVerificationAction('edit');
+      setShowVerificationDialog(true);
+      return;
+    }
+    
+    submitEdit();
+  };
+
+  const submitEdit = () => {
+    if (!editInvoice) return;
     const newPaid = Number(editForm.paidAmount) || 0;
     const newStatus: 'paid' | 'partial' | 'unpaid' =
-      newPaid >= editInvoice.total_amount ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
+      newPaid >= editTotal ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
+
+    const selectedEditMember = members.find(m => m.uuid === editForm.memberId);
 
     updateInvoice.mutate({
       uuid: editInvoice.uuid,
       updates: {
+        member_id: editForm.memberId,
+        member_name: selectedEditMember?.name ?? editInvoice.member_name,
+        package_id: editForm.packageId || null,
+        package_name: selectedEditPackage?.name ?? editInvoice.package_name,
+        class_id: editForm.classId === 'none' ? null : (editForm.classId || null),
+        discount_id: editForm.discountMode === 'group' ? editForm.discountGroupId : null,
+        discount_description: editForm.discountMode === 'custom'
+          ? editForm.customDiscountDescription.trim()
+          : (selectedEditGroup?.name ?? null),
+        discount_amount: editDiscountAmount,
+        total_amount: editTotal,
         paid_amount: newPaid,
         payment_method: editForm.paymentMethod as any,
         status: newStatus,
@@ -314,7 +415,7 @@ export default function Invoices() {
           member_id: editInvoice.member_id,
           member_name: editInvoice.member_name,
           timestamp: new Date().toISOString(),
-          details: `Edited invoice ${editInvoice.id}: paid ${editInvoice.paid_amount} → ${newPaid} EGP, method: ${editForm.paymentMethod}`,
+          details: `Full edited invoice ${editInvoice.id}: Member: ${selectedEditMember?.name}, Pkg: ${selectedEditPackage?.name}, paid ${editInvoice.paid_amount} → ${newPaid} EGP, method: ${editForm.paymentMethod}`,
         });
         toast.success(`Invoice ${editInvoice.id} updated`);
         setEditInvoice(null);
@@ -608,7 +709,7 @@ export default function Invoices() {
               <div className="space-y-4 py-2 max-h-[72vh] overflow-y-auto pr-1">
 
                 <div className="space-y-1.5">
-                  <Label>Member</Label>
+                  <Label>{selectedGroup?.is_joint ? "Main Member" : "Member"}</Label>
                   <SearchableSelect
                     data-testid="select-invoice-member"
                     options={members.map(m => ({
@@ -623,6 +724,33 @@ export default function Invoices() {
                     emptyMessage="No members found"
                   />
                 </div>
+
+                {selectedGroup?.is_joint && selectedGroup.joint_count > 1 && (
+                  <div className="space-y-3 p-3 border border-emerald-200 bg-emerald-50/30 rounded-lg">
+                    <Label className="text-emerald-700">Joint Members ({selectedGroup.joint_count - 1} more required)</Label>
+                    {Array.from({ length: selectedGroup.joint_count - 1 }).map((_, idx) => (
+                      <div key={idx} className="space-y-1.5">
+                        <Label className="text-xs">Member {idx + 2}</Label>
+                        <SearchableSelect
+                          options={members.map(m => ({
+                            value: m.uuid,
+                            label: `${m.name} (${m.id === -1 ? 'Clinic Visitor' : m.id})`,
+                            searchTerms: `${m.phone} ${m.id}`,
+                          }))}
+                          value={form.jointMemberIds[idx] || ""}
+                          onValueChange={v => {
+                            const newIds = [...form.jointMemberIds];
+                            newIds[idx] = v;
+                            setForm(p => ({ ...p, jointMemberIds: newIds }));
+                          }}
+                          placeholder="Search secondary member..."
+                          searchPlaceholder="Type name, phone, or member ID..."
+                          emptyMessage="No members found"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 <div className="space-y-1.5">
                   <Label>Package</Label>
@@ -864,31 +992,153 @@ export default function Invoices() {
 
           {/* Edit Invoice Dialog */}
           <Dialog open={!!editInvoice} onOpenChange={o => !o && setEditInvoice(null)}>
-            <DialogContent className="max-w-sm">
+            <DialogContent className="max-w-md">
               <DialogHeader><DialogTitle>Edit Invoice: {editInvoice?.id}</DialogTitle></DialogHeader>
-              <div className="space-y-4 py-2">
-                <div className="px-3 py-2 rounded-lg bg-muted/50 text-sm space-y-1">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Member</span><span>{editInvoice?.member_name}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Package</span><span>{editInvoice?.package_name}</span></div>
-                  <div className="flex justify-between font-bold"><span>Total</span><span>{editInvoice?.total_amount.toLocaleString()} EGP</span></div>
-                </div>
+              <div className="space-y-4 py-2 max-h-[72vh] overflow-y-auto pr-1">
                 <div className="space-y-1.5">
-                  <Label>Amount Paid (EGP)</Label>
-                  <Input
-                    type="number"
-                    value={editForm.paidAmount}
-                    onChange={e => setEditForm(p => ({ ...p, paidAmount: e.target.value }))}
-                    placeholder={String(editInvoice?.total_amount)}
+                  <Label>Member</Label>
+                  <SearchableSelect
+                    options={members.map(m => ({
+                      value: m.uuid,
+                      label: `${m.name} (${m.id === -1 ? 'Clinic Visitor' : m.id})`,
+                      searchTerms: `${m.phone} ${m.id}`,
+                    }))}
+                    value={editForm.memberId}
+                    onValueChange={v => setEditForm(p => ({ ...p, memberId: v }))}
+                    placeholder="Search member..."
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Payment Method</Label>
-                  <Select value={editForm.paymentMethod} onValueChange={v => setEditForm(p => ({ ...p, paymentMethod: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                  <Label>Package</Label>
+                  <Select value={editForm.packageId} onValueChange={v => setEditForm(p => ({ ...p, packageId: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select package..." /></SelectTrigger>
                     <SelectContent>
-                      {paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                      {packages.map(p => <SelectItem key={p.id} value={p.id}>{p.name} — {p.price} EGP</SelectItem>)}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Class (Optional)</Label>
+                  <Select value={editForm.classId} onValueChange={v => setEditForm(p => ({ ...p, classId: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {classes.map(c => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Discount */}
+                <div className="space-y-3">
+                  <Label>Discount</Label>
+                  <div className="flex gap-2">
+                    {(['none', 'group', 'custom'] as DiscountMode[]).map(mode => (
+                      <button
+                        key={mode}
+                        onClick={() => setEditForm(p => ({ ...p, discountMode: mode, discountGroupId: '', customDiscountValue: '', customDiscountDescription: '' }))}
+                        className={`flex-1 py-1.5 px-2 rounded-lg border text-xs font-medium transition-colors ${editForm.discountMode === mode ? 'bg-primary text-primary-foreground border-primary' : 'bg-card hover:bg-accent'}`}
+                      >
+                        {mode === 'none' ? 'No Discount' : mode === 'group' ? 'Discount Group' : 'Custom'}
+                      </button>
+                    ))}
+                  </div>
+
+                  {editForm.discountMode === 'group' && (
+                    <div className="space-y-1.5">
+                      <Select value={editForm.discountGroupId} onValueChange={v => setEditForm(p => ({ ...p, discountGroupId: v }))}>
+                        <SelectTrigger><SelectValue placeholder="Select discount group..." /></SelectTrigger>
+                        <SelectContent>
+                          {activeDiscounts.length === 0
+                            ? <SelectItem value="__none__" disabled>No active groups</SelectItem>
+                            : activeDiscounts.map(d => (
+                              <SelectItem key={d.id} value={d.id}>
+                                {d.name} ({d.discount_type === 'fixed' ? `${d.value} EGP` : `${d.value}%`})
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                      {selectedEditGroup && selectedEditPackage && (
+                        <p className="text-xs text-emerald-600 font-medium">Applied: -{editDiscountAmount} EGP off {selectedEditPackage.price} EGP</p>
+                      )}
+                    </div>
+                  )}
+
+                  {editForm.discountMode === 'custom' && (
+                    <div className="space-y-3">
+                      {/* Fixed / Percentage toggle */}
+                      <div className="flex gap-2">
+                        {(['fixed', 'percentage'] as CustomDiscountType[]).map(t => (
+                          <button
+                            key={t}
+                            onClick={() => setEditForm(p => ({ ...p, customDiscountType: t, customDiscountValue: '' }))}
+                            className={`flex-1 py-1.5 rounded-lg border text-xs font-medium transition-colors ${editForm.customDiscountType === t ? 'bg-foreground text-background border-foreground' : 'bg-card hover:bg-accent'}`}
+                          >
+                            {t === 'fixed' ? 'Fixed Amount (EGP)' : 'Percentage (%)'}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">
+                          {editForm.customDiscountType === 'fixed' ? 'Discount Amount (EGP)' : 'Discount (%)'}
+                        </Label>
+                        <Input
+                          type="number" min="0"
+                          max={editForm.customDiscountType === 'percentage' ? "100" : undefined}
+                          placeholder={editForm.customDiscountType === 'fixed' ? '0' : '0 – 100'}
+                          value={editForm.customDiscountValue}
+                          onChange={e => setEditForm(p => ({ ...p, customDiscountValue: e.target.value }))}
+                        />
+                        {editForm.customDiscountType === 'percentage' && selectedEditPackage && editForm.customDiscountValue && (
+                          <p className="text-xs text-muted-foreground">= {editDiscountAmount} EGP off</p>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Reason for Discount *</Label>
+                        <Textarea
+                          placeholder="Required: explain why this discount is applied..."
+                          value={editForm.customDiscountDescription}
+                          onChange={e => setEditForm(p => ({ ...p, customDiscountDescription: e.target.value }))}
+                          rows={2}
+                          className={editNeedsDescription ? 'border-red-400' : ''}
+                        />
+                        {editNeedsDescription && <p className="text-xs text-red-500">Required when applying a custom discount</p>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {selectedEditPackage && (
+                  <div className="p-3 rounded-lg bg-muted/50 text-sm space-y-1">
+                    <div className="flex justify-between"><span className="text-muted-foreground">Package price</span><span>{selectedEditPackage.price} EGP</span></div>
+                    {editDiscountAmount > 0 && (
+                      <div className="flex justify-between text-emerald-600">
+                        <span>Discount</span><span>-{editDiscountAmount} EGP</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-bold pt-1 border-t border-border"><span>Total</span><span>{editTotal} EGP</span></div>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Amount Paid (EGP)</Label>
+                    <Input
+                      type="number"
+                      value={editForm.paidAmount}
+                      onChange={e => setEditForm(p => ({ ...p, paidAmount: e.target.value }))}
+                      placeholder={String(editTotal)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Payment Method</Label>
+                    <Select value={editForm.paymentMethod} onValueChange={v => setEditForm(p => ({ ...p, paymentMethod: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 <div className="space-y-1.5 pt-2">
                   <Label>Activation Date</Label>
@@ -896,13 +1146,7 @@ export default function Invoices() {
                     type="date"
                     value={editForm.activationDate}
                     onChange={e => setEditForm(p => ({ ...p, activationDate: e.target.value }))}
-                    disabled={editInvoice?.activation_date ? new Date(editInvoice.activation_date).getTime() <= new Date().getTime() : false}
                   />
-                  {editInvoice?.activation_date && new Date(editInvoice.activation_date).getTime() <= new Date().getTime() ? (
-                    <p className="text-[10px] text-muted-foreground">Activation date has passed and cannot be changed.</p>
-                  ) : (
-                    <p className="text-[10px] text-muted-foreground">You can push the activation to a future date.</p>
-                  )}
                 </div>
               </div>
               <DialogFooter>
@@ -929,8 +1173,8 @@ export default function Invoices() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setShowVerificationDialog(false)}>Cancel</Button>
-                <Button onClick={verifyAndCreate} disabled={createInvoice.isPending}>
-                  {createInvoice.isPending ? "Creating..." : "Verify & Create"}
+                <Button onClick={verifyAndSubmit} disabled={createInvoice.isPending || updateInvoice.isPending}>
+                  {createInvoice.isPending || updateInvoice.isPending ? "Processing..." : "Verify & Submit"}
                 </Button>
               </DialogFooter>
             </DialogContent>

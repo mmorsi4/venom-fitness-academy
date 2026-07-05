@@ -129,7 +129,7 @@ export default function Coaches() {
   const closeDialog = () => { setShowCoachDialog(false); setEditCoach(null); };
 
   const handleSave = () => {
-    if (!form.name.trim() || !form.phone.trim() || !form.rate) { toast.error("Name, phone, and rate are required"); return; }
+    if (!form.name.trim() || !form.rate) { toast.error("Name and rate are required"); return; }
     if (!/^\d{11}$/.test(form.phone.trim())) { toast.error("Phone number must be exactly 11 digits"); return; }
     
     if (editCoach) {
