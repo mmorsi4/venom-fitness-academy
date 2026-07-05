@@ -355,49 +355,49 @@ export default function Invoices() {
       }
     }
 
-    const promises = allMembersData.map((data: any, index) => {
-      const m = members.find(x => x.uuid === data.memberId);
-      if (!m) return Promise.resolve();
-
-      const isMain = index === 0;
-
-      const memPkg = isMain ? selectedPackage : packages.find(p => p.id === (data.packageId || form.packageId));
-      const memDiscount = isMain ? discountAmount : computeDiscountAmount(memPkg);
-      const memTotal = memPkg ? Math.max(0, memPkg.price - memDiscount) : 0;
-      
-      const memPaid = isMain ? paid : (data.paymentMethod === 'Split'
-        ? (data.splitPayments || []).reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0)
-        : (data.paidAmount !== undefined && data.paidAmount !== "" ? Number(data.paidAmount) : memTotal));
-        
-      const memInvStatus = memPaid >= memTotal ? 'paid' : memPaid > 0 ? 'partial' : 'unpaid';
-      const memPaymentMethod = isMain ? form.paymentMethod : (data.paymentMethod || form.paymentMethod);
-      const memSplitPayments = isMain ? form.splitPayments : (data.splitPayments || []);
-
-      return createInvoice.mutateAsync({
-        member_id: data.memberId,
-        member_name: m.name,
-        package_id: memPkg?.id || null,
-        package_name: memPkg?.name ?? "",
-        class_id: data.classId === 'none' ? null : (data.classId || null),
-        discount_id: form.discountMode === 'group' ? form.discountGroupId : null,
-        discount_description: form.discountMode === 'custom'
-          ? form.customDiscountDescription.trim()
-          : (selectedGroup?.name ?? null),
-        discount_amount: memDiscount,
-        total_amount: memTotal,
-        paid_amount: memPaid,
-        status: memInvStatus,
-        payment_method: memPaymentMethod as any,
-        split_payments: memPaymentMethod === 'Split' ? memSplitPayments.map((sp: any) => ({ method: sp.method as any, amount: Number(sp.amount) || 0 })) : null,
-        created_at: data.invoiceDate ? new Date(data.invoiceDate).toISOString() : new Date().toISOString(),
-        activation_date: data.activationDate ? new Date(data.activationDate).toISOString() : (data.invoiceDate ? new Date(data.invoiceDate).toISOString() : new Date().toISOString()),
-        joint_invoice_group_id: jointGroupId,
-        ...(isMain && form.customId.trim() ? { id: form.customId.trim() } : {}),
-      } as any);
-    });
-
     try {
-      await Promise.all(promises);
+      for (let i = 0; i < allMembersData.length; i++) {
+        const data = allMembersData[i] as any;
+        const m = members.find(x => x.uuid === data.memberId);
+        if (!m) continue;
+
+        const isMain = i === 0;
+
+        const memPkg = isMain ? selectedPackage : packages.find(p => p.id === (data.packageId || form.packageId));
+        const memDiscount = isMain ? discountAmount : computeDiscountAmount(memPkg);
+        const memTotal = memPkg ? Math.max(0, memPkg.price - memDiscount) : 0;
+        
+        const memPaid = isMain ? paid : (data.paymentMethod === 'Split'
+          ? (data.splitPayments || []).reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0)
+          : (data.paidAmount !== undefined && data.paidAmount !== "" ? Number(data.paidAmount) : memTotal));
+          
+        const memInvStatus = memPaid >= memTotal ? 'paid' : memPaid > 0 ? 'partial' : 'unpaid';
+        const memPaymentMethod = isMain ? form.paymentMethod : (data.paymentMethod || form.paymentMethod);
+        const memSplitPayments = isMain ? form.splitPayments : (data.splitPayments || []);
+
+        await createInvoice.mutateAsync({
+          member_id: data.memberId,
+          member_name: m.name,
+          package_id: memPkg?.id || null,
+          package_name: memPkg?.name ?? "",
+          class_id: data.classId === 'none' ? null : (data.classId || null),
+          discount_id: form.discountMode === 'group' ? form.discountGroupId : null,
+          discount_description: form.discountMode === 'custom'
+            ? form.customDiscountDescription.trim()
+            : (selectedGroup?.name ?? null),
+          discount_amount: memDiscount,
+          total_amount: memTotal,
+          paid_amount: memPaid,
+          status: memInvStatus,
+          payment_method: memPaymentMethod as any,
+          split_payments: memPaymentMethod === 'Split' ? memSplitPayments.map((sp: any) => ({ method: sp.method as any, amount: Number(sp.amount) || 0 })) : null,
+          created_at: data.invoiceDate ? new Date(data.invoiceDate).toISOString() : new Date().toISOString(),
+          activation_date: data.activationDate ? new Date(data.activationDate).toISOString() : (data.invoiceDate ? new Date(data.invoiceDate).toISOString() : new Date().toISOString()),
+          joint_invoice_group_id: jointGroupId,
+          ...(isMain && form.customId.trim() ? { id: form.customId.trim() } : {}),
+        } as any);
+      }
+
       toast.success(`Invoices created`);
       resetForm();
       setShowCreate(false);
@@ -1061,11 +1061,19 @@ export default function Invoices() {
                     <div className="space-y-1.5">
                       <Label>Member #{jointStep}</Label>
                       <SearchableSelect
-                        options={members.map(m => ({
-                          value: m.uuid,
-                          label: `${m.name} (${m.id === -1 ? 'Clinic Visitor' : m.id})`,
-                          searchTerms: `${m.phone} ${m.id}`,
-                        }))}
+                        options={members
+                          .filter(m => {
+                            const pickedMemberIds = [
+                              form.memberId,
+                              ...form.jointMembersData.map((d, i) => i !== (jointStep - 2) ? d.memberId : null)
+                            ].filter(Boolean);
+                            return !pickedMemberIds.includes(m.uuid);
+                          })
+                          .map(m => ({
+                            value: m.uuid,
+                            label: `${m.name} (${m.id === -1 ? 'Clinic Visitor' : m.id})`,
+                            searchTerms: `${m.phone} ${m.id}`,
+                          }))}
                         value={form.jointMembersData[jointStep - 2]?.memberId || ""}
                         onValueChange={v => {
                           const newData = [...form.jointMembersData];
