@@ -115,6 +115,7 @@ export default function Invoices() {
     customDiscountDescription: "",
     paidAmount: "", 
     paymentMethod: "Cash", 
+    splitPayments: [] as { method: string; amount: string }[],
     status: "paid" as any, 
     activationDate: "",
     invoiceDate: "",
@@ -435,6 +436,7 @@ export default function Invoices() {
       customDiscountDescription: customDesc,
       paidAmount: String(inv.paid_amount),
       paymentMethod: inv.payment_method,
+      splitPayments: inv.split_payments ? inv.split_payments.map(s => ({ method: s.method, amount: String(s.amount) })) : [],
       status: inv.status,
       activationDate: inv.activation_date ? inv.activation_date.split('T')[0] : "",
       invoiceDate: inv.created_at ? inv.created_at.split('T')[0] : "",
@@ -460,7 +462,17 @@ export default function Invoices() {
 
   const submitEdit = () => {
     if (!editInvoice) return;
-    const newPaid = Number(editForm.paidAmount) || 0;
+
+    let newPaid = Number(editForm.paidAmount) || 0;
+    if (editForm.paymentMethod === 'Split') {
+      const splitTotal = editForm.splitPayments.reduce((sum, split) => sum + (Number(split.amount) || 0), 0);
+      if (editForm.splitPayments.some(s => !s.amount || Number(s.amount) <= 0)) {
+        toast.error("All split payments must have a valid amount");
+        return;
+      }
+      newPaid = splitTotal;
+    }
+
     const newStatus: 'paid' | 'partial' | 'unpaid' =
       newPaid >= editTotal ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
 
@@ -482,6 +494,7 @@ export default function Invoices() {
         total_amount: editTotal,
         paid_amount: newPaid,
         payment_method: editForm.paymentMethod as any,
+        split_payments: editForm.paymentMethod === 'Split' ? editForm.splitPayments.map((sp: any) => ({ method: sp.method as any, amount: Number(sp.amount) || 0 })) : null,
         status: newStatus,
         activation_date: editForm.activationDate ? new Date(editForm.activationDate).toISOString() : editInvoice.activation_date,
         created_at: editForm.invoiceDate ? new Date(editForm.invoiceDate).toISOString() : editInvoice.created_at,
@@ -1414,7 +1427,11 @@ export default function Invoices() {
                   </div>
                   <div className="space-y-1.5">
                     <Label>Payment Method</Label>
-                    <Select value={editForm.paymentMethod} onValueChange={v => setEditForm(p => ({ ...p, paymentMethod: v }))}>
+                    <Select value={editForm.paymentMethod} onValueChange={v => setEditForm(p => ({ 
+                      ...p, 
+                      paymentMethod: v,
+                      splitPayments: v === 'Split' && p.splitPayments.length === 0 ? [{ method: 'Cash', amount: '' }] : p.splitPayments
+                    }))}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
@@ -1422,6 +1439,62 @@ export default function Invoices() {
                     </Select>
                   </div>
                 </div>
+
+                {editForm.paymentMethod === 'Split' && (
+                  <div className="space-y-3 p-3 border rounded-md bg-muted/20">
+                    <div className="flex items-center justify-between">
+                      <Label>Split Payment Details</Label>
+                      <Button 
+                        type="button" 
+                        variant="outline" size="sm" className="h-7 text-xs"
+                        onClick={() => setEditForm(p => ({ ...p, splitPayments: [...p.splitPayments, { method: 'Cash', amount: '' }] }))}
+                      >
+                        <Plus className="w-3 h-3 mr-1" /> Add Split
+                      </Button>
+                    </div>
+                    {editForm.splitPayments.map((split, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <Select 
+                          value={split.method} 
+                          onValueChange={v => {
+                            const newSplits = [...editForm.splitPayments];
+                            newSplits[i].method = v;
+                            setEditForm(p => ({ ...p, splitPayments: newSplits }));
+                          }}
+                        >
+                          <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {paymentMethods.filter(m => m !== 'Split').map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="number" 
+                          placeholder="Amount" 
+                          value={split.amount}
+                          onChange={e => {
+                            const newSplits = [...editForm.splitPayments];
+                            newSplits[i].amount = e.target.value;
+                            setEditForm(p => ({ ...p, splitPayments: newSplits }));
+                          }}
+                        />
+                        {editForm.splitPayments.length > 1 && (
+                          <Button 
+                            type="button" 
+                            variant="ghost" size="icon" 
+                            className="h-9 w-9 text-red-500 hover:text-red-600 hover:bg-red-50" 
+                            onClick={() => {
+                              const newSplits = editForm.splitPayments.filter((_, idx) => idx !== i);
+                              setEditForm(p => ({ ...p, splitPayments: newSplits }));
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <div className="space-y-1.5 pt-2">
                   <Label>Invoice ID</Label>
                   <Input

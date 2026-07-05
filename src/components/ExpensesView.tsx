@@ -25,6 +25,7 @@ import type { Expense } from "@/lib/types";
 
 const BASE_CATEGORIES = ["Government Bills", "Maintenance", "Salaries", "Loans/Debts", "Purchases", "Other"];
 const LIABILITY_CATEGORY = "Liability Payment";
+const paymentMethods = ["Cash", "Visa", "InstaPay", "Split"] as const;
 
 const emptyForm = {
   customId: "",
@@ -34,6 +35,8 @@ const emptyForm = {
   description: "",
   liabilityId: "",
   date: "",
+  paymentMethod: "Cash",
+  splitPayments: [] as { method: string; amount: string }[],
 };
 
 export function ExpensesView() {
@@ -48,7 +51,7 @@ export function ExpensesView() {
 
   // Edit/Delete
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
-  const [editForm, setEditForm] = useState({ category: "", customCategory: "", amount: "", description: "", date: "" });
+  const [editForm, setEditForm] = useState({ category: "", customCategory: "", amount: "", description: "", date: "", paymentMethod: "Cash", splitPayments: [] as { method: string; amount: string }[] });
   const [confirmDelete, setConfirmDelete] = useState<Expense | null>(null);
 
   // Filters
@@ -125,6 +128,18 @@ export function ExpensesView() {
     if (!form.amount || Number(form.amount) <= 0) { toast.error("Enter a valid amount"); return; }
     if (isLiabilityPayment && !form.liabilityId) { toast.error("Select a liability to pay"); return; }
 
+    if (form.paymentMethod === 'Split') {
+      const splitTotal = form.splitPayments.reduce((sum, split) => sum + Number(split.amount), 0);
+      if (splitTotal !== Number(form.amount)) {
+        toast.error(`Split payments total (${splitTotal}) must equal the expense amount (${form.amount})`);
+        return;
+      }
+      if (form.splitPayments.some(s => !s.amount || Number(s.amount) <= 0)) {
+        toast.error("All split payments must have a valid amount");
+        return;
+      }
+    }
+
     const finalCategory = form.category === 'CUSTOM' ? form.customCategory.trim() : form.category;
 
     const payload: any = {
@@ -133,6 +148,8 @@ export function ExpensesView() {
       description: form.description || finalCategory,
       date: form.date ? new Date(form.date).toISOString() : new Date().toISOString(),
       liability_id: isLiabilityPayment ? form.liabilityId : null,
+      payment_method: form.paymentMethod,
+      split_payments: form.paymentMethod === 'Split' ? form.splitPayments.map(s => ({ method: s.method, amount: Number(s.amount) })) : null,
     };
 
     if (form.customId.trim()) payload.id = form.customId.trim();
@@ -162,6 +179,18 @@ export function ExpensesView() {
     if (editForm.category === 'CUSTOM' && !editForm.customCategory.trim()) { toast.error("Enter a custom category name"); return; }
     if (!editForm.amount || Number(editForm.amount) <= 0) { toast.error("Enter a valid amount"); return; }
 
+    if (editForm.paymentMethod === 'Split') {
+      const splitTotal = editForm.splitPayments.reduce((sum, split) => sum + Number(split.amount), 0);
+      if (splitTotal !== Number(editForm.amount)) {
+        toast.error(`Split payments total (${splitTotal}) must equal the expense amount (${editForm.amount})`);
+        return;
+      }
+      if (editForm.splitPayments.some(s => !s.amount || Number(s.amount) <= 0)) {
+        toast.error("All split payments must have a valid amount");
+        return;
+      }
+    }
+
     const finalCategory = editForm.category === 'CUSTOM' ? editForm.customCategory.trim() : editForm.category;
 
     updateExpense.mutate({
@@ -171,6 +200,8 @@ export function ExpensesView() {
         amount: Number(editForm.amount),
         description: editForm.description || finalCategory,
         date: editForm.date ? new Date(editForm.date).toISOString() : editExpense.date,
+        payment_method: editForm.paymentMethod as any,
+        split_payments: editForm.paymentMethod === 'Split' ? editForm.splitPayments.map(s => ({ method: s.method as any, amount: Number(s.amount) })) : null,
       }
     }, {
       onSuccess: () => {
@@ -284,7 +315,10 @@ export function ExpensesView() {
                       <TableCell>{expense.category}</TableCell>
                       <TableCell>{expense.description}</TableCell>
                       <TableCell className="text-right font-semibold text-red-600">
-                        {expense.amount.toLocaleString()} EGP
+                        <div className="flex flex-col items-end">
+                          <span>{expense.amount.toLocaleString()} EGP</span>
+                          <span className="text-xs font-normal text-muted-foreground">{expense.payment_method}</span>
+                        </div>
                       </TableCell>
                       <TableCell className="text-right space-x-2">
                         <Button
@@ -299,6 +333,8 @@ export function ExpensesView() {
                               amount: String(expense.amount),
                               description: expense.description,
                               date: new Date(expense.date).toISOString().slice(0, 10),
+                              paymentMethod: expense.payment_method || 'Cash',
+                              splitPayments: expense.split_payments ? expense.split_payments.map(s => ({ method: s.method, amount: String(s.amount) })) : [],
                             });
                           }}
                         >
@@ -404,14 +440,71 @@ export function ExpensesView() {
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <Label>Amount (EGP) *</Label>
-              <Input
-                type="number" placeholder="0"
-                value={form.amount}
-                onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Payment Method</Label>
+                <Select value={form.paymentMethod} onValueChange={v => setForm(p => ({ 
+                  ...p, 
+                  paymentMethod: v,
+                  splitPayments: v === 'Split' && p.splitPayments.length === 0 ? [{ method: 'Cash', amount: '' }] : p.splitPayments
+                }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Amount (EGP) *</Label>
+                <Input
+                  type="number" placeholder="0"
+                  value={form.amount}
+                  onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}
+                />
+              </div>
             </div>
+
+            {form.paymentMethod === 'Split' && (
+              <div className="space-y-3 p-3 border rounded-md bg-muted/20">
+                <div className="flex items-center justify-between">
+                  <Label>Split Details</Label>
+                  <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => setForm(p => ({ ...p, splitPayments: [...p.splitPayments, { method: 'Cash', amount: '' }] }))}>
+                    <Plus className="w-3 h-3 mr-1" /> Add Split
+                  </Button>
+                </div>
+                {form.splitPayments.map((split, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Select value={split.method} onValueChange={v => {
+                      const newSplits = [...form.splitPayments];
+                      newSplits[i].method = v;
+                      setForm(p => ({ ...p, splitPayments: newSplits }));
+                    }}>
+                      <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {paymentMethods.filter(m => m !== 'Split').map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number" placeholder="Amount" value={split.amount}
+                      onChange={e => {
+                        const newSplits = [...form.splitPayments];
+                        newSplits[i].amount = e.target.value;
+                        setForm(p => ({ ...p, splitPayments: newSplits }));
+                      }}
+                    />
+                    {form.splitPayments.length > 1 && (
+                      <Button variant="ghost" size="icon" className="h-9 w-9 text-red-500" onClick={() => {
+                        const newSplits = form.splitPayments.filter((_, idx) => idx !== i);
+                        setForm(p => ({ ...p, splitPayments: newSplits }));
+                      }}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Description</Label>
               <Input
@@ -470,14 +563,71 @@ export function ExpensesView() {
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <Label>Amount (EGP) *</Label>
-              <Input
-                type="number" placeholder="0"
-                value={editForm.amount}
-                onChange={e => setEditForm(p => ({ ...p, amount: e.target.value }))}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Payment Method</Label>
+                <Select value={editForm.paymentMethod} onValueChange={v => setEditForm(p => ({ 
+                  ...p, 
+                  paymentMethod: v,
+                  splitPayments: v === 'Split' && p.splitPayments.length === 0 ? [{ method: 'Cash', amount: '' }] : p.splitPayments
+                }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Amount (EGP) *</Label>
+                <Input
+                  type="number" placeholder="0"
+                  value={editForm.amount}
+                  onChange={e => setEditForm(p => ({ ...p, amount: e.target.value }))}
+                />
+              </div>
             </div>
+
+            {editForm.paymentMethod === 'Split' && (
+              <div className="space-y-3 p-3 border rounded-md bg-muted/20">
+                <div className="flex items-center justify-between">
+                  <Label>Split Details</Label>
+                  <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditForm(p => ({ ...p, splitPayments: [...p.splitPayments, { method: 'Cash', amount: '' }] }))}>
+                    <Plus className="w-3 h-3 mr-1" /> Add Split
+                  </Button>
+                </div>
+                {editForm.splitPayments.map((split, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Select value={split.method} onValueChange={v => {
+                      const newSplits = [...editForm.splitPayments];
+                      newSplits[i].method = v;
+                      setEditForm(p => ({ ...p, splitPayments: newSplits }));
+                    }}>
+                      <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {paymentMethods.filter(m => m !== 'Split').map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number" placeholder="Amount" value={split.amount}
+                      onChange={e => {
+                        const newSplits = [...editForm.splitPayments];
+                        newSplits[i].amount = e.target.value;
+                        setEditForm(p => ({ ...p, splitPayments: newSplits }));
+                      }}
+                    />
+                    {editForm.splitPayments.length > 1 && (
+                      <Button type="button" variant="ghost" size="icon" className="h-9 w-9 text-red-500" onClick={() => {
+                        const newSplits = editForm.splitPayments.filter((_, idx) => idx !== i);
+                        setEditForm(p => ({ ...p, splitPayments: newSplits }));
+                      }}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Description</Label>
               <Input

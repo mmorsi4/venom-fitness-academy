@@ -23,3 +23,5 @@ BEGIN
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
+
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;

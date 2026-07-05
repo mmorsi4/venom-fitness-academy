@@ -149,6 +149,8 @@ export interface Expense {
   description: string;
   date: string;
   liability_id: string | null;
+  payment_method: PaymentMethod;
+  split_payments?: { method: PaymentMethod; amount: number }[] | null;
   created_at: string;
 }
 
