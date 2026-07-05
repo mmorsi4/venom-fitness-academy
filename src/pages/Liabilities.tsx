@@ -73,7 +73,7 @@ export default function Liabilities() {
       toast.error("Installment amount is required");
       return;
     }
-    
+
     if (editLiability) {
       updateLiability.mutate({
         id: editLiability.id,
@@ -168,7 +168,7 @@ export default function Liabilities() {
               <div>
                 <p className="text-sm font-bold text-foreground">{nextDue ? nextDue.name : '—'}</p>
                 <p className="text-xs text-muted-foreground">
-                  {nextDue ? `Next: ${format(parseISO(nextDue.next_due_date), 'dd MMM yyyy')}` : 'No upcoming payments'}
+                  {nextDue ? `Next: ${format(parseISO(nextDue.next_due_date), 'dd/MM/yyyy')}` : 'No upcoming payments'}
                 </p>
               </div>
             </div>

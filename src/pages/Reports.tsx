@@ -121,8 +121,8 @@ export default function Reports() {
       "Status": m.status,
       "Package": m.package_name,
       "Sessions Remaining": m.sessions_remaining === 999 ? "Unlimited" : m.sessions_remaining,
-      "Expires": m.expires_at ? format(new Date(m.expires_at), "dd MMM yyyy") : "—",
-      "Member Since": format(new Date(m.member_since), "dd MMM yyyy"),
+      "Expires": m.expires_at ? format(new Date(m.expires_at), "dd/MM/yyyy") : "—",
+      "Member Since": format(new Date(m.member_since), "dd/MM/yyyy"),
       "Class": m.class_info?.name ?? "",
       "Sport": m.class_info?.sport_name ?? "",
       "Coach": m.class_info?.coach_name || m.coach_name || "",
@@ -381,7 +381,7 @@ export default function Reports() {
                             {m.sessions_remaining === 999 ? '∞' : m.sessions_remaining}
                           </p>
                         </td>
-                        <td className="p-3"><p className="text-foreground">{m.expires_at ? format(new Date(m.expires_at), "dd MMM yyyy") : "—"}</p></td>
+                        <td className="p-3"><p className="text-foreground">{m.expires_at ? format(new Date(m.expires_at), "dd/MM/yyyy") : "—"}</p></td>
                       </tr>
                     );
                   })}

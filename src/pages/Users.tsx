@@ -70,6 +70,12 @@ export default function UsersPage() {
   const [roleForm, setRoleForm] = useState<RoleForm>(emptyRoleForm);
   const [confirmDeleteRole, setConfirmDeleteRole] = useState<Role | null>(null);
 
+  // Loading states
+  const [isSavingUser, setIsSavingUser] = useState(false);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
+  const [isSavingRole, setIsSavingRole] = useState(false);
+  const [isDeletingRole, setIsDeletingRole] = useState(false);
+
   // --- User Handlers ---
   const openCreateUser = () => { setUserForm(emptyUserForm); setEditUser(null); setShowUserDialog(true); };
   const openEditUser = (u: AppUser) => {
@@ -88,27 +94,37 @@ export default function UsersPage() {
       toast.error("Enter a valid email address");
       return;
     }
-    if (editUser) {
-      const updates: any = { name: userForm.name.trim(), email: userForm.email.trim(), roleIds: userForm.roleIds };
-      if (userForm.password) updates.password = userForm.password;
-      
-      const result = await updateUser(editUser.id, updates);
-      if (!result.ok) { toast.error(result.error ?? "Failed to update user"); return; }
-      toast.success(`User updated: ${userForm.name}`);
-    } else {
-      const result = await createUser({ name: userForm.name.trim(), email: userForm.email.trim(), password: userForm.password, roleIds: userForm.roleIds });
-      if (!result.ok) { toast.error(result.error ?? "Failed to create user"); return; }
-      toast.success(`Account created for ${userForm.name}`);
+    setIsSavingUser(true);
+    try {
+      if (editUser) {
+        const updates: any = { name: userForm.name.trim(), email: userForm.email.trim(), roleIds: userForm.roleIds };
+        if (userForm.password) updates.password = userForm.password;
+        
+        const result = await updateUser(editUser.id, updates);
+        if (!result.ok) { toast.error(result.error ?? "Failed to update user"); return; }
+        toast.success(`User updated: ${userForm.name}`);
+      } else {
+        const result = await createUser({ name: userForm.name.trim(), email: userForm.email.trim(), password: userForm.password, roleIds: userForm.roleIds });
+        if (!result.ok) { toast.error(result.error ?? "Failed to create user"); return; }
+        toast.success(`Account created for ${userForm.name}`);
+      }
+      closeUserDialog();
+    } finally {
+      setIsSavingUser(false);
     }
-    closeUserDialog();
   };
 
   const handleDeleteUser = async (u: AppUser) => {
     if (u.id === currentUser?.id) { toast.error("You cannot delete your own account"); return; }
-    const result = await deleteUser(u.id);
-    if (!result.ok) { toast.error(result.error ?? "Failed to delete user"); return; }
-    toast.success(`Deleted: ${u.name}`);
-    setConfirmDeleteUser(null);
+    setIsDeletingUser(true);
+    try {
+      const result = await deleteUser(u.id);
+      if (!result.ok) { toast.error(result.error ?? "Failed to delete user"); return; }
+      toast.success(`Deleted: ${u.name}`);
+      setConfirmDeleteUser(null);
+    } finally {
+      setIsDeletingUser(false);
+    }
   };
 
   const toggleUserRole = (roleId: string) => {
@@ -133,23 +149,33 @@ export default function UsersPage() {
       toast.error("Role name is required");
       return;
     }
-    if (editRole) {
-      const result = await updateRole(editRole.id, { name: roleForm.name.trim(), description: roleForm.description.trim(), tabs: roleForm.tabs });
-      if (!result.ok) { toast.error(result.error ?? "Failed to update role"); return; }
-      toast.success(`Role updated: ${roleForm.name}`);
-    } else {
-      const result = await createRole({ name: roleForm.name.trim(), description: roleForm.description.trim(), tabs: roleForm.tabs });
-      if (!result.ok) { toast.error(result.error ?? "Failed to create role"); return; }
-      toast.success(`Role created: ${roleForm.name}`);
+    setIsSavingRole(true);
+    try {
+      if (editRole) {
+        const result = await updateRole(editRole.id, { name: roleForm.name.trim(), description: roleForm.description.trim(), tabs: roleForm.tabs });
+        if (!result.ok) { toast.error(result.error ?? "Failed to update role"); return; }
+        toast.success(`Role updated: ${roleForm.name}`);
+      } else {
+        const result = await createRole({ name: roleForm.name.trim(), description: roleForm.description.trim(), tabs: roleForm.tabs });
+        if (!result.ok) { toast.error(result.error ?? "Failed to create role"); return; }
+        toast.success(`Role created: ${roleForm.name}`);
+      }
+      closeRoleDialog();
+    } finally {
+      setIsSavingRole(false);
     }
-    closeRoleDialog();
   };
 
   const handleDeleteRole = async (r: Role) => {
-    const result = await deleteRole(r.id);
-    if (!result.ok) { toast.error(result.error ?? "Failed to delete role"); return; }
-    toast.success(`Deleted role: ${r.name}`);
-    setConfirmDeleteRole(null);
+    setIsDeletingRole(true);
+    try {
+      const result = await deleteRole(r.id);
+      if (!result.ok) { toast.error(result.error ?? "Failed to delete role"); return; }
+      toast.success(`Deleted role: ${r.name}`);
+      setConfirmDeleteRole(null);
+    } finally {
+      setIsDeletingRole(false);
+    }
   };
 
   const toggleRoleTab = (tabValue: string) => {
@@ -339,7 +365,9 @@ export default function UsersPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeUserDialog}>Cancel</Button>
-            <Button onClick={handleSaveUser}>{editUser ? 'Save Changes' : 'Create Account'}</Button>
+            <Button onClick={handleSaveUser} disabled={isSavingUser}>
+              {isSavingUser ? 'Saving...' : editUser ? 'Save Changes' : 'Create Account'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -354,7 +382,9 @@ export default function UsersPage() {
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmDeleteUser(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => confirmDeleteUser && handleDeleteUser(confirmDeleteUser)}>Delete</Button>
+            <Button variant="destructive" onClick={() => confirmDeleteUser && handleDeleteUser(confirmDeleteUser)} disabled={isDeletingUser}>
+              {isDeletingUser ? 'Deleting...' : 'Delete'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -406,7 +436,9 @@ export default function UsersPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeRoleDialog}>Cancel</Button>
-            <Button onClick={handleSaveRole}>{editRole ? 'Save Role' : 'Create Role'}</Button>
+            <Button onClick={handleSaveRole} disabled={isSavingRole}>
+              {isSavingRole ? 'Saving...' : editRole ? 'Save Role' : 'Create Role'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -421,7 +453,9 @@ export default function UsersPage() {
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmDeleteRole(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => confirmDeleteRole && handleDeleteRole(confirmDeleteRole)}>Delete Role</Button>
+            <Button variant="destructive" onClick={() => confirmDeleteRole && handleDeleteRole(confirmDeleteRole)} disabled={isDeletingRole}>
+              {isDeletingRole ? 'Deleting...' : 'Delete Role'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

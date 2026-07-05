@@ -39,7 +39,7 @@ export default function Dashboard() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{format(new Date(), "EEEE, MMMM d, yyyy")}</p>
+          <p className="text-sm text-muted-foreground mt-0.5">{format(new Date(), "EEEE, dd/MM/yyyy")}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button data-testid="btn-quick-checkin" onClick={() => setLocation("/checkin")} className="gap-2">

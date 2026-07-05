@@ -47,7 +47,7 @@ interface MemberForm {
   customId: string;
   classId: string;
   isClinicVisitor: boolean;
-  
+
   // Custom edit fields
   sessions_remaining: string;
   freeze_days_remaining: string;
@@ -137,7 +137,7 @@ export default function Members() {
     else if (statusFilter === "frozen") matchStatus = isFrozen;
     else if (statusFilter === "active") matchStatus = m.status === 'active' && !isFrozen;
     else matchStatus = m.status === statusFilter;
-    
+
     return matchSearch && matchStatus;
   });
 
@@ -169,7 +169,7 @@ export default function Members() {
       toast.error("Phone number must be exactly 11 digits");
       return;
     }
-    
+
     if (form.parentPhone.trim() && !phoneRegex.test(form.parentPhone.trim())) {
       toast.error("Parent phone number must be exactly 11 digits");
       return;
@@ -270,7 +270,7 @@ export default function Members() {
           member_id: freezeMemberState.uuid,
           member_name: freezeMemberState.name,
           timestamp: new Date().toISOString(),
-          details: `Froze membership for ${days} days. Previous expires_at: ${freezeMemberState.expires_at ? format(new Date(freezeMemberState.expires_at), 'dd MMM yyyy') : 'N/A'}`,
+          details: `Froze membership for ${days} days. Previous expires_at: ${freezeMemberState.expires_at ? format(new Date(freezeMemberState.expires_at), 'dd/MM/yyyy') : 'N/A'}`,
         });
         toast.success(`Membership frozen for ${days} days`);
         setFreezeMemberState(null);
@@ -307,7 +307,7 @@ export default function Members() {
       toast.error("Package data missing");
       return;
     }
-    
+
     const priceDiff = Math.max(0, newPkg.price - currentPkg.price);
     const newSessions = newPkg.sessions === 999 ? 999 : newPkg.sessions;
     const newExpiresAt = new Date(Date.now() + newPkg.validity_days * 86400000).toISOString();
@@ -315,7 +315,7 @@ export default function Members() {
     createInvoice.mutate({
       member_id: upgradeMemberState.uuid,
       member_name: upgradeMemberState.name,
-        class_id: upgradeMemberState.class_id || null,
+      class_id: upgradeMemberState.class_id || null,
       package_id: newPkg.id,
       package_name: newPkg.name,
       total_amount: priceDiff,
@@ -346,7 +346,7 @@ export default function Members() {
               performer_name: currentUser?.name ?? 'System',
               member_id: upgradeMemberState.uuid,
               member_name: upgradeMemberState.name,
-                timestamp: new Date().toISOString(),
+              timestamp: new Date().toISOString(),
               details: `Upgraded from ${currentPkg.name} to ${newPkg.name}. Difference paid: ${priceDiff} EGP`,
             });
             toast.success("Package upgraded successfully");
@@ -487,7 +487,7 @@ export default function Members() {
                             <span className="text-muted-foreground mx-1">-</span>
                             <span>{m.class_info.coach_name ?? 'No Coach'}</span>
                             <div className="text-xs text-muted-foreground mt-1">
-                              {m.class_info.schedules?.map(s => `${s?.day?.slice(0,3)} ${s?.time}`).join(', ')}
+                              {m.class_info.schedules?.map(s => `${s?.day?.slice(0, 3)} ${s?.time}`).join(', ')}
                             </div>
                           </div>
                         ) : (
@@ -499,14 +499,14 @@ export default function Members() {
                       <div className="space-y-1">
                         <p className="text-sm font-medium">{m.package_name || 'None'}</p>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          Last Subscription: {m.last_subscription_date ? format(new Date(m.last_subscription_date), "dd MMM yyyy") : 'Never'}
+                          Last Subscription: {m.last_subscription_date ? format(new Date(m.last_subscription_date), "dd/MM/yyyy") : 'Never'}
                         </div>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          Expires: {m.expires_at ? format(new Date(m.expires_at), "dd MMM yyyy") : 'N/A'}
+                          Expires: {m.expires_at ? format(new Date(m.expires_at), "dd/MM/yyyy") : 'N/A'}
                         </div>
                         {m.pending_subscription_date && (
                           <div className="flex items-center gap-2 text-xs text-amber-600 font-medium">
-                            Pending Activation: {format(new Date(m.pending_subscription_date), "dd MMM yyyy")}
+                            Pending Activation: {format(new Date(m.pending_subscription_date), "dd/MM/yyyy")}
                           </div>
                         )}
                       </div>
@@ -586,7 +586,7 @@ export default function Members() {
               })}
             </TableBody>
           </Table>
-          
+
           <div className="flex items-center justify-between p-4 border-t">
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Rows per page:</span>
@@ -601,23 +601,23 @@ export default function Members() {
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div className="flex items-center gap-4">
               <span className="text-sm text-muted-foreground">
                 Page {currentPage} of {totalPages} (Total: {filtered.length})
               </span>
               <div className="flex items-center gap-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
                 >
                   Previous
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages || totalPages === 0}
                 >
@@ -805,8 +805,8 @@ export default function Members() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialogs}>Cancel</Button>
-            <Button 
-              data-testid="btn-save-member" 
+            <Button
+              data-testid="btn-save-member"
               onClick={handleSave}
               disabled={createMember.isPending || updateMember.isPending}
             >
@@ -842,7 +842,7 @@ export default function Members() {
       </AlertDialog>
 
       {/* Freeze Member Dialog */}
-      <Dialog open={!!freezeMemberState} onOpenChange={o => { if (!o) { setFreezeMemberState(null); setFreezeDaysInput(""); }}}>
+      <Dialog open={!!freezeMemberState} onOpenChange={o => { if (!o) { setFreezeMemberState(null); setFreezeDaysInput(""); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Freeze Membership</DialogTitle>
@@ -866,7 +866,7 @@ export default function Members() {
                 </SelectContent>
               </Select>
               {(!freezeMemberState?.freeze_days_remaining || freezeMemberState.freeze_days_remaining < 7) && (
-                 <p className="text-xs text-red-500">Not enough freeze days remaining (minimum 7).</p>
+                <p className="text-xs text-red-500">Not enough freeze days remaining (minimum 7).</p>
               )}
             </div>
           </div>
@@ -880,7 +880,7 @@ export default function Members() {
       </Dialog>
 
       {/* Upgrade Member Dialog */}
-      <Dialog open={!!upgradeMemberState} onOpenChange={o => { if (!o) { setUpgradeMemberState(null); setUpgradePackageId(""); }}}>
+      <Dialog open={!!upgradeMemberState} onOpenChange={o => { if (!o) { setUpgradeMemberState(null); setUpgradePackageId(""); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Upgrade Package</DialogTitle>

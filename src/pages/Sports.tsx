@@ -102,7 +102,7 @@ export default function Sports() {
                   {filtered.map(s => (
                     <TableRow key={s.id}>
                       <TableCell className="font-medium">{s.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{format(new Date(s.created_at), 'dd MMM yyyy')}</TableCell>
+                      <TableCell className="text-muted-foreground">{format(new Date(s.created_at), 'dd/MM/yyyy')}</TableCell>
                       <TableCell className="text-right">
                         {isAdmin && (
                           <div className="flex items-center justify-end gap-2">

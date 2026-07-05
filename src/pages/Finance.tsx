@@ -549,7 +549,7 @@ export default function Finance() {
                     <p className="text-sm font-medium text-foreground truncate">
                       {i.member_name}
                     </p>
-                    <p className="text-xs text-muted-foreground">{i.package_name} · {i.payment_method} · {format(new Date(i.created_at), 'dd MMM')}</p>
+                    <p className="text-xs text-muted-foreground">{i.package_name} · {i.payment_method} · {format(new Date(i.created_at), 'dd/MM')}</p>
                   </div>
                   <p className="text-sm font-bold text-emerald-600 flex-shrink-0">{i.paid_amount.toLocaleString()} EGP</p>
                 </div>
@@ -687,7 +687,7 @@ export default function Finance() {
                         <div key={e.id} className="flex items-center justify-between p-2 rounded-md bg-muted/30 border border-border/50 text-sm">
                           <div>
                             <p className="font-medium text-foreground">{e.description || e.category}</p>
-                            <p className="text-xs text-muted-foreground">{format(new Date(e.date), 'dd MMM')}</p>
+                            <p className="text-xs text-muted-foreground">{format(new Date(e.date), 'dd/MM')}</p>
                           </div>
                           <p className="font-semibold">{e.amount.toLocaleString()} EGP</p>
                         </div>
@@ -702,7 +702,7 @@ export default function Finance() {
                 <div key={e.id} data-testid={`expense-${e.id}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50 border border-border/50">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{e.description || e.category}</p>
-                    <p className="text-xs text-muted-foreground">{e.category} · {format(new Date(e.date), 'dd MMM')}</p>
+                    <p className="text-xs text-muted-foreground">{e.category} · {format(new Date(e.date), 'dd/MM')}</p>
                   </div>
                   <p className="text-sm font-bold text-red-600 flex-shrink-0">{e.amount.toLocaleString()} EGP</p>
                 </div>

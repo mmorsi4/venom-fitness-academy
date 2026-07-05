@@ -126,7 +126,7 @@ export function ExpensesView() {
     if (isLiabilityPayment && !form.liabilityId) { toast.error("Select a liability to pay"); return; }
 
     const finalCategory = form.category === 'CUSTOM' ? form.customCategory.trim() : form.category;
-    
+
     const payload: any = {
       category: finalCategory,
       amount: Number(form.amount),
@@ -280,16 +280,16 @@ export function ExpensesView() {
                   paginated.map(expense => (
                     <TableRow key={expense.uuid} className="hover:bg-muted/30">
                       <TableCell className="font-medium">{expense.id}</TableCell>
-                      <TableCell>{format(new Date(expense.date), 'dd MMM yyyy')}</TableCell>
+                      <TableCell>{format(new Date(expense.date), 'dd/MM/yyyy')}</TableCell>
                       <TableCell>{expense.category}</TableCell>
                       <TableCell>{expense.description}</TableCell>
                       <TableCell className="text-right font-semibold text-red-600">
                         {expense.amount.toLocaleString()} EGP
                       </TableCell>
                       <TableCell className="text-right space-x-2">
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="h-8 w-8 text-muted-foreground hover:text-primary"
                           onClick={() => {
                             setEditExpense(expense);
@@ -304,9 +304,9 @@ export function ExpensesView() {
                         >
                           <Pencil className="w-4 h-4" />
                         </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="h-8 w-8 text-muted-foreground hover:text-red-600"
                           onClick={() => setConfirmDelete(expense)}
                         >
@@ -346,7 +346,7 @@ export function ExpensesView() {
               />
               <p className="text-xs text-muted-foreground">Leave empty to continue the sequence.</p>
             </div>
-            
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>Date</Label>
@@ -507,8 +507,8 @@ export function ExpensesView() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleDelete} 
+            <AlertDialogAction
+              onClick={handleDelete}
               className="bg-red-600 hover:bg-red-700"
               disabled={deleteExpense.isPending}
             >

@@ -125,7 +125,7 @@ export default function AuditLog() {
               </div>
               <div className="text-right flex-shrink-0">
                 <p className="text-sm font-medium text-foreground">{log.performer_name}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{format(new Date(log.timestamp), "dd MMM, HH:mm")}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{format(new Date(log.timestamp), "dd/MM, HH:mm")}</p>
               </div>
             </div>
           ))}

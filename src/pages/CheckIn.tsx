@@ -238,7 +238,7 @@ export default function CheckIn() {
                 <p className="text-xs text-muted-foreground">Package</p>
               </div>
               <div className="p-2 rounded-lg bg-white/70">
-                <p className="text-sm font-bold text-foreground">{selectedMember.expires_at ? format(new Date(selectedMember.expires_at), "dd MMM") : "—"}</p>
+                <p className="text-sm font-bold text-foreground">{selectedMember.expires_at ? format(new Date(selectedMember.expires_at), "dd/MM") : "—"}</p>
                 <p className="text-xs text-muted-foreground">Expires</p>
               </div>
             </div>
@@ -253,7 +253,7 @@ export default function CheckIn() {
             {selectedMember.status === 'expired' && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-red-100 border border-red-200 text-red-800 text-sm">
                 <XCircle className="w-4 h-4 flex-shrink-0" />
-                <span>Membership expired on {selectedMember.expires_at ? format(new Date(selectedMember.expires_at), "MMM d, yyyy") : "unknown date"}. Cannot check in.</span>
+                <span>Membership expired on {selectedMember.expires_at ? format(new Date(selectedMember.expires_at), "dd/MM/yyyy") : "unknown date"}. Cannot check in.</span>
               </div>
             )}
 
@@ -274,7 +274,7 @@ export default function CheckIn() {
             {selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date() && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-100 border border-blue-200 text-blue-800 text-sm">
                 <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                <span>This member is frozen until {format(new Date(selectedMember.frozen_until), "MMM d, yyyy")}. Overriding will cancel the freeze.</span>
+                <span>This member is frozen until {format(new Date(selectedMember.frozen_until), "dd/MM/yyyy")}. Overriding will cancel the freeze.</span>
               </div>
             )}
 
