@@ -617,7 +617,7 @@ export default function Members() {
                           >
                             <Unlock className="w-4 h-4" />
                           </button>
-                        ) : (
+                        ) : m.freeze_days_remaining > 0 ? (
                           <button
                             data-testid={`btn-freeze-member-${m.uuid}`}
                             onClick={() => { setFreezeMemberState(m); setFreezeDaysInput(""); }}
@@ -626,7 +626,7 @@ export default function Members() {
                           >
                             <Snowflake className="w-4 h-4" />
                           </button>
-                        )}
+                        ) : ("")}
                         {m.last_subscription_date && new Date(m.last_subscription_date).getTime() > Date.now() - 7 * 86400000 && (
                           <button
                             data-testid={`btn-upgrade-member-${m.uuid}`}

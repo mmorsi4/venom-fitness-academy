@@ -75,10 +75,10 @@ export default function Subscriptions() {
           name: form.name.trim(),
           sessions,
           price: Number(form.price),
-          validity_days: Number(form.validityDays) || 30,
-          freeze_days: Number(form.freezeDays) || 7,
-          invitations: Number(form.invitations) || 0,
-          inbody_sessions: Number(form.inBodySessions) || 0,
+          validity_days: form.validityDays === "" ? 30 : Number(form.validityDays),
+          freeze_days: form.freezeDays === "" ? 0 : Number(form.freezeDays),
+          invitations: form.invitations === "" ? 0 : Number(form.invitations),
+          inbody_sessions: form.inBodySessions === "" ? 0 : Number(form.inBodySessions),
           is_clinic: form.isClinic,
         }
       }, {
@@ -93,10 +93,10 @@ export default function Subscriptions() {
         name: form.name.trim(),
         sessions,
         price: Number(form.price),
-        validity_days: Number(form.validityDays) || 30,
-        freeze_days: Number(form.freezeDays) || 7,
-        invitations: Number(form.invitations) || 0,
-        inbody_sessions: Number(form.inBodySessions) || 0,
+        validity_days: form.validityDays === "" ? 30 : Number(form.validityDays),
+        freeze_days: form.freezeDays === "" ? 0 : Number(form.freezeDays),
+        invitations: form.invitations === "" ? 0 : Number(form.invitations),
+        inbody_sessions: form.inBodySessions === "" ? 0 : Number(form.inBodySessions),
         is_clinic: form.isClinic,
       }, {
         onSuccess: () => {
@@ -296,15 +296,15 @@ export default function Subscriptions() {
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label>Freeze Days</Label>
-                <Input type="number" placeholder="7" value={form.freezeDays} onChange={f('freezeDays')} />
+                <Input type="number" placeholder="0" value={form.freezeDays} onChange={f('freezeDays')} />
               </div>
               <div className="space-y-1.5">
                 <Label>Invitations</Label>
-                <Input type="number" placeholder="1" value={form.invitations} onChange={f('invitations')} />
+                <Input type="number" placeholder="0" value={form.invitations} onChange={f('invitations')} />
               </div>
               <div className="space-y-1.5">
                 <Label>InBody Sessions</Label>
-                <Input type="number" placeholder="1" value={form.inBodySessions} onChange={f('inBodySessions')} />
+                <Input type="number" placeholder="0" value={form.inBodySessions} onChange={f('inBodySessions')} />
               </div>
             </div>
 
