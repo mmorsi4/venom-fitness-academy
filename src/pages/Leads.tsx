@@ -22,13 +22,14 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 
 const SOURCES = ["Walk-in", "Referral", "Facebook", "Instagram", "WhatsApp", "Invitation"];
-const STATUSES = ["New", "Contacted", "Follow-up", "Converted", "Lost"] as const;
+const STATUSES = ["New", "Contacted", "Follow-up", "Converted", "Invited", "Lost"] as const;
 
 const statusColors: Record<string, string> = {
   New: "bg-blue-100 text-blue-700 border-blue-200",
   Contacted: "bg-amber-100 text-amber-700 border-amber-200",
   "Follow-up": "bg-violet-100 text-violet-700 border-violet-200",
   Converted: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  Invited: "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200",
   Lost: "bg-red-100 text-red-700 border-red-200",
 };
 
