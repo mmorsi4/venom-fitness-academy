@@ -218,13 +218,13 @@ export default function Finance() {
     .sort((a, b) => b.amount - a.amount);
 
   if (totalStartingIncome > 0) {
-    revenueByPackage.push({
+    incomeByPackage.push({
       package: "Starting Balance",
       amount: totalStartingIncome,
       count: 1,
       percentage: breakdownTotalIncome > 0 ? (totalStartingIncome / breakdownTotalIncome) * 100 : 0
     });
-    revenueByPackage.sort((a, b) => b.amount - a.amount);
+    incomeByPackage.sort((a, b) => b.amount - a.amount);
   }
 
 
