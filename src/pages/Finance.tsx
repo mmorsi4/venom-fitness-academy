@@ -130,7 +130,12 @@ export default function Finance() {
 
   const filteredExpenses = expenses.filter(e => {
     const d = new Date(e.date);
-    return d.getMonth() === filterMonth && d.getFullYear() === filterYear;
+    return d.getMonth() === filterMonth && d.getFullYear() === filterYear && d >= financeStartDate;
+  });
+
+  const filteredTransfers = internalTransfers.filter(t => {
+    const d = new Date(t.date);
+    return d.getMonth() === filterMonth && d.getFullYear() === filterYear && d >= financeStartDate;
   });
 
   const liabilityPayments = filteredExpenses.filter(e => e.category === LIABILITY_CATEGORY);
@@ -932,6 +937,31 @@ export default function Finance() {
               
               {regularExpenses.length === 0 && totalCoachPayroll === 0 && totalLiabilityPayments === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-4">No expenses recorded this month</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Internal Transfers Log */}
+          <Card className="mt-4">
+            <CardHeader className="pb-3 flex-shrink-0">
+              <CardTitle className="text-sm font-semibold">Internal Transfers Log</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 max-h-[350px] overflow-y-auto pr-2">
+              {filteredTransfers.map(t => (
+                <div key={t.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50 border border-border/50">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">
+                      {t.from_account} ➔ {t.to_account}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {format(new Date(t.date), 'dd/MM')}{t.note ? ` - ${t.note}` : ''}
+                    </p>
+                  </div>
+                  <p className="text-sm font-bold text-blue-600 flex-shrink-0">{t.amount.toLocaleString()} EGP</p>
+                </div>
+              ))}
+              {filteredTransfers.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">No internal transfers this month</p>
               )}
             </CardContent>
           </Card>
