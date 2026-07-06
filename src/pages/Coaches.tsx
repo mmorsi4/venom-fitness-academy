@@ -14,7 +14,7 @@ import {
 import { 
   useCoaches, useInvoices, useMembers, 
   useCreateCoach, useUpdateCoach, 
-  useCoachCheckInsToday, useCheckInCoach, useCheckInCoachWithDetails,
+  useCoachCheckInsToday,
   useCoachCheckInsForMonth, useCoachHistory, useClasses,
   useCoachDeductions, useCreateCoachDeduction, useDeleteCoachDeduction
 } from "@/hooks/use-data";
@@ -52,12 +52,9 @@ export default function Coaches() {
 
   const createCoach = useCreateCoach();
   const updateCoach = useUpdateCoach();
-  const checkInMutation = useCheckInCoach();
-  const checkInWithDetails = useCheckInCoachWithDetails();
   const createDeduction = useCreateCoachDeduction();
   const deleteDeduction = useDeleteCoachDeduction();
 
-  const [checkInModal, setCheckInModal] = useState(false);
   const [showCoachDialog, setShowCoachDialog] = useState(false);
   const [editCoach, setEditCoach] = useState<Coach | null>(null);
   const [form, setForm] = useState<CoachForm>(emptyForm);
@@ -72,11 +69,6 @@ export default function Coaches() {
   const { data: history = [] } = useCoachHistory(historyCoach?.id);
   const [coachSearch, setCoachSearch] = useState("");
   const [mainCoachSearch, setMainCoachSearch] = useState("");
-
-  const [selectedClass, setSelectedClass] = useState<string | null>(null);
-  const [selectedCoachId, setSelectedCoachId] = useState<string | null>(null); // who actually did the session
-  const [classCheckInCoach, setClassCheckInCoach] = useState<Coach | null>(null);
-  const [selectedClassId, setSelectedClassId] = useState<string>("none");
 
   const todayName = DAYS[new Date().getDay()];
   const todaysClasses = classes
@@ -102,14 +94,6 @@ export default function Coaches() {
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   }).length;
 
-  const handleManualCheckIn = () => {
-    if (!selectedClass || !selectedCoachId) { toast.error("Select class and coach"); return; }
-    checkInWithDetails.mutate({ coachId: selectedCoachId, classId: selectedClass }, {
-      onSuccess: () => { toast.success("Checked in successfully"); setCheckInModal(false); },
-      onError: (err) => toast.error(`Error: ${err.message}`)
-    });
-  };
-
   const handleAddDeduction = () => {
     if (!deductionsModalCoach || !deductionAmount) return;
     const amt = Number(deductionAmount);
@@ -131,59 +115,6 @@ export default function Coaches() {
         console.error("Adjustment error", err);
         toast.error(`Error adding adjustment: ${err.message}`);
       }
-    });
-  };
-
-  const openClassCheckIn = (coach: Coach) => {
-    setClassCheckInCoach(coach);
-    setSelectedClassId("none");
-  };
-
-  // New: submit check-in for today's class, with optional substitute selection
-  const submitTodayClassCheckIn = (classId: string, coachId: string, mainCoachId: string) => {
-    const isSubstitute = coachId !== mainCoachId;
-    checkInWithDetails.mutate({
-      coachId,
-      classId,
-      isSubstitute,
-      originalCoachId: isSubstitute ? mainCoachId : undefined,
-      sessionType: 'group',
-    }, {
-      onSuccess: () => {
-        const coach = coaches.find(c => c.id === coachId);
-        toast.success(isSubstitute
-          ? `Substitute check-in: ${coach?.name} covered the class`
-          : `${coach?.name} checked in for their class`);
-        setSelectedClass(null); setSelectedCoachId(null);
-      },
-      onError: (err) => toast.error(`Failed: ${err.message}`)
-    });
-  };
-
-  const submitClassCheckIn = () => {
-    if (!classCheckInCoach) return;
-    if (selectedClassId === "none") {
-      checkInMutation.mutate({ coachId: classCheckInCoach.id, classId: undefined }, {
-        onSuccess: () => { toast.success(`${classCheckInCoach.name} checked in (General)`); setClassCheckInCoach(null); },
-        onError: (err) => toast.error(`Failed to check in: ${err.message}`)
-      });
-      return;
-    }
-    const classData = classes.find(c => c.id === selectedClassId);
-    if (!classData) return;
-    const scheduledSlotsForToday = classData.schedules.filter(s => s.day === todayName).length;
-    if (scheduledSlotsForToday === 0) {
-      toast.error(`This class is not scheduled for today (${todayName}).`);
-      return;
-    }
-    const checkInsForThisClassToday = checkIns.filter(ci => ci.coach_id === classCheckInCoach.id && ci.class_id === selectedClassId).length;
-    if (checkInsForThisClassToday >= scheduledSlotsForToday) {
-      toast.error(`Coach has already checked in ${checkInsForThisClassToday} time(s) for this class today.`);
-      return;
-    }
-    checkInMutation.mutate({ coachId: classCheckInCoach.id, classId: selectedClassId }, {
-      onSuccess: () => { toast.success(`${classCheckInCoach.name} checked in`); setClassCheckInCoach(null); },
-      onError: (err) => toast.error(`Failed to check in: ${err.message}`)
     });
   };
 
@@ -252,9 +183,6 @@ export default function Coaches() {
               <Plus className="w-4 h-4" /> Add
             </Button>
           )}
-          <Button data-testid="btn-coach-checkin-modal" onClick={() => setCheckInModal(true)} className="gap-2">
-            <CheckCircle2 className="w-4 h-4" /> Check-In
-          </Button>
         </div>
       </div>
 
@@ -340,15 +268,12 @@ export default function Coaches() {
                   )}
                   {coach.payment_type === 'per_session' && stats.missedSessions === 0 && <p className="text-xs text-muted-foreground mt-1">{sessions} sessions × {coach.rate} EGP</p>}
                 </div>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <Button data-testid={`btn-deductions-coach-${coach.id}`} variant="outline" size="sm" className="w-full gap-2 text-xs px-1" onClick={() => setDeductionsModalCoach(coach)}>
                     <DollarSign className="w-3.5 h-3.5" /> Adjust
                   </Button>
                   <Button variant="outline" size="sm" className="w-full gap-2 text-xs px-1" onClick={() => setHistoryCoach(coach)}>
                     <Clock className="w-3.5 h-3.5" /> History
-                  </Button>
-                  <Button data-testid={`btn-checkin-coach-${coach.id}`} variant="outline" size="sm" className="w-full gap-2 text-xs px-1" onClick={() => openClassCheckIn(coach)}>
-                    <Dumbbell className="w-3.5 h-3.5" /> Check In
                   </Button>
                 </div>
               </CardContent>
@@ -411,115 +336,6 @@ export default function Coaches() {
           </div>
         </CardContent>
       </Card>
-
-      <Dialog open={checkInModal} onOpenChange={setCheckInModal}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Coach Check-In — {todayName}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2 max-h-[70vh] overflow-y-auto pr-1">
-            {todaysClasses.length === 0 ? (
-              <p className="text-center text-muted-foreground py-6">No classes scheduled for today.</p>
-            ) : todaysClasses.map(cls => {
-              const mainCoach = coaches.find(c => c.id === cls.coach_id);
-              const timeSlot = (cls.schedules || []).find(s => s.day === todayName)?.time;
-              const checkedInForClass = checkIns.filter(ci => ci.class_id === cls.id);
-              const alreadyDone = checkedInForClass.length > 0;
-
-              return (
-                <div key={cls.id} className={`rounded-xl border p-4 space-y-3 ${alreadyDone ? 'bg-emerald-50 border-emerald-200' : 'bg-card'}`}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-foreground">{cls.name}</p>
-                      <p className="text-xs text-muted-foreground">{timeSlot} · {cls.sport_name || 'General'}</p>
-                    </div>
-                    {alreadyDone ? (
-                      <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
-                        ✓ Done — {coaches.find(c => c.id === checkedInForClass[0]?.coach_id)?.name}
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-amber-600 border-amber-300">Pending</Badge>
-                    )}
-                  </div>
-
-                  {!alreadyDone && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Who taught this session?</p>
-                      {/* Main coach first */}
-                      {mainCoach && (
-                        <button
-                          key={mainCoach.id}
-                          onClick={() => submitTodayClassCheckIn(cls.id, mainCoach.id, mainCoach.id)}
-                          className="w-full flex items-center justify-between p-2.5 rounded-lg border-2 border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors"
-                          disabled={checkInWithDetails.isPending}
-                        >
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
-                              <span className="text-xs font-bold text-primary">{mainCoach.name.charAt(0)}</span>
-                            </div>
-                            <span className="text-sm font-medium">{mainCoach.name}</span>
-                            <Badge className="text-xs bg-primary/10 text-primary border-primary/20">Main Coach</Badge>
-                          </div>
-                          <span className="text-xs text-primary font-medium">✓ Check In</span>
-                        </button>
-                      )}
-                      {/* Other coaches as substitutes */}
-                      {coaches.filter(c => c.id !== cls.coach_id).map(sub => (
-                        <button
-                          key={sub.id}
-                          onClick={() => submitTodayClassCheckIn(cls.id, sub.id, cls.coach_id || sub.id)}
-                          className="w-full flex items-center justify-between p-2.5 rounded-lg border border-input bg-card hover:bg-accent transition-colors"
-                          disabled={checkInWithDetails.isPending}
-                        >
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center">
-                              <span className="text-xs font-bold text-muted-foreground">{sub.name.charAt(0)}</span>
-                            </div>
-                            <span className="text-sm">{sub.name}</span>
-                            <span className="text-xs text-muted-foreground">(Substitute)</span>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCheckInModal(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!classCheckInCoach} onOpenChange={(o) => !o && setClassCheckInCoach(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Check In: {classCheckInCoach?.name}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Select Class</Label>
-              <Select value={selectedClassId} onValueChange={setSelectedClassId}>
-                <SelectTrigger><SelectValue placeholder="Select a class" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">General Check-In (No specific class)</SelectItem>
-                  {classCheckInCoach && classes.filter(c => c.coach_id === classCheckInCoach.id).map(cls => (
-                    <SelectItem key={cls.id} value={cls.id}>
-                      {cls.name} ({cls.sport_name})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setClassCheckInCoach(null)}>Cancel</Button>
-            <Button onClick={submitClassCheckIn} disabled={checkInMutation.isPending}>Submit Check-In</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
 
       <Dialog open={showCoachDialog} onOpenChange={o => !o && closeDialog()}>
         <DialogContent className="max-w-sm">

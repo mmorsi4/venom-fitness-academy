@@ -24,7 +24,11 @@ export function calculateCoachPayroll(
   const allDays = eachDayOfInterval({ start, end });
   const today = startOfDay(new Date());
 
-  const coachDeductions = deductions.filter(d => d.coach_id === coach.id);
+  const coachDeductions = deductions.filter(d => {
+    if (d.coach_id !== coach.id) return false;
+    const dDate = new Date(d.date);
+    return dDate.getMonth() === month && dDate.getFullYear() === year;
+  });
   const netAdjustment = coachDeductions.reduce((s, d) => s + d.amount, 0);
   const totalForgivenSessions = coachDeductions.reduce((s, d) => s + d.forgiven_sessions, 0);
 

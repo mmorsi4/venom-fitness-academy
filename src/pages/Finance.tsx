@@ -841,7 +841,7 @@ export default function Finance() {
                   >
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-indigo-900 truncate flex items-center gap-2">
-                        Automated Coach Payroll
+                        Remaining Coach Payments
                         {isCoachPayrollExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                       </p>
                       <p className="text-xs text-indigo-600/70">Calculated for this month</p>

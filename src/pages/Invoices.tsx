@@ -1028,7 +1028,7 @@ export default function Invoices() {
                         </Tabs>
                       </div>
                       <SearchableSelect
-                        options={createAvailablePackages.map(p => ({ value: p.id, label: `${p.name} — ${p.price} EGP`, searchTerms: p.category }))}
+                        options={createAvailablePackages.map(p => ({ value: p.id, label: `(${p.sessions} Sessions) ${p.name} — ${p.price} EGP`, searchTerms: p.category }))}
                         value={form.packageId}
                         onValueChange={v => setForm(p => ({ ...p, packageId: v }))}
                         placeholder="Select package..."
@@ -1038,15 +1038,16 @@ export default function Invoices() {
                     </div>
                     <div className="space-y-1.5">
                       <Label>Class (Optional)</Label>
-                      <Select value={form.classId} onValueChange={v => setForm(p => ({ ...p, classId: v }))}>
-                        <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {classes.map(c => (
-                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <SearchableSelect
+                        options={[
+                          { value: "none", label: "None", searchTerms: "none" },
+                          ...classes.map(c => ({ value: c.id, label: c.name, searchTerms: c.name }))
+                        ]}
+                        value={form.classId}
+                        onValueChange={v => setForm(p => ({ ...p, classId: v }))}
+                        placeholder="Select class..."
+                        searchPlaceholder="Search classes..."
+                      />
                     </div>
 
                     {/* Discount */}
@@ -1309,7 +1310,11 @@ export default function Invoices() {
                     </div>
                     <div className="space-y-1.5">
                       <Label>Class (Optional)</Label>
-                      <Select
+                      <SearchableSelect
+                        options={[
+                          { value: "none", label: "None", searchTerms: "none" },
+                          ...classes.map(c => ({ value: c.id, label: c.name, searchTerms: c.name }))
+                        ]}
                         value={form.jointMembersData[jointStep - 2]?.classId || ""}
                         onValueChange={v => {
                           const newData = [...form.jointMembersData];
@@ -1317,15 +1322,9 @@ export default function Invoices() {
                           else newData[jointStep - 2].classId = v;
                           setForm(p => ({ ...p, jointMembersData: newData }));
                         }}
-                      >
-                        <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {classes.map(c => (
-                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Select class..."
+                        searchPlaceholder="Search classes..."
+                      />
                     </div>
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
@@ -1543,15 +1542,16 @@ export default function Invoices() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Class (Optional)</Label>
-                  <Select value={editForm.classId} onValueChange={v => setEditForm(p => ({ ...p, classId: v }))}>
-                    <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {classes.map(c => (
-                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    options={[
+                      { value: "none", label: "None", searchTerms: "none" },
+                      ...classes.map(c => ({ value: c.id, label: c.name, searchTerms: c.name }))
+                    ]}
+                    value={editForm.classId}
+                    onValueChange={v => setEditForm(p => ({ ...p, classId: v }))}
+                    placeholder="Select class..."
+                    searchPlaceholder="Search classes..."
+                  />
                 </div>
 
                 {/* Discount */}
