@@ -163,7 +163,10 @@ export default function Coaches() {
   const submitClassCheckIn = () => {
     if (!classCheckInCoach) return;
     if (selectedClassId === "none") {
-      toast.error("Please select a specific class to check into.");
+      checkInMutation.mutate({ coachId: classCheckInCoach.id, classId: undefined }, {
+        onSuccess: () => { toast.success(`${classCheckInCoach.name} checked in (General)`); setClassCheckInCoach(null); },
+        onError: (err) => toast.error(`Failed to check in: ${err.message}`)
+      });
       return;
     }
     const classData = classes.find(c => c.id === selectedClassId);
