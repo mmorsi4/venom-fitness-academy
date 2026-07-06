@@ -149,6 +149,7 @@ export async function checkInMember(args: {
   payLater?: boolean;
   performedBy?: string;
   performerName?: string;
+  invoiceId?: string;
 }) {
   const { error } = await supabase.rpc('check_in_member', {
     p_member_id: args.memberId,
@@ -156,6 +157,7 @@ export async function checkInMember(args: {
     p_pay_later: args.payLater ?? false,
     p_performed_by: args.performedBy ?? null,
     p_performer_name: args.performerName ?? 'System',
+    p_invoice_uuid: args.invoiceId ?? null
   });
   if (error) throw error;
 }

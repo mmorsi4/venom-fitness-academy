@@ -18,10 +18,11 @@ import {
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { useExpenses, useLiabilities, useCoaches, useClasses, useCoachCheckInsForMonth, useMembers, useCreateExpense, useUpdateExpense, useDeleteExpense, useMarkCoachSessionsPaid, useDeleteExpenseWithRollback } from "@/hooks/use-data";
+import { useExpenses, useLiabilities, useCoaches, useClasses, useCoachCheckInsForMonth, useMembers, useCreateExpense, useUpdateExpense, useDeleteExpense, useMarkCoachSessionsPaid, useDeleteExpenseWithRollback, useEmployees, useEmployeeCheckIns, useEmployeeDeductions, useCreateEmployeeDeduction } from "@/hooks/use-data";
 import { calculateCoachPayroll } from "@/lib/utils";
 import { toast } from "sonner";
 import { format } from "date-fns";
+
 import type { Expense } from "@/lib/types";
 
 const BASE_CATEGORIES = ["Government Bills", "Maintenance", "Salaries", "Loans/Debts", "Purchases", "Other"];
@@ -40,6 +41,8 @@ const emptyForm = {
   splitPayments: [] as { method: string; amount: string }[],
   coachId: "",
   coachUnpaidIds: [] as string[],
+  employeeId: "",
+  employeeBonus: 0,
 };
 
 export function ExpensesView() {
@@ -51,12 +54,16 @@ export function ExpensesView() {
   const { data: classes = [] } = useClasses();
   const { data: coachCheckIns = [] } = useCoachCheckInsForMonth(new Date().getMonth(), new Date().getFullYear());
   const { data: members = [] } = useMembers();
+  const { data: employees = [] } = useEmployees();
+  const { data: employeeCheckIns = [] } = useEmployeeCheckIns(new Date().getMonth(), new Date().getFullYear());
+  const { data: employeeDeductionsAll = [] } = useEmployeeDeductions();
+  const createEmployeeDeduction = useCreateEmployeeDeduction();
   const updateExpense = useUpdateExpense();
   const deleteExpense = useDeleteExpense();
   const deleteExpenseWithRollback = useDeleteExpenseWithRollback();
 
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState({ ...emptyForm, salaryTarget: 'coach' as 'coach' | 'employee' });
 
   // Edit/Delete
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
@@ -167,6 +174,14 @@ export function ExpensesView() {
       onSuccess: () => {
         if (form.category === 'Salaries' && form.coachUnpaidIds?.length > 0) {
           markSessionsPaid.mutate(form.coachUnpaidIds);
+        }
+        if (form.category === 'Salaries' && form.salaryTarget === 'employee' && form.employeeId && form.employeeBonus > 0) {
+          createEmployeeDeduction.mutate({
+            employee_id: form.employeeId,
+            amount: form.employeeBonus,
+            date: new Date().toISOString(),
+            reason: "Salary Manual Bonus"
+          });
         }
         if (isLiabilityPayment && selectedLiability) {
           const newPaid = selectedLiability.paid_amount + Number(form.amount);
@@ -415,56 +430,155 @@ export function ExpensesView() {
 
                         {form.category === 'Salaries' && (
               <div className="space-y-3 p-3 bg-muted/50 rounded-lg border border-border mt-3 mb-3">
-                <div className="space-y-1.5">
-                  <Label>Select Coach</Label>
-                  <Select value={form.coachId} onValueChange={(id) => {
-                    const coach = coaches.find(c => c.id === id);
-                    if (!coach) return;
-                    // Calculate payroll for current month
-                    const now = new Date();
-                    const checkInsThisMonth = coachCheckIns.filter(ci => new Date(ci.check_in_date).getMonth() === now.getMonth() && new Date(ci.check_in_date).getFullYear() === now.getFullYear());
-                    const monthlyRevenue = 0; // approximate, not used for standard coaches usually
-                    const newMembersThisMonth = 0;
-                    
-                    const stats = calculateCoachPayroll(coach, now.getMonth(), now.getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth);
-                    
-                    // Count unpaid sessions explicitly
-                    const ptUnpaid = checkInsThisMonth.filter(ci => ci.coach_id === id && ci.session_type === 'pt' && !ci.is_paid).length;
-                    const groupMainUnpaid = checkInsThisMonth.filter(ci => ci.coach_id === id && ci.session_type === 'group' && !ci.is_substitute && !ci.is_paid).length;
-                    const groupSubUnpaid = checkInsThisMonth.filter(ci => ci.coach_id === id && ci.session_type === 'group' && ci.is_substitute && !ci.is_paid).length;
-                    const totalUnpaid = ptUnpaid + groupMainUnpaid + groupSubUnpaid;
-                    
-                    // Calculate amount owed
-                    let owed = 0;
-                    if (coach.payment_type === 'per_session') {
-                      owed = (groupMainUnpaid + groupSubUnpaid) * coach.rate + (ptUnpaid * (coach.pt_rate || 250));
-                    } else {
-                      const originalScheduled = stats.scheduledSlotsInMonth + checkInsThisMonth.filter(ci => ci.coach_id === id && ci.session_type === 'group' && !ci.is_substitute && ci.is_paid).length;
-                      const perSessionRate = originalScheduled > 0 ? (coach.rate / originalScheduled) : 0;
-                      owed = (groupSubUnpaid * perSessionRate) + (ptUnpaid * (coach.pt_rate || 250));
-                    }
-
-                    setForm(p => ({ 
-                      ...p, 
-                      coachId: id, 
-                      amount: String(owed),
-                      description: `Salary payment for ${coach.name} (${totalUnpaid} sessions)`,
-                      coachUnpaidIds: stats.unpaidCheckInIds || []
-                    }));
-                  }}>
-                    <SelectTrigger><SelectValue placeholder="Select a coach..." /></SelectTrigger>
-                    <SelectContent>
-                      {coaches.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {form.coachId && (
-                  <div className="flex gap-4">
-                    <div className="space-y-1.5 flex-1">
-                      <Label>Unpaid Sessions</Label>
-                      <Input readOnly value={form.coachUnpaidIds?.length || 0} className="bg-muted" />
-                    </div>
+                <div className="flex gap-4 border-b border-border pb-3 mb-3">
+                  <div className="flex-1">
+                    <Label>Pay To</Label>
+                    <Select value={form.salaryTarget} onValueChange={(v: 'coach'|'employee') => setForm(p => ({ ...p, salaryTarget: v, coachId: '', employeeId: '', amount: '' }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="coach">Coach</SelectItem>
+                        <SelectItem value="employee">Employee</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
+                </div>
+
+                {form.salaryTarget === 'coach' ? (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label>Select Coach</Label>
+                      <Select value={form.coachId} onValueChange={(id) => {
+                        const coach = coaches.find(c => c.id === id);
+                        if (!coach) return;
+                        // Calculate payroll for current month
+                        const now = new Date();
+                        const checkInsThisMonth = coachCheckIns.filter(ci => new Date(ci.check_in_date).getMonth() === now.getMonth() && new Date(ci.check_in_date).getFullYear() === now.getFullYear());
+                        const monthlyRevenue = 0; // approximate, not used for standard coaches usually
+                        const newMembersThisMonth = 0;
+                        
+                        const stats = calculateCoachPayroll(coach, now.getMonth(), now.getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth);
+                        
+                        // Count unpaid sessions explicitly
+                        const ptUnpaid = checkInsThisMonth.filter(ci => ci.coach_id === id && ci.session_type === 'pt' && !ci.is_paid).length;
+                        const groupMainUnpaid = checkInsThisMonth.filter(ci => ci.coach_id === id && ci.session_type === 'group' && !ci.is_substitute && !ci.is_paid).length;
+                        const groupSubUnpaid = checkInsThisMonth.filter(ci => ci.coach_id === id && ci.session_type === 'group' && ci.is_substitute && !ci.is_paid).length;
+                        const totalUnpaid = ptUnpaid + groupMainUnpaid + groupSubUnpaid;
+                        
+                        // Calculate amount owed
+                        let owed = 0;
+                        if (coach.payment_type === 'per_session') {
+                          owed = (groupMainUnpaid + groupSubUnpaid) * coach.rate + (ptUnpaid * (coach.pt_rate || 250));
+                        } else {
+                          const originalScheduled = stats.scheduledSlotsInMonth + checkInsThisMonth.filter(ci => ci.coach_id === id && ci.session_type === 'group' && !ci.is_substitute && ci.is_paid).length;
+                          const perSessionRate = originalScheduled > 0 ? (coach.rate / originalScheduled) : 0;
+                          owed = (groupSubUnpaid * perSessionRate) + (ptUnpaid * (coach.pt_rate || 250));
+                        }
+
+                        // Add net adjustment
+                        owed += stats.netAdjustment || 0;
+
+                        setForm(p => ({ 
+                          ...p, 
+                          coachId: id, 
+                          amount: String(Math.max(0, owed)),
+                          description: `Salary payment for ${coach.name} (${totalUnpaid} sessions)`,
+                          coachUnpaidIds: stats.unpaidCheckInIds || []
+                        }));
+                      }}>
+                        <SelectTrigger><SelectValue placeholder="Select a coach..." /></SelectTrigger>
+                        <SelectContent>
+                          {coaches.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {form.coachId && (
+                      <div className="flex gap-4 mt-3">
+                        <div className="space-y-1.5 flex-1">
+                          <Label>Unpaid Sessions</Label>
+                          <Input readOnly value={form.coachUnpaidIds?.length || 0} className="bg-muted" />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label>Select Employee</Label>
+                      <Select value={form.employeeId} onValueChange={(id) => {
+                        const emp = employees.find(e => e.id === id);
+                        if (!emp) return;
+                        
+                        const lateDeductions = employeeCheckIns
+                          .filter(ci => ci.employee_id === emp.id)
+                          .reduce((s, ci) => s + (ci.deduction || 0), 0);
+                          
+                        const explicitDeductions = employeeDeductionsAll
+                          .filter(d => d.employee_id === emp.id)
+                          .reduce((s, d) => s + d.amount, 0);
+                          
+                        const totalDeds = lateDeductions + explicitDeductions;
+                        const netSalary = emp.rate - totalDeds;
+
+                        setForm(p => ({
+                          ...p,
+                          employeeId: id,
+                          employeeBonus: 0,
+                          amount: String(Math.max(0, netSalary)),
+                          description: `Salary payment for ${emp.name} (Base: ${emp.rate}, Ded: ${totalDeds})`
+                        }));
+                      }}>
+                        <SelectTrigger><SelectValue placeholder="Select an employee..." /></SelectTrigger>
+                        <SelectContent>
+                          {employees.map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {form.employeeId && (() => {
+                      const emp = employees.find(e => e.id === form.employeeId);
+                      if (!emp) return null;
+                      
+                      const lateDeductions = employeeCheckIns
+                        .filter(ci => ci.employee_id === emp.id)
+                        .reduce((s, ci) => s + (ci.deduction || 0), 0);
+                        
+                      const explicitDeductions = employeeDeductionsAll
+                        .filter(d => d.employee_id === emp.id)
+                        .reduce((s, d) => s + d.amount, 0);
+                        
+                      const totalDeds = lateDeductions + explicitDeductions;
+                      const netSalary = emp.rate - totalDeds;
+                      
+                      return (
+                        <div className="grid grid-cols-2 gap-4 mt-3">
+                          <div className="space-y-1.5">
+                            <Label>Base Rate</Label>
+                            <Input readOnly value={`${emp.rate} EGP`} className="bg-muted" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Deductions</Label>
+                            <Input readOnly value={`${totalDeds} EGP`} className="bg-muted text-red-600 font-semibold" />
+                          </div>
+                          <div className="space-y-1.5 col-span-2">
+                            <Label>Manual Bonus (EGP)</Label>
+                            <Input 
+                              type="number" 
+                              min="0"
+                              value={form.employeeBonus || ''} 
+                              onChange={e => {
+                                const bonus = Number(e.target.value) || 0;
+                                setForm(p => ({
+                                  ...p,
+                                  employeeBonus: bonus,
+                                  amount: String(Math.max(0, netSalary + bonus))
+                                }));
+                              }} 
+                              placeholder="e.g. 500" 
+                            />
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </>
                 )}
               </div>
             )}

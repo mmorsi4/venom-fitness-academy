@@ -25,7 +25,7 @@ export function calculateCoachPayroll(
   const today = startOfDay(new Date());
 
   const coachDeductions = deductions.filter(d => d.coach_id === coach.id);
-  const totalAdvances = coachDeductions.reduce((s, d) => s + d.amount, 0);
+  const netAdjustment = coachDeductions.reduce((s, d) => s + d.amount, 0);
   const totalForgivenSessions = coachDeductions.reduce((s, d) => s + d.forgiven_sessions, 0);
 
   const coachClasses = classes.filter(c => c.coach_id === coach.id);
@@ -98,8 +98,9 @@ export function calculateCoachPayroll(
     // For now, we calculate paid based on the value of paid checkins plus any advances.
     const paidPt = ptCheckIns.filter(ci => ci.is_paid).length * (coach.pt_rate || 250);
     const paidSub = groupCheckInsAsSub.filter(ci => ci.is_paid).length * perSessionRate;
-    // We assume if they took advances, that's part of what was "paid so far".
-    paidAmount = paidPt + paidSub + totalAdvances;
+    // Net adjustment (bonuses - deductions) is effectively an adjustment to what they are owed.
+    // So if they had a deduction (negative), it lowers what they are owed.
+    paidAmount = paidPt + paidSub - netAdjustment;
 
   } else if (coach.payment_type === 'per_session') {
     const groupAmount = (unpaidGroupMain.length + unpaidGroupSub.length) * coach.rate;
@@ -108,9 +109,9 @@ export function calculateCoachPayroll(
     finalAmount = baseAmount + ptAmount; 
 
     expectedAmount = (groupCheckInsAsMain.length + groupCheckInsAsSub.length) * coach.rate + (ptCheckIns.length * (coach.pt_rate || 250));
-    paidAmount = (paidGroupMain.length + groupCheckInsAsSub.filter(ci => ci.is_paid).length) * coach.rate + (ptCheckIns.filter(ci => ci.is_paid).length * (coach.pt_rate || 250)) + totalAdvances;
+    paidAmount = (paidGroupMain.length + groupCheckInsAsSub.filter(ci => ci.is_paid).length) * coach.rate + (ptCheckIns.filter(ci => ci.is_paid).length * (coach.pt_rate || 250)) - netAdjustment;
   }
-  finalAmount = Math.max(0, finalAmount - totalAdvances);
+  finalAmount = Math.max(0, finalAmount + netAdjustment);
   
   return {
     ...coach,
@@ -119,7 +120,7 @@ export function calculateCoachPayroll(
     missedSessions,
     baseAmount,
     deduction,
-    totalAdvances,
+    netAdjustment,
     calculatedAmount: Math.round(finalAmount),
     expectedAmount: Math.round(expectedAmount),
     paidAmount: Math.round(paidAmount),

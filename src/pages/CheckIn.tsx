@@ -13,7 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { useMembers, useCheckInMember, usePackages, useCoaches, useCheckInCoachWithDetails, useClasses, useCoachCheckInsToday, useCheckInCoach } from "@/hooks/use-data";
+import { useMembers, useCheckInMember, usePackages, useCoaches, useCheckInCoachWithDetails, useClasses, useCoachCheckInsToday, useCheckInCoach, useInvoices } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
 import type { Member, SubscriptionPackage, Coach } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
@@ -27,6 +27,7 @@ export default function CheckIn() {
   const { data: coaches = [] } = useCoaches();
   const { data: classes = [] } = useClasses();
   const { data: checkIns = [] } = useCoachCheckInsToday();
+  const { data: invoices = [] } = useInvoices();
   const checkInMutation = useCheckInMember();
   const coachCheckInMutation = useCheckInCoachWithDetails();
   const checkInCoachStandard = useCheckInCoach();
@@ -35,6 +36,7 @@ export default function CheckIn() {
   const [tab, setTab] = useState("members");
   const [query, setQuery] = useState("");
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>("");
   
   const [ptCoachId, setPtCoachId] = useState<string>("");
 
@@ -76,6 +78,7 @@ export default function CheckIn() {
   const doCheckIn = (member: Member) => {
     checkInMutation.mutate({
       memberId: member.uuid,
+      invoiceId: selectedInvoiceId || undefined,
       isOverride: false,
       payLater: false,
       performedBy: currentUser?.id,
@@ -89,6 +92,17 @@ export default function CheckIn() {
   const handleSelect = (member: Member) => {
     setSelectedMember(member);
     setSuccessMember(null);
+    const memberActiveInvoices = invoices.filter(i => 
+      i.member_id === member.uuid && 
+      (i.status === 'paid' || i.status === 'partial') && 
+      (i.sessions_remaining === null || i.sessions_remaining > 0) &&
+      (!member.expires_at || new Date(member.expires_at) >= new Date(new Date().setHours(0,0,0,0)))
+    );
+    if (memberActiveInvoices.length > 0) {
+      setSelectedInvoiceId(memberActiveInvoices[0].uuid);
+    } else {
+      setSelectedInvoiceId("");
+    }
   };
 
   const isClinic = selectedMember 
@@ -129,6 +143,7 @@ export default function CheckIn() {
       }
       checkInMutation.mutate({
         memberId: selectedMember.uuid,
+        invoiceId: selectedInvoiceId || undefined,
         isOverride: true,
         payLater: false,
         performedBy: currentUser?.id,
@@ -149,6 +164,7 @@ export default function CheckIn() {
       }
       checkInMutation.mutate({
         memberId: selectedMember.uuid,
+        invoiceId: selectedInvoiceId || undefined,
         isOverride: true,
         payLater: false,
         performedBy: currentUser?.id,
@@ -375,6 +391,34 @@ export default function CheckIn() {
                 </Select>
               </div>
             )}
+
+            {(() => {
+              const activeInvoices = invoices.filter(i => 
+                i.member_id === selectedMember.uuid && 
+                (i.status === 'paid' || i.status === 'partial') && 
+                (i.sessions_remaining === null || i.sessions_remaining > 0) &&
+                (!selectedMember.expires_at || new Date(selectedMember.expires_at) >= new Date(new Date().setHours(0,0,0,0)))
+              );
+              
+              if (activeInvoices.length > 1) {
+                return (
+                  <div className="p-3 rounded-lg bg-blue-50 border border-blue-100 space-y-2">
+                    <Label className="text-blue-900 font-semibold">Select Subscription</Label>
+                    <Select value={selectedInvoiceId} onValueChange={setSelectedInvoiceId}>
+                      <SelectTrigger className="bg-white"><SelectValue placeholder="Select Subscription..." /></SelectTrigger>
+                      <SelectContent>
+                        {activeInvoices.map(inv => (
+                          <SelectItem key={inv.uuid} value={inv.uuid}>
+                            {inv.package_name} ({inv.sessions_remaining === null ? '∞' : inv.sessions_remaining} sessions left)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                );
+              }
+              return null;
+            })()}
 
             <div className="flex gap-2">
               {!(selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999) && !(isClinic && selectedMember.sessions_remaining <= 0) && (

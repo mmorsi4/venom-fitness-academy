@@ -64,6 +64,14 @@ export default function Finance() {
     instapay: ''
   });
 
+  const [showTransferDialog, setShowTransferDialog] = useState(false);
+  const [transferForm, setTransferForm] = useState({
+    fromAccount: 'Cash' as 'Cash'|'Visa'|'InstaPay',
+    toAccount: 'Visa' as 'Cash'|'Visa'|'InstaPay',
+    amount: '',
+    note: ''
+  });
+
   const uniqueExistingCategories = [...new Set(expenses.map(e => e.category))];
   const dynamicCategories = [...new Set([...BASE_CATEGORIES, ...uniqueExistingCategories])].filter(c => c !== LIABILITY_CATEGORY);
   const allCategories = [...dynamicCategories, LIABILITY_CATEGORY, "CUSTOM"];
@@ -132,7 +140,7 @@ export default function Finance() {
 
   const coachPayrolls = coaches.map(coach => 
     calculateCoachPayroll(coach, filterMonth, filterYear, classes, checkInsThisMonth, totalIncome, newMembersThisMonth, coachDeductions)
-  ).filter(c => c.calculatedAmount > 0 || c.missedSessions > 0 || c.totalAdvances > 0);
+  ).filter(c => c.calculatedAmount > 0 || c.missedSessions > 0 || c.netAdjustment !== 0);
 
   const totalCoachPayroll = coachPayrolls.reduce((sum, c) => sum + c.calculatedAmount, 0);
 
@@ -296,6 +304,56 @@ export default function Finance() {
     }
   };
 
+  const handleTransfer = () => {
+    const amt = Number(transferForm.amount);
+    if (isNaN(amt) || amt <= 0) {
+      toast.error("Invalid transfer amount");
+      return;
+    }
+    if (transferForm.fromAccount === transferForm.toAccount) {
+      toast.error("Cannot transfer to the same account");
+      return;
+    }
+
+    const note = transferForm.note ? ` (${transferForm.note})` : "";
+    
+    // Create Expense on source
+    createExpense.mutate({
+      description: `Internal Transfer to ${transferForm.toAccount}${note}`,
+      amount: amt,
+      date: new Date().toISOString(),
+      category: 'CUSTOM',
+      payment_method: transferForm.fromAccount,
+      liability_id: null,
+      coach_id: null,
+    }, {
+      onSuccess: () => {
+        // Create Income on destination
+        createInvoice.mutate({
+          member_name: "Internal Transfer",
+          package_id: null,
+          package_name: `From ${transferForm.fromAccount}${note}`,
+          paid_amount: amt,
+          payment_method: transferForm.toAccount,
+          total_amount: amt,
+          status: "paid",
+          discount_amount: 0,
+          discount_id: null,
+          discount_description: null,
+          class_id: null,
+          member_id: "00000000-0000-0000-0000-000000000000",
+          activation_date: new Date().toISOString()
+        }, {
+          onSuccess: () => {
+            toast.success(`Transferred ${amt} EGP from ${transferForm.fromAccount} to ${transferForm.toAccount}`);
+            setShowTransferDialog(false);
+            setTransferForm(p => ({ ...p, amount: '', note: '' }));
+          }
+        });
+      }
+    });
+  };
+
   return (
     <div className="p-6 space-y-8">
       {/* --- PRINT ONLY LAYOUT --- */}
@@ -378,9 +436,9 @@ export default function Finance() {
                             Deduction: -{Math.round(coach.deduction).toLocaleString()} EGP (Missed {coach.missedSessions} slots)
                           </p>
                         )}
-                        {coach.totalAdvances > 0 && (
-                          <p className="text-xs font-semibold text-orange-500 mt-0.5">
-                            Advances: -{Math.round(coach.totalAdvances).toLocaleString()} EGP
+                        {coach.netAdjustment !== 0 && (
+                          <p className={`text-xs font-semibold mt-0.5 ${coach.netAdjustment > 0 ? 'text-emerald-500' : 'text-orange-500'}`}>
+                            Net Adjustment: {coach.netAdjustment > 0 ? '+' : ''}{Math.round(coach.netAdjustment).toLocaleString()} EGP
                           </p>
                         )}
                       </div>
@@ -434,6 +492,9 @@ export default function Finance() {
             setShowStartBalanceDialog(true);
           }} className="gap-2">
             Set Starting Balances
+          </Button>
+          <Button variant="outline" onClick={() => setShowTransferDialog(true)} className="gap-2">
+            Transfer Money
           </Button>
           <Button variant="outline" onClick={() => setShowAdjustDialog(true)} className="gap-2">
             Adjust Balances
@@ -804,9 +865,9 @@ export default function Finance() {
                                 Deduction: -{Math.round(coach.deduction).toLocaleString()} EGP (Missed {coach.missedSessions} slots)
                               </p>
                             )}
-                            {coach.totalAdvances > 0 && (
-                              <p className="text-[10px] font-semibold text-orange-500 mt-0.5">
-                                Advances: -{Math.round(coach.totalAdvances).toLocaleString()} EGP
+                            {coach.netAdjustment !== 0 && (
+                              <p className={`text-[10px] font-semibold mt-0.5 ${coach.netAdjustment > 0 ? 'text-emerald-500' : 'text-orange-500'}`}>
+                                Net Adjustment: {coach.netAdjustment > 0 ? '+' : ''}{Math.round(coach.netAdjustment).toLocaleString()} EGP
                               </p>
                             )}
                           </div>
@@ -944,6 +1005,59 @@ export default function Finance() {
             <Button variant="outline" onClick={() => setShowStartBalanceDialog(false)}>Cancel</Button>
             <Button onClick={handleSetStartBalance} disabled={upsertGlobalSettings.isPending}>
               {upsertGlobalSettings.isPending ? "Saving..." : "Save Settings"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showTransferDialog} onOpenChange={setShowTransferDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Transfer Money</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>From Account</Label>
+              <Select value={transferForm.fromAccount} onValueChange={(v: any) => setTransferForm(p => ({...p, fromAccount: v}))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Cash">Cash ({globalCashBalance.toLocaleString()} EGP)</SelectItem>
+                  <SelectItem value="Visa">Visa ({globalVisaBalance.toLocaleString()} EGP)</SelectItem>
+                  <SelectItem value="InstaPay">InstaPay ({globalInstapayBalance.toLocaleString()} EGP)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>To Account</Label>
+              <Select value={transferForm.toAccount} onValueChange={(v: any) => setTransferForm(p => ({...p, toAccount: v}))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Cash">Cash</SelectItem>
+                  <SelectItem value="Visa">Visa</SelectItem>
+                  <SelectItem value="InstaPay">InstaPay</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Amount (EGP)</Label>
+              <Input 
+                type="number" 
+                value={transferForm.amount} 
+                onChange={e => setTransferForm(prev => ({ ...prev, amount: e.target.value }))}
+                placeholder="Enter amount..."
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Note (Optional)</Label>
+              <Input 
+                value={transferForm.note} 
+                onChange={e => setTransferForm(prev => ({ ...prev, note: e.target.value }))}
+                placeholder="e.g. Bank deposit"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTransferDialog(false)}>Cancel</Button>
+            <Button onClick={handleTransfer} disabled={createInvoice.isPending || createExpense.isPending}>
+              {createInvoice.isPending || createExpense.isPending ? "Transferring..." : "Transfer Money"}
             </Button>
           </DialogFooter>
         </DialogContent>

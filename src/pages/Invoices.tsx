@@ -469,6 +469,8 @@ export default function Invoices() {
           created_at: data.invoiceDate ? new Date(data.invoiceDate).toISOString() : new Date().toISOString(),
           activation_date: data.activationDate ? new Date(data.activationDate).toISOString() : (data.invoiceDate ? new Date(data.invoiceDate).toISOString() : new Date().toISOString()),
           joint_invoice_group_id: jointGroupId,
+          sessions_remaining: memPkg ? memPkg.sessions : null,
+          freeze_days_remaining: memPkg ? memPkg.freeze_days : null,
           ...(customIdToUse ? { id: customIdToUse } : {}),
         } as any);
       }

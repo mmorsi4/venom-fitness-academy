@@ -83,6 +83,7 @@ export interface SubscriptionPackage {
   inbody_sessions: number;
   is_clinic?: boolean;
   is_pt?: boolean;
+  is_free?: boolean;
   created_at: string;
 }
 
@@ -107,6 +108,8 @@ export interface Invoice {
   is_applied: boolean;
   joint_invoice_group_id?: string | null;
   settled_by_invoice_id?: string | null;
+  sessions_remaining?: number | null;
+  freeze_days_remaining?: number | null;
 }
 
 export interface Discount {

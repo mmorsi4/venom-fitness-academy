@@ -66,6 +66,7 @@ export default function Coaches() {
   const [deductionsModalCoach, setDeductionsModalCoach] = useState<Coach | null>(null);
   const [deductionAmount, setDeductionAmount] = useState("");
   const [deductionReason, setDeductionReason] = useState("");
+  const [deductionType, setDeductionType] = useState<'deduction'|'bonus'>('deduction');
   const [historyCoach, setHistoryCoach] = useState<Coach | null>(null);
 
   const { data: history = [] } = useCoachHistory(historyCoach?.id);
@@ -111,11 +112,14 @@ export default function Coaches() {
 
   const handleAddDeduction = () => {
     if (!deductionsModalCoach || !deductionAmount) return;
+    const amt = Number(deductionAmount);
+    const finalAmount = deductionType === 'bonus' ? amt : -amt;
+
     createDeduction.mutate({
       coach_id: deductionsModalCoach.id,
-      amount: Number(deductionAmount),
+      amount: finalAmount,
       forgiven_sessions: 0,
-      reason: deductionReason || "Manual Adjustment",
+      reason: deductionReason || (deductionType === 'bonus' ? "Manual Bonus" : "Manual Deduction"),
       date: new Date().toISOString()
     }, {
       onSuccess: () => {
@@ -546,9 +550,21 @@ export default function Coaches() {
             <DialogTitle>Coach Adjustments: {deductionsModalCoach?.name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Amount (EGP)</Label>
-              <Input type="number" min="0" value={deductionAmount} onChange={e => setDeductionAmount(e.target.value)} />
+            <div className="flex gap-4">
+              <div className="space-y-1.5 flex-1">
+                <Label>Type</Label>
+                <Select value={deductionType} onValueChange={(v: 'deduction'|'bonus') => setDeductionType(v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="deduction">Deduction (-)</SelectItem>
+                    <SelectItem value="bonus">Bonus (+)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5 flex-1">
+                <Label>Amount (EGP)</Label>
+                <Input type="number" min="0" value={deductionAmount} onChange={e => setDeductionAmount(e.target.value)} />
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label>Reason</Label>
@@ -559,24 +575,58 @@ export default function Coaches() {
             </Button>
 
             <div className="mt-4 border-t pt-4">
-              <h4 className="text-sm font-medium mb-3">Recent Adjustments</h4>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {coachDeductions.filter(d => d.coach_id === deductionsModalCoach?.id).length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-2">No adjustments found</p>
-                ) : (
-                  coachDeductions.filter(d => d.coach_id === deductionsModalCoach?.id).map(d => (
-                    <div key={d.id} className="flex items-center justify-between p-2 rounded border bg-card">
-                      <div>
-                        <p className="text-sm font-medium">{d.amount} EGP</p>
-                        <p className="text-xs text-muted-foreground">{d.reason}</p>
+              <h4 className="text-sm font-medium mb-3">Adjustments This Month</h4>
+              {(() => {
+                const now = new Date();
+                const thisMonthDeductions = coachDeductions.filter(d => {
+                  if (d.coach_id !== deductionsModalCoach?.id) return false;
+                  const dDate = new Date(d.date);
+                  return dDate.getMonth() === now.getMonth() && dDate.getFullYear() === now.getFullYear();
+                });
+                
+                const totalBonuses = thisMonthDeductions.filter(d => d.amount > 0).reduce((s, d) => s + d.amount, 0);
+                const totalDeductions = Math.abs(thisMonthDeductions.filter(d => d.amount < 0).reduce((s, d) => s + d.amount, 0));
+                const net = totalBonuses - totalDeductions;
+
+                return (
+                  <div className="space-y-3">
+                    <div className="flex justify-between bg-muted/50 p-3 rounded-lg text-sm">
+                      <div className="text-center">
+                        <p className="text-muted-foreground text-xs uppercase mb-1">Bonuses</p>
+                        <p className="font-semibold text-emerald-600">+{totalBonuses}</p>
                       </div>
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500" onClick={() => deleteDeduction.mutate(d.id)} disabled={deleteDeduction.isPending}>
-                        ✕
-                      </Button>
+                      <div className="text-center">
+                        <p className="text-muted-foreground text-xs uppercase mb-1">Deductions</p>
+                        <p className="font-semibold text-red-600">-{totalDeductions}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-muted-foreground text-xs uppercase mb-1">Net</p>
+                        <p className={`font-bold ${net > 0 ? 'text-emerald-600' : net < 0 ? 'text-red-600' : ''}`}>{net > 0 ? '+' : ''}{net}</p>
+                      </div>
                     </div>
-                  ))
-                )}
-              </div>
+
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {thisMonthDeductions.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-2">No adjustments this month</p>
+                      ) : (
+                        thisMonthDeductions.map(d => (
+                          <div key={d.id} className="flex items-center justify-between p-2 rounded border bg-card">
+                            <div>
+                              <p className={`text-sm font-bold ${d.amount > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                {d.amount > 0 ? '+' : ''}{d.amount} EGP
+                              </p>
+                              <p className="text-xs text-muted-foreground">{d.reason}</p>
+                            </div>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => deleteDeduction.mutate(d.id)} disabled={deleteDeduction.isPending}>
+                              ✕
+                            </Button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
           <DialogFooter>
