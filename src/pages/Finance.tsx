@@ -15,9 +15,9 @@ import {
   PieChart, Pie, Cell
 } from "recharts";
 import { 
-  useInvoices, useExpenses, useLiabilities,
+  useInvoices, useExpenses, useLiabilities, useInternalTransfers,
   useCoaches, useMembers, useCoachCheckInsForMonth, useClasses, usePackages,
-  useFinanceBaseBalances, useUpsertFinanceBaseBalance, useCreateInvoice, useCreateExpense, useCoachDeductions,
+  useFinanceBaseBalances, useUpsertFinanceBaseBalance, useCreateInvoice, useCreateExpense, useCreateInternalTransfer, useCoachDeductions,
   useGlobalSettings, useUpsertGlobalSettings
 } from "@/hooks/use-data";
 import { toast } from "sonner";
@@ -37,6 +37,7 @@ export default function Finance() {
 
   const { data: invoices = [] } = useInvoices();
   const { data: expenses = [] } = useExpenses();
+  const { data: internalTransfers = [] } = useInternalTransfers();
   const { data: liabilities = [] } = useLiabilities();
   const { data: coaches = [] } = useCoaches();
   const { data: members = [] } = useMembers();
@@ -51,6 +52,7 @@ export default function Finance() {
   // New Account Adjustments state
   const createInvoice = useCreateInvoice();
   const createExpense = useCreateExpense();
+  const createInternalTransfer = useCreateInternalTransfer();
   const [showAdjustDialog, setShowAdjustDialog] = useState(false);
   const [adjustMethod, setAdjustMethod] = useState<'Cash'|'Visa'|'InstaPay'>('Cash');
   const [actualBalance, setActualBalance] = useState<string>('');
@@ -106,11 +108,19 @@ export default function Finance() {
   
   const applicableInvoices = invoices.filter(i => new Date(i.created_at) >= financeStartDate);
   const applicableExpenses = expenses.filter(e => new Date(e.date) >= financeStartDate);
+  const applicableTransfers = internalTransfers.filter(t => new Date(t.date) >= financeStartDate);
+
+  // Helper to calculate transfer net effect on an account
+  const calculateTransferNet = (method: 'Cash'|'Visa'|'InstaPay') => {
+    const transfersIn = applicableTransfers.filter((t: any) => t.to_account === method).reduce((s: number, t: any) => s + t.amount, 0);
+    const transfersOut = applicableTransfers.filter((t: any) => t.from_account === method).reduce((s: number, t: any) => s + t.amount, 0);
+    return transfersIn - transfersOut;
+  };
 
   // Global Account Balances (All Time starting from Start Date)
-  const globalCashBalance = (globalSettings?.finance_start_cash || 0) + calculateIncomeByMethod(applicableInvoices, 'Cash') - calculateExpenseByMethod(applicableExpenses, 'Cash');
-  const globalVisaBalance = (globalSettings?.finance_start_visa || 0) + calculateIncomeByMethod(applicableInvoices, 'Visa') - calculateExpenseByMethod(applicableExpenses, 'Visa');
-  const globalInstapayBalance = (globalSettings?.finance_start_instapay || 0) + calculateIncomeByMethod(applicableInvoices, 'InstaPay') - calculateExpenseByMethod(applicableExpenses, 'InstaPay');
+  const globalCashBalance = (globalSettings?.finance_start_cash || 0) + calculateIncomeByMethod(applicableInvoices, 'Cash') - calculateExpenseByMethod(applicableExpenses, 'Cash') + calculateTransferNet('Cash');
+  const globalVisaBalance = (globalSettings?.finance_start_visa || 0) + calculateIncomeByMethod(applicableInvoices, 'Visa') - calculateExpenseByMethod(applicableExpenses, 'Visa') + calculateTransferNet('Visa');
+  const globalInstapayBalance = (globalSettings?.finance_start_instapay || 0) + calculateIncomeByMethod(applicableInvoices, 'InstaPay') - calculateExpenseByMethod(applicableExpenses, 'InstaPay') + calculateTransferNet('InstaPay');
 
   // Filter invoices and expenses by selected month/year
   const filteredInvoices = invoices.filter(i => {
@@ -336,26 +346,12 @@ export default function Finance() {
     const transferDate = transferForm.date ? new Date(transferForm.date).toISOString() : new Date().toISOString();
     
     try {
-      // Create Expense on source (Transfer Out)
-      await createExpense.mutateAsync({
-        description: `Transfer Out to ${transferForm.toAccount}${note}`,
+      await createInternalTransfer.mutateAsync({
+        from_account: transferForm.fromAccount,
+        to_account: transferForm.toAccount,
         amount: amt,
         date: transferDate,
-        category: 'CUSTOM',
-        payment_method: transferForm.fromAccount,
-        liability_id: null,
-        coach_id: null,
-      });
-
-      // Create Negative Expense on destination (Transfer In)
-      await createExpense.mutateAsync({
-        description: `Transfer In from ${transferForm.fromAccount}${note}`,
-        amount: -amt,
-        date: transferDate,
-        category: 'CUSTOM',
-        payment_method: transferForm.toAccount,
-        liability_id: null,
-        coach_id: null,
+        note: transferForm.note || null,
       });
 
       toast.success(`Transferred ${amt} EGP from ${transferForm.fromAccount} to ${transferForm.toAccount}`);
@@ -1076,8 +1072,8 @@ export default function Finance() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowTransferDialog(false)}>Cancel</Button>
-            <Button onClick={handleTransfer} disabled={createInvoice.isPending || createExpense.isPending}>
-              {createInvoice.isPending || createExpense.isPending ? "Transferring..." : "Transfer Money"}
+            <Button onClick={handleTransfer} disabled={createInternalTransfer.isPending}>
+              {createInternalTransfer.isPending ? "Transferring..." : "Transfer Money"}
             </Button>
           </DialogFooter>
         </DialogContent>

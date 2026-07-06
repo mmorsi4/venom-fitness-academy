@@ -167,6 +167,16 @@ export interface Expense {
   created_at: string;
 }
 
+export interface InternalTransfer {
+  id: string;
+  from_account: PaymentMethod;
+  to_account: PaymentMethod;
+  amount: number;
+  date: string;
+  note: string | null;
+  created_at: string;
+}
+
 export interface Liability {
   id: string;
   name: string;

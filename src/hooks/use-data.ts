@@ -5,7 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as q from '../lib/queries';
-import type { Member, SubscriptionPackage, Invoice, Discount, Coach, Lead, Expense, Liability, AuditLog, Sport, Class, Employee, InvoicePayment } from '../lib/types';
+import type { Member, SubscriptionPackage, Invoice, Discount, Coach, Lead, Expense, Liability, AuditLog, Sport, Class, Employee, InvoicePayment, InternalTransfer } from '../lib/types';
 
 // ── Query keys (centralized for easy invalidation) ──────────
 
@@ -19,6 +19,7 @@ export const queryKeys = {
   leads: ['leads'] as const,
   expenses: ['expenses'] as const,
   liabilities: ['liabilities'] as const,
+  internalTransfers: ['internalTransfers'] as const,
   auditLogs: ['auditLogs'] as const,
   todayCheckIns: ['todayCheckIns'] as const,
   employeeCheckIns: ['employeeCheckIns'] as const,
@@ -268,6 +269,31 @@ export function useDeleteLead() {
   return useMutation({
     mutationFn: (id: string) => q.deleteLead(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.leads }),
+  });
+}
+
+// --- Internal Transfers ---
+export function useInternalTransfers() {
+  return useQuery({ queryKey: queryKeys.internalTransfers, queryFn: q.getInternalTransfers });
+}
+
+export function useCreateInternalTransfer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (transfer: Omit<InternalTransfer, 'id' | 'created_at'>) => q.createInternalTransfer(transfer),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.internalTransfers });
+    },
+  });
+}
+
+export function useDeleteInternalTransfer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: q.deleteInternalTransfer,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.internalTransfers });
+    },
   });
 }
 

@@ -8,7 +8,7 @@ import { supabase } from './supabase';
 import type {
   Member, SubscriptionPackage, Invoice, Discount, Coach, Lead,
   Expense, Liability, AuditLog, CheckIn, CoachCheckIn, Class, Sport,
-  Profile,
+  Profile, InternalTransfer,
 } from './types';
 
 // ── Profiles ────────────────────────────────────────────────
@@ -457,6 +457,27 @@ export async function updateLead(id: string, updates: Partial<Lead>) {
 
 export async function deleteLead(id: string) {
   const { error } = await supabase.from('leads').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// --- Internal Transfers ---
+export async function getInternalTransfers() {
+  const { data, error } = await supabase
+    .from('internal_transfers')
+    .select('*')
+    .order('date', { ascending: false });
+  if (error) throw error;
+  return data as InternalTransfer[];
+}
+
+export async function createInternalTransfer(transfer: Omit<InternalTransfer, 'id' | 'created_at'>) {
+  const { data, error } = await supabase.from('internal_transfers').insert(transfer).select().single();
+  if (error) throw error;
+  return data as InternalTransfer;
+}
+
+export async function deleteInternalTransfer(id: string) {
+  const { error } = await supabase.from('internal_transfers').delete().eq('id', id);
   if (error) throw error;
 }
 
