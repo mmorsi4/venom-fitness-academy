@@ -321,7 +321,7 @@ export default function Finance() {
     }
   };
 
-  const handleTransfer = () => {
+  const handleTransfer = async () => {
     const amt = Number(transferForm.amount);
     if (isNaN(amt) || amt <= 0) {
       toast.error("Invalid transfer amount");
@@ -335,37 +335,35 @@ export default function Finance() {
     const note = transferForm.note ? ` (${transferForm.note})` : "";
     const transferDate = transferForm.date ? new Date(transferForm.date).toISOString() : new Date().toISOString();
     
-    // Create Expense on source (Transfer Out)
-    createExpense.mutate({
-      description: `Transfer Out to ${transferForm.toAccount}${note}`,
-      amount: amt,
-      date: transferDate,
-      category: 'CUSTOM',
-      payment_method: transferForm.fromAccount,
-      liability_id: null,
-      coach_id: null,
-    }, {
-      onSuccess: () => {
-        // Create Negative Expense on destination (Transfer In)
-        createExpense.mutate({
-          description: `Transfer In from ${transferForm.fromAccount}${note}`,
-          amount: -amt,
-          date: transferDate,
-          category: 'CUSTOM',
-          payment_method: transferForm.toAccount,
-          liability_id: null,
-          coach_id: null,
-        }, {
-          onSuccess: () => {
-            toast.success(`Transferred ${amt} EGP from ${transferForm.fromAccount} to ${transferForm.toAccount}`);
-            setShowTransferDialog(false);
-            setTransferForm(p => ({ ...p, amount: '', note: '', date: '' }));
-          },
-          onError: (err: any) => toast.error(`Destination transfer failed: ${err.message}`)
-        });
-      },
-      onError: (err: any) => toast.error(`Source transfer failed: ${err.message}`)
-    });
+    try {
+      // Create Expense on source (Transfer Out)
+      await createExpense.mutateAsync({
+        description: `Transfer Out to ${transferForm.toAccount}${note}`,
+        amount: amt,
+        date: transferDate,
+        category: 'CUSTOM',
+        payment_method: transferForm.fromAccount,
+        liability_id: null,
+        coach_id: null,
+      });
+
+      // Create Negative Expense on destination (Transfer In)
+      await createExpense.mutateAsync({
+        description: `Transfer In from ${transferForm.fromAccount}${note}`,
+        amount: -amt,
+        date: transferDate,
+        category: 'CUSTOM',
+        payment_method: transferForm.toAccount,
+        liability_id: null,
+        coach_id: null,
+      });
+
+      toast.success(`Transferred ${amt} EGP from ${transferForm.fromAccount} to ${transferForm.toAccount}`);
+      setShowTransferDialog(false);
+      setTransferForm(p => ({ ...p, amount: '', note: '', date: '' }));
+    } catch (err: any) {
+      toast.error(`Transfer failed: ${err.message}`);
+    }
   };
 
   return (
