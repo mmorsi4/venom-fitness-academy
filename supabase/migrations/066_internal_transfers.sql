@@ -10,3 +10,5 @@ CREATE TABLE public.internal_transfers (
 
 ALTER TABLE public.internal_transfers ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Enable all access for authenticated users" ON public.internal_transfers FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+GRANT ALL ON TABLE public.internal_transfers TO anon, authenticated, service_role;
