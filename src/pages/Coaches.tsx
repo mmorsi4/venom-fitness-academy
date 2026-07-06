@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CheckCircle2, Clock, Dumbbell, DollarSign, Plus, Pencil } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -13,8 +14,9 @@ import {
 import { 
   useCoaches, useInvoices, useMembers, 
   useCreateCoach, useUpdateCoach, 
-  useCoachCheckInsToday, useCheckInCoach,
-  useCoachCheckInsForMonth, useClasses
+  useCoachCheckInsToday, useCheckInCoach, useCheckInCoachWithDetails,
+  useCoachCheckInsForMonth, useCoachHistory, useClasses,
+  useCoachDeductions, useCreateCoachDeduction, useDeleteCoachDeduction
 } from "@/hooks/use-data";
 import { toast } from "sonner";
 import { calculateCoachPayroll } from "@/lib/utils";
@@ -39,27 +41,50 @@ interface CoachForm {
 
 const emptyForm: CoachForm = { name: "", phone: "", paymentType: "salary", rate: "" };
 export default function Coaches() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, users } = useAuth();
   const { data: coaches = [] } = useCoaches();
   const { data: invoices = [] } = useInvoices();
   const { data: members = [] } = useMembers();
   const { data: checkIns = [] } = useCoachCheckInsToday();
   const { data: checkInsThisMonth = [] } = useCoachCheckInsForMonth(new Date().getMonth(), new Date().getFullYear());
   const { data: classes = [] } = useClasses();
+  const { data: coachDeductions = [] } = useCoachDeductions();
 
   const createCoach = useCreateCoach();
   const updateCoach = useUpdateCoach();
   const checkInMutation = useCheckInCoach();
+  const checkInWithDetails = useCheckInCoachWithDetails();
+  const createDeduction = useCreateCoachDeduction();
+  const deleteDeduction = useDeleteCoachDeduction();
 
   const [checkInModal, setCheckInModal] = useState(false);
   const [showCoachDialog, setShowCoachDialog] = useState(false);
   const [editCoach, setEditCoach] = useState<Coach | null>(null);
   const [form, setForm] = useState<CoachForm>(emptyForm);
+
+  // Deductions State
+  const [deductionsModalCoach, setDeductionsModalCoach] = useState<Coach | null>(null);
+  const [deductionAmount, setDeductionAmount] = useState("");
+  const [deductionReason, setDeductionReason] = useState("");
+  const [historyCoach, setHistoryCoach] = useState<Coach | null>(null);
+
+  const { data: history = [] } = useCoachHistory(historyCoach?.id);
   const [coachSearch, setCoachSearch] = useState("");
   const [mainCoachSearch, setMainCoachSearch] = useState("");
 
+  const [selectedClass, setSelectedClass] = useState<string | null>(null);
+  const [selectedCoachId, setSelectedCoachId] = useState<string | null>(null); // who actually did the session
   const [classCheckInCoach, setClassCheckInCoach] = useState<Coach | null>(null);
   const [selectedClassId, setSelectedClassId] = useState<string>("none");
+
+  const todayName = DAYS[new Date().getDay()];
+  const todaysClasses = classes
+    .filter(c => (c.schedules || []).some(s => s.day === todayName))
+    .sort((a, b) => {
+      const timeA = (a.schedules || []).find(s => s.day === todayName)?.time || "";
+      const timeB = (b.schedules || []).find(s => s.day === todayName)?.time || "";
+      return timeA.localeCompare(timeB);
+    });
 
   // A coach is checked in today if they have ANY check-in record for today
   const checkedInCount = coaches.filter(c => checkIns.some(ci => ci.coach_id === c.id)).length;
@@ -76,47 +101,78 @@ export default function Coaches() {
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   }).length;
 
+  const handleManualCheckIn = () => {
+    if (!selectedClass || !selectedCoachId) { toast.error("Select class and coach"); return; }
+    checkInWithDetails.mutate({ coachId: selectedCoachId, classId: selectedClass }, {
+      onSuccess: () => { toast.success("Checked in successfully"); setCheckInModal(false); },
+      onError: (err) => toast.error(`Error: ${err.message}`)
+    });
+  };
+
+  const handleAddDeduction = () => {
+    if (!deductionsModalCoach || !deductionAmount) return;
+    createDeduction.mutate({
+      coach_id: deductionsModalCoach.id,
+      amount: Number(deductionAmount),
+      forgiven_sessions: 0,
+      reason: deductionReason || "Manual Adjustment",
+      date: new Date().toISOString()
+    }, {
+      onSuccess: () => {
+        toast.success("Adjustment added");
+        setDeductionAmount("");
+        setDeductionReason("");
+      }
+    });
+  };
+
   const openClassCheckIn = (coach: Coach) => {
     setClassCheckInCoach(coach);
     setSelectedClassId("none");
   };
 
-  const submitCheckIn = () => {
+  // New: submit check-in for today's class, with optional substitute selection
+  const submitTodayClassCheckIn = (classId: string, coachId: string, mainCoachId: string) => {
+    const isSubstitute = coachId !== mainCoachId;
+    checkInWithDetails.mutate({
+      coachId,
+      classId,
+      isSubstitute,
+      originalCoachId: isSubstitute ? mainCoachId : undefined,
+      sessionType: 'group',
+    }, {
+      onSuccess: () => {
+        const coach = coaches.find(c => c.id === coachId);
+        toast.success(isSubstitute
+          ? `Substitute check-in: ${coach?.name} covered the class`
+          : `${coach?.name} checked in for their class`);
+        setSelectedClass(null); setSelectedCoachId(null);
+      },
+      onError: (err) => toast.error(`Failed: ${err.message}`)
+    });
+  };
+
+  const submitClassCheckIn = () => {
     if (!classCheckInCoach) return;
-    
     if (selectedClassId === "none") {
       toast.error("Please select a specific class to check into.");
       return;
     }
-
     const classData = classes.find(c => c.id === selectedClassId);
     if (!classData) return;
-
-    // Validate the day of the week
-    const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const todayName = DAYS[new Date().getDay()];
     const scheduledSlotsForToday = classData.schedules.filter(s => s.day === todayName).length;
-
     if (scheduledSlotsForToday === 0) {
       toast.error(`This class is not scheduled for today (${todayName}).`);
       return;
     }
-
-    // Validate check-in count for this class today
     const checkInsForThisClassToday = checkIns.filter(ci => ci.coach_id === classCheckInCoach.id && ci.class_id === selectedClassId).length;
     if (checkInsForThisClassToday >= scheduledSlotsForToday) {
-      toast.error(`Coach has already checked in ${checkInsForThisClassToday} time(s) for this class today (Max: ${scheduledSlotsForToday}).`);
+      toast.error(`Coach has already checked in ${checkInsForThisClassToday} time(s) for this class today.`);
       return;
     }
-
     checkInMutation.mutate({ coachId: classCheckInCoach.id, classId: selectedClassId }, {
-      onSuccess: () => {
-        toast.success(`${classCheckInCoach.name} checked in`);
-        setClassCheckInCoach(null);
-      },
-      onError: (err) => {
-        toast.error(`Failed to check in: ${err.message}`);
-      }
+      onSuccess: () => { toast.success(`${classCheckInCoach.name} checked in`); setClassCheckInCoach(null); },
+      onError: (err) => toast.error(`Failed to check in: ${err.message}`)
     });
   };
 
@@ -139,7 +195,7 @@ export default function Coaches() {
           name: form.name.trim(),
           phone: form.phone.trim(),
           payment_type: form.paymentType,
-          rate: Number(form.rate)
+          rate: Number(form.rate),
         }
       }, {
         onSuccess: () => {
@@ -154,6 +210,8 @@ export default function Coaches() {
         phone: form.phone.trim(),
         payment_type: form.paymentType,
         rate: Number(form.rate),
+        pt_sessions_done: 0,
+        pt_rate: 250,
       }, {
         onSuccess: () => {
           toast.success(`Coach added: ${form.name}`);
@@ -193,7 +251,7 @@ export default function Coaches() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {coaches.filter(c => c.name.toLowerCase().includes(mainCoachSearch.toLowerCase()) || (c.phone && c.phone.includes(mainCoachSearch))).map(coach => {
-          const stats = calculateCoachPayroll(coach, new Date().getMonth(), new Date().getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth);
+          const stats = calculateCoachPayroll(coach, new Date().getMonth(), new Date().getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth, coachDeductions);
           const sessions = stats.attendedSessions;
           const todayName = DAYS[new Date().getDay()];
           const coachTotalSlotsToday = classes.filter(c => c.coach_id === coach.id).flatMap(c => c.schedules || []).filter(s => s.day === todayName).length;
@@ -235,8 +293,7 @@ export default function Coaches() {
                     </div>
                   )}
                 </div>
-                
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-4 gap-2 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setHistoryCoach(coach)}>
                     <div className="p-2.5 rounded-lg bg-muted/50 text-center flex flex-col justify-center">
                       <p className="text-lg font-bold">{stats.scheduledSlotsInMonth}</p>
                       <p className="text-xs text-muted-foreground">Expected Slots</p>
@@ -245,6 +302,14 @@ export default function Coaches() {
                       <p className="text-lg font-bold">{stats.attendedSessions}</p>
                       <p className="text-xs text-muted-foreground">Attended Slots</p>
                     </div>
+                    <div className="p-2.5 rounded-lg bg-indigo-50/50 border border-indigo-100 text-center flex flex-col justify-center">
+                      <p className="text-lg font-bold text-indigo-700">{stats.ptCheckIns || 0}</p>
+                      <p className="text-xs text-indigo-600/70 leading-tight">PT Sessions</p>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-amber-50/50 border border-amber-100 text-center flex flex-col justify-center">
+                      <p className="text-lg font-bold text-amber-700">{stats.subCheckIns || 0}</p>
+                      <p className="text-xs text-amber-600/70 leading-tight">Sub Sessions</p>
+                    </div>
                   </div>
 
                 <div className="p-3 rounded-lg border bg-card">
@@ -252,16 +317,29 @@ export default function Coaches() {
                     <div className="flex items-center gap-2"><DollarSign className="w-4 h-4 text-primary" /><span className="text-sm font-medium">Monthly Payroll</span></div>
                     <span className="text-base font-bold">{stats.calculatedAmount.toLocaleString()} EGP</span>
                   </div>
-                  {stats.missedSessions > 0 && coach.payment_type === 'salary' && (
+                  {stats.missedSessions > 0 && coach.payment_type === 'salary' && stats.deduction > 0 && (
                     <div className="text-xs text-red-500 font-semibold mt-1">
                       Deducted {Math.round(stats.deduction).toLocaleString()} EGP for {stats.missedSessions} missed session(s)
                     </div>
                   )}
+                  {stats.totalAdvances > 0 && (
+                    <div className="text-xs text-orange-500 font-semibold mt-1">
+                      Deducted {Math.round(stats.totalAdvances).toLocaleString()} EGP for advances
+                    </div>
+                  )}
                   {coach.payment_type === 'per_session' && stats.missedSessions === 0 && <p className="text-xs text-muted-foreground mt-1">{sessions} sessions × {coach.rate} EGP</p>}
                 </div>
-                <Button data-testid={`btn-checkin-coach-${coach.id}`} variant="outline" size="sm" className="w-full gap-2" onClick={() => openClassCheckIn(coach)}>
-                  <Dumbbell className="w-3.5 h-3.5" /> Check In for Today
-                </Button>
+                <div className="grid grid-cols-3 gap-2">
+                  <Button data-testid={`btn-deductions-coach-${coach.id}`} variant="outline" size="sm" className="w-full gap-2 text-xs px-1" onClick={() => setDeductionsModalCoach(coach)}>
+                    <DollarSign className="w-3.5 h-3.5" /> Adjust
+                  </Button>
+                  <Button variant="outline" size="sm" className="w-full gap-2 text-xs px-1" onClick={() => setHistoryCoach(coach)}>
+                    <Clock className="w-3.5 h-3.5" /> History
+                  </Button>
+                  <Button data-testid={`btn-checkin-coach-${coach.id}`} variant="outline" size="sm" className="w-full gap-2 text-xs px-1" onClick={() => openClassCheckIn(coach)}>
+                    <Dumbbell className="w-3.5 h-3.5" /> Check In
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           );
@@ -273,53 +351,133 @@ export default function Coaches() {
         <CardContent>
           <div className="space-y-2">
             {coaches.map(coach => {
-              const stats = calculateCoachPayroll(coach, new Date().getMonth(), new Date().getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth);
+              const stats = calculateCoachPayroll(coach, new Date().getMonth(), new Date().getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth, coachDeductions);
               return (
-                <div key={coach.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-medium">{coach.name}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${paymentTypeColors[coach.payment_type]}`}>{paymentTypeLabels[coach.payment_type]}</span>
+                <div key={coach.id} className="flex flex-col py-3 border-b border-border last:border-0 gap-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-medium">{coach.name}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${paymentTypeColors[coach.payment_type]}`}>{paymentTypeLabels[coach.payment_type]}</span>
+                    </div>
                   </div>
-                  <span className="text-sm font-bold">{stats.calculatedAmount.toLocaleString()} EGP</span>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="bg-muted/50 p-2 rounded-md">
+                      <p className="text-muted-foreground mb-0.5">Expected</p>
+                      <p className="font-semibold">{(stats as any).expectedAmount?.toLocaleString() || 0} EGP</p>
+                    </div>
+                    <div className="bg-green-500/10 text-green-700 p-2 rounded-md">
+                      <p className="mb-0.5 opacity-80">Paid</p>
+                      <p className="font-semibold">{(stats as any).paidAmount?.toLocaleString() || 0} EGP</p>
+                    </div>
+                    <div className="bg-amber-500/10 text-amber-700 p-2 rounded-md">
+                      <p className="mb-0.5 opacity-80">Owed</p>
+                      <p className="font-bold">{stats.calculatedAmount.toLocaleString()} EGP</p>
+                    </div>
+                  </div>
                 </div>
               );
             })}
-            <div className="flex items-center justify-between py-2 pt-3">
-              <span className="text-sm font-bold">Total Payroll</span>
-              <span className="text-base font-bold text-primary">
-                {coaches.reduce((s, c) => s + calculateCoachPayroll(c, new Date().getMonth(), new Date().getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth).calculatedAmount, 0).toLocaleString()} EGP
-              </span>
+            <div className="grid grid-cols-3 gap-2 pt-4 border-t border-border mt-2">
+              <div className="flex flex-col">
+                <span className="text-xs text-muted-foreground">Total Expected</span>
+                <span className="text-sm font-bold text-foreground">
+                  {coaches.reduce((s, c) => s + ((calculateCoachPayroll(c, new Date().getMonth(), new Date().getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth, coachDeductions) as any).expectedAmount || 0), 0).toLocaleString()} EGP
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs text-muted-foreground">Total Paid</span>
+                <span className="text-sm font-bold text-green-600">
+                  {coaches.reduce((s, c) => s + ((calculateCoachPayroll(c, new Date().getMonth(), new Date().getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth, coachDeductions) as any).paidAmount || 0), 0).toLocaleString()} EGP
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs text-muted-foreground">Total Owed</span>
+                <span className="text-base font-bold text-amber-600">
+                  {coaches.reduce((s, c) => s + calculateCoachPayroll(c, new Date().getMonth(), new Date().getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth, coachDeductions).calculatedAmount, 0).toLocaleString()} EGP
+                </span>
+              </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
       <Dialog open={checkInModal} onOpenChange={setCheckInModal}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Coach Check-In</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-2">
-            <Input 
-              placeholder="Search by coach name or phone..." 
-              value={coachSearch} 
-              onChange={(e) => setCoachSearch(e.target.value)}
-            />
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-              {coaches.filter(c => 
-                c.name.toLowerCase().includes(coachSearch.toLowerCase()) || 
-                (c.phone && c.phone.includes(coachSearch))
-              ).map(c => {
-                return (
-                  <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border bg-card">
-                  <div><p className="font-medium">{c.name}</p><p className="text-xs text-muted-foreground">{paymentTypeLabels[c.payment_type]}</p></div>
-                  <Button data-testid={`btn-modal-checkin-coach-${c.id}`} size="sm" onClick={() => openClassCheckIn(c)}>Check In</Button>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Coach Check-In — {todayName}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2 max-h-[70vh] overflow-y-auto pr-1">
+            {todaysClasses.length === 0 ? (
+              <p className="text-center text-muted-foreground py-6">No classes scheduled for today.</p>
+            ) : todaysClasses.map(cls => {
+              const mainCoach = coaches.find(c => c.id === cls.coach_id);
+              const timeSlot = (cls.schedules || []).find(s => s.day === todayName)?.time;
+              const checkedInForClass = checkIns.filter(ci => ci.class_id === cls.id);
+              const alreadyDone = checkedInForClass.length > 0;
+
+              return (
+                <div key={cls.id} className={`rounded-xl border p-4 space-y-3 ${alreadyDone ? 'bg-emerald-50 border-emerald-200' : 'bg-card'}`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-foreground">{cls.name}</p>
+                      <p className="text-xs text-muted-foreground">{timeSlot} · {cls.sport_name || 'General'}</p>
+                    </div>
+                    {alreadyDone ? (
+                      <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+                        ✓ Done — {coaches.find(c => c.id === checkedInForClass[0]?.coach_id)?.name}
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-amber-600 border-amber-300">Pending</Badge>
+                    )}
+                  </div>
+
+                  {!alreadyDone && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Who taught this session?</p>
+                      {/* Main coach first */}
+                      {mainCoach && (
+                        <button
+                          key={mainCoach.id}
+                          onClick={() => submitTodayClassCheckIn(cls.id, mainCoach.id, mainCoach.id)}
+                          className="w-full flex items-center justify-between p-2.5 rounded-lg border-2 border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors"
+                          disabled={checkInWithDetails.isPending}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+                              <span className="text-xs font-bold text-primary">{mainCoach.name.charAt(0)}</span>
+                            </div>
+                            <span className="text-sm font-medium">{mainCoach.name}</span>
+                            <Badge className="text-xs bg-primary/10 text-primary border-primary/20">Main Coach</Badge>
+                          </div>
+                          <span className="text-xs text-primary font-medium">✓ Check In</span>
+                        </button>
+                      )}
+                      {/* Other coaches as substitutes */}
+                      {coaches.filter(c => c.id !== cls.coach_id).map(sub => (
+                        <button
+                          key={sub.id}
+                          onClick={() => submitTodayClassCheckIn(cls.id, sub.id, cls.coach_id || sub.id)}
+                          className="w-full flex items-center justify-between p-2.5 rounded-lg border border-input bg-card hover:bg-accent transition-colors"
+                          disabled={checkInWithDetails.isPending}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center">
+                              <span className="text-xs font-bold text-muted-foreground">{sub.name.charAt(0)}</span>
+                            </div>
+                            <span className="text-sm">{sub.name}</span>
+                            <span className="text-xs text-muted-foreground">(Substitute)</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
-            {coaches.filter(c => c.name.toLowerCase().includes(coachSearch.toLowerCase()) || (c.phone && c.phone.includes(coachSearch))).length === 0 && (
-              <p className="text-sm text-center text-muted-foreground py-4">No coaches found matching your search.</p>
-            )}
-            </div>
           </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCheckInModal(false)}>Close</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -346,10 +504,11 @@ export default function Coaches() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setClassCheckInCoach(null)}>Cancel</Button>
-            <Button onClick={submitCheckIn} disabled={checkInMutation.isPending}>Submit Check-In</Button>
+            <Button onClick={submitClassCheckIn} disabled={checkInMutation.isPending}>Submit Check-In</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
 
       <Dialog open={showCoachDialog} onOpenChange={o => !o && closeDialog()}>
         <DialogContent className="max-w-sm">
@@ -378,6 +537,93 @@ export default function Coaches() {
               {createCoach.isPending || updateCoach.isPending ? "Saving..." : editCoach ? 'Save Changes' : 'Add Coach'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deductionsModalCoach} onOpenChange={(open) => !open && setDeductionsModalCoach(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Coach Adjustments: {deductionsModalCoach?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Amount (EGP)</Label>
+              <Input type="number" min="0" value={deductionAmount} onChange={e => setDeductionAmount(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Reason</Label>
+              <Input value={deductionReason} onChange={e => setDeductionReason(e.target.value)} placeholder="e.g. Advance payment" />
+            </div>
+            <Button className="w-full" onClick={handleAddDeduction} disabled={createDeduction.isPending}>
+              Add Adjustment
+            </Button>
+
+            <div className="mt-4 border-t pt-4">
+              <h4 className="text-sm font-medium mb-3">Recent Adjustments</h4>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {coachDeductions.filter(d => d.coach_id === deductionsModalCoach?.id).length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-2">No adjustments found</p>
+                ) : (
+                  coachDeductions.filter(d => d.coach_id === deductionsModalCoach?.id).map(d => (
+                    <div key={d.id} className="flex items-center justify-between p-2 rounded border bg-card">
+                      <div>
+                        <p className="text-sm font-medium">{d.amount} EGP</p>
+                        <p className="text-xs text-muted-foreground">{d.reason}</p>
+                      </div>
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500" onClick={() => deleteDeduction.mutate(d.id)} disabled={deleteDeduction.isPending}>
+                        ✕
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeductionsModalCoach(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!historyCoach} onOpenChange={(o) => !o && setHistoryCoach(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Session History: {historyCoach?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-2">
+            {history.length === 0 ? (
+              <p className="text-center text-muted-foreground py-6">No sessions recorded yet.</p>
+            ) : history.map(ci => {
+              const cls = classes.find(c => c.id === ci.class_id);
+              const m = members.find(mem => mem.uuid === ci.member_uuid);
+              return (
+                <div key={ci.id} className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                  <div>
+                    <p className="font-semibold text-sm">
+                      {ci.session_type === 'pt' ? 'PT Session' : (cls?.name || 'General Group Session')}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {new Date(ci.check_in_date).toLocaleDateString()} - {new Date(ci.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                    </p>
+                    {ci.is_substitute && (
+                      <Badge variant="outline" className="text-[10px] mt-1 bg-amber-50 text-amber-600 border-amber-200">Substitute</Badge>
+                    )}
+                  </div>
+                  {ci.session_type === 'pt' && m && (
+                    <div className="text-right">
+                      <p className="text-sm font-medium">Client</p>
+                      <p className="text-xs text-muted-foreground">{m.name}</p>
+                    </div>
+                  )}
+                  {ci.session_type === 'group' && cls && (
+                    <div className="text-right">
+                      <p className="text-sm font-medium">{cls.sport_name}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

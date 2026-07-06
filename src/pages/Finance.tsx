@@ -16,7 +16,8 @@ import {
 } from "recharts";
 import { 
   useInvoices, useExpenses, useLiabilities,
-  useCoaches, useMembers, useCoachCheckInsForMonth, useClasses, usePackages
+  useCoaches, useMembers, useCoachCheckInsForMonth, useClasses, usePackages,
+  useFinanceBaseBalances, useUpsertFinanceBaseBalance, useCreateInvoice, useCreateExpense, useCoachDeductions
 } from "@/hooks/use-data";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -40,10 +41,18 @@ export default function Finance() {
   const { data: members = [] } = useMembers();
   const { data: classes = [] } = useClasses();
   const { data: packages = [] } = usePackages();
+  const { data: coachDeductions = [] } = useCoachDeductions();
   const { data: checkInsThisMonth = [] } = useCoachCheckInsForMonth(filterMonth, filterYear);
   const [isCoachPayrollExpanded, setIsCoachPayrollExpanded] = useState(false);
   const [isLiabilityExpanded, setIsLiabilityExpanded] = useState(false);
   const [clinicOnly, setClinicOnly] = useState(false);
+
+  // New Account Adjustments state
+  const createInvoice = useCreateInvoice();
+  const createExpense = useCreateExpense();
+  const [showAdjustDialog, setShowAdjustDialog] = useState(false);
+  const [adjustMethod, setAdjustMethod] = useState<'Cash'|'Visa'|'InstaPay'>('Cash');
+  const [actualBalance, setActualBalance] = useState<string>('');
 
   const uniqueExistingCategories = [...new Set(expenses.map(e => e.category))];
   const dynamicCategories = [...new Set([...BASE_CATEGORIES, ...uniqueExistingCategories])].filter(c => c !== LIABILITY_CATEGORY);
@@ -104,8 +113,8 @@ export default function Finance() {
   }).length;
 
   const coachPayrolls = coaches.map(coach => 
-    calculateCoachPayroll(coach, filterMonth, filterYear, classes, checkInsThisMonth, totalIncome, newMembersThisMonth)
-  ).filter(c => c.calculatedAmount > 0 || c.missedSessions > 0);
+    calculateCoachPayroll(coach, filterMonth, filterYear, classes, checkInsThisMonth, totalIncome, newMembersThisMonth, coachDeductions)
+  ).filter(c => c.calculatedAmount > 0 || c.missedSessions > 0 || c.totalAdvances > 0);
 
   const totalCoachPayroll = coachPayrolls.reduce((sum, c) => sum + c.calculatedAmount, 0);
 
@@ -194,6 +203,64 @@ export default function Finance() {
     else setFilterMonth(m => m + 1);
   };
 
+  const openAdjustDialog = (method: 'Cash'|'Visa'|'InstaPay') => {
+    setAdjustMethod(method);
+    const currentBal = method === 'Cash' ? globalCashBalance : method === 'Visa' ? globalVisaBalance : globalInstapayBalance;
+    setActualBalance(currentBal.toString());
+    setShowAdjustDialog(true);
+  };
+
+  const handleAdjustBalances = () => {
+    const currentSysBal = adjustMethod === 'Cash' ? globalCashBalance : adjustMethod === 'Visa' ? globalVisaBalance : globalInstapayBalance;
+    const actual = Number(actualBalance);
+    if (isNaN(actual)) { toast.error("Invalid amount"); return; }
+    
+    const diff = actual - currentSysBal;
+    if (diff === 0) {
+      toast.info("Balance is already match, no adjustment needed.");
+      setShowAdjustDialog(false);
+      return;
+    }
+
+    if (diff > 0) {
+      createInvoice.mutate({
+        member_name: "System Adjustment",
+        package_id: null,
+        package_name: "Manual Reconciliation",
+        paid_amount: diff,
+        payment_method: adjustMethod,
+        total_amount: diff,
+        status: "paid",
+        discount_amount: 0,
+        discount_id: null,
+        discount_description: null,
+        class_id: null,
+        member_id: "00000000-0000-0000-0000-000000000000",
+        activation_date: new Date().toISOString()
+      }, {
+        onSuccess: () => {
+          toast.success(`Account balance reconciled (+${diff.toLocaleString()})`);
+          setShowAdjustDialog(false);
+        }
+      });
+    } else {
+      createExpense.mutate({
+        description: `Adjustment: ${adjustMethod}`,
+        amount: Math.abs(diff),
+        date: new Date().toISOString(),
+        category: 'CUSTOM',
+        payment_method: adjustMethod,
+        liability_id: null,
+        coach_id: null,
+      }, {
+        onSuccess: () => {
+          toast.success(`Account balance reconciled (${diff.toLocaleString()})`);
+          setShowAdjustDialog(false);
+        }
+      });
+    }
+  };
+
   return (
     <div className="p-6 space-y-8">
       {/* --- PRINT ONLY LAYOUT --- */}
@@ -271,9 +338,14 @@ export default function Finance() {
                         <p className="text-xs text-muted-foreground mt-0.5">
                           Expected: {coach.scheduledSlotsInMonth} slots | Attended: {coach.attendedSessions} slots
                         </p>
-                        {coach.missedSessions > 0 && coach.payment_type === 'salary' && (
+                        {coach.missedSessions > 0 && coach.payment_type === 'salary' && coach.deduction > 0 && (
                           <p className="text-xs font-semibold text-red-500 mt-0.5">
                             Deduction: -{Math.round(coach.deduction).toLocaleString()} EGP (Missed {coach.missedSessions} slots)
+                          </p>
+                        )}
+                        {coach.totalAdvances > 0 && (
+                          <p className="text-xs font-semibold text-orange-500 mt-0.5">
+                            Advances: -{Math.round(coach.totalAdvances).toLocaleString()} EGP
                           </p>
                         )}
                       </div>
@@ -317,6 +389,9 @@ export default function Finance() {
           <p className="text-sm text-muted-foreground">Income, expenses, and reports</p>
         </div>
         <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={() => setShowAdjustDialog(true)} className="gap-2">
+            Adjust Balances
+          </Button>
           <Button variant="outline" onClick={() => window.print()} className="gap-2">
             <Printer className="w-4 h-4" /> Print Report
           </Button>
@@ -325,19 +400,19 @@ export default function Finance() {
 
       {/* Global Account Balances */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="border-amber-200 shadow-sm bg-amber-50/30">
+        <Card className="border-amber-200 shadow-sm bg-amber-50/30 cursor-pointer hover:bg-amber-50/60 transition-colors" onClick={() => openAdjustDialog('Cash')}>
           <CardContent className="p-5">
             <p className="text-sm font-semibold text-amber-800 uppercase tracking-wider mb-1">Cash Balance (All-Time)</p>
             <p className="text-3xl font-bold text-amber-700">{globalCashBalance.toLocaleString()} EGP</p>
           </CardContent>
         </Card>
-        <Card className="border-blue-200 shadow-sm bg-blue-50/30">
+        <Card className="border-blue-200 shadow-sm bg-blue-50/30 cursor-pointer hover:bg-blue-50/60 transition-colors" onClick={() => openAdjustDialog('Visa')}>
           <CardContent className="p-5">
             <p className="text-sm font-semibold text-blue-800 uppercase tracking-wider mb-1">Visa Balance (All-Time)</p>
             <p className="text-3xl font-bold text-blue-700">{globalVisaBalance.toLocaleString()} EGP</p>
           </CardContent>
         </Card>
-        <Card className="border-violet-200 shadow-sm bg-violet-50/30">
+        <Card className="border-violet-200 shadow-sm bg-violet-50/30 cursor-pointer hover:bg-violet-50/60 transition-colors" onClick={() => openAdjustDialog('InstaPay')}>
           <CardContent className="p-5">
             <p className="text-sm font-semibold text-violet-800 uppercase tracking-wider mb-1">InstaPay Balance (All-Time)</p>
             <p className="text-3xl font-bold text-violet-700">{globalInstapayBalance.toLocaleString()} EGP</p>
@@ -678,9 +753,14 @@ export default function Finance() {
                             <p className="text-[10px] text-muted-foreground mt-0.5">
                               Expected: {coach.scheduledSlotsInMonth} slots | Attended: {coach.attendedSessions} slots
                             </p>
-                            {coach.missedSessions > 0 && coach.payment_type === 'salary' && (
+                            {coach.missedSessions > 0 && coach.payment_type === 'salary' && coach.deduction > 0 && (
                               <p className="text-[10px] font-semibold text-red-500 mt-0.5">
                                 Deduction: -{Math.round(coach.deduction).toLocaleString()} EGP (Missed {coach.missedSessions} slots)
+                              </p>
+                            )}
+                            {coach.totalAdvances > 0 && (
+                              <p className="text-[10px] font-semibold text-orange-500 mt-0.5">
+                                Advances: -{Math.round(coach.totalAdvances).toLocaleString()} EGP
                               </p>
                             )}
                           </div>
@@ -741,8 +821,41 @@ export default function Finance() {
             </CardContent>
           </Card>
         </div>
+        </div>
       </div>
-          </div>    </div>
+
+      <Dialog open={showAdjustDialog} onOpenChange={setShowAdjustDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Adjust {adjustMethod} Balance</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Actual Balance ({adjustMethod})</Label>
+              <Input 
+                type="number" 
+                value={actualBalance} 
+                onChange={e => setActualBalance(e.target.value)}
+                placeholder="Enter current actual balance..."
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The system currently shows {
+                adjustMethod === 'Cash' ? globalCashBalance.toLocaleString() :
+                adjustMethod === 'Visa' ? globalVisaBalance.toLocaleString() :
+                globalInstapayBalance.toLocaleString()
+              } EGP.
+              <br/><br/>
+              If you proceed, the system will automatically create an income or expense transaction named "System Adjustment" to make the balances match.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAdjustDialog(false)}>Cancel</Button>
+            <Button onClick={handleAdjustBalances} disabled={createInvoice.isPending || createExpense.isPending}>
+              {createInvoice.isPending || createExpense.isPending ? "Applying..." : "Apply Adjustment"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 

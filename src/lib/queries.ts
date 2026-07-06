@@ -361,6 +361,16 @@ export async function getCoachCheckInsToday() {
   return data as CoachCheckIn[];
 }
 
+export async function getCoachHistory(coachId: string) {
+  const { data, error } = await supabase
+    .from('coach_check_ins')
+    .select('*')
+    .eq('coach_id', coachId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data as CoachCheckIn[];
+}
+
 export async function getCoachCheckInsForMonth(month: number, year: number) {
   const startDate = new Date(year, month, 1).toISOString();
   const endDate = new Date(year, month + 1, 0, 23, 59, 59).toISOString();
@@ -379,6 +389,38 @@ export async function checkInCoach(coachId: string, classId?: string) {
   if (classId) payload.class_id = classId;
   const { error } = await supabase.from('coach_check_ins').insert(payload);
   if (error) throw error;
+}
+
+export async function checkInCoachWithDetails(args: {
+  coachId: string;
+  classId?: string;
+  isSubstitute?: boolean;
+  originalCoachId?: string;
+  sessionType?: 'group' | 'pt';
+  memberUuid?: string;
+}) {
+  const today = new Date().toISOString().split('T')[0];
+  const payload: any = {
+    coach_id: args.coachId,
+    check_in_date: today,
+    is_substitute: args.isSubstitute ?? false,
+    session_type: args.sessionType ?? 'group',
+  };
+  if (args.classId) payload.class_id = args.classId;
+  if (args.originalCoachId) payload.original_coach_id = args.originalCoachId;
+  if (args.memberUuid) payload.member_uuid = args.memberUuid;
+  const { error } = await supabase.from('coach_check_ins').insert(payload);
+  if (error) throw error;
+}
+
+export async function getMemberCheckIns(memberUuid: string) {
+  const { data, error } = await supabase
+    .from('check_ins')
+    .select('*')
+    .eq('member_id', memberUuid)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data as CheckIn[];
 }
 
 // ── Leads ───────────────────────────────────────────────────
@@ -566,4 +608,195 @@ export async function createJointInvoiceGroup() {
   const { data, error } = await supabase.from('joint_invoice_groups').insert({}).select().single();
   if (error) throw error;
   return data as { id: string; created_at: string };
+}
+
+// ── Invoice Payments (debt completion) ──────────────────────
+import type { Employee, EmployeeCheckIn, EmployeeDeduction, FinanceBaseBalance, InvoicePayment } from './types';
+
+export async function getInvoicePayments(invoiceUuid?: string) {
+  let q = supabase.from('invoice_payments').select('*').order('paid_at', { ascending: false });
+  if (invoiceUuid) q = q.eq('invoice_uuid', invoiceUuid);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data as InvoicePayment[];
+}
+
+export async function createInvoicePayment(payment: Omit<InvoicePayment, 'id' | 'created_at'>) {
+  const { data, error } = await supabase.from('invoice_payments').insert(payment).select().single();
+  if (error) throw error;
+  
+  // Also update the paid_amount on the invoice
+  const { data: invData } = await supabase.from('invoices').select('total_amount, paid_amount').eq('uuid', payment.invoice_uuid).single();
+  
+  const allPayments = await getInvoicePayments(payment.invoice_uuid);
+  const totalPaid = (invData?.paid_amount || 0) + payment.amount;
+  
+  await supabase.from('invoices').update({ 
+    paid_amount: totalPaid,
+    status: totalPaid >= (invData?.total_amount || 0) ? 'paid' : 'partial'
+  }).eq('uuid', payment.invoice_uuid);
+  return data as InvoicePayment;
+}
+
+// ── Employees ────────────────────────────────────────────────
+
+export async function getEmployees() {
+  const { data, error } = await supabase.from('employees').select('*').order('name');
+  if (error) throw error;
+  return data as Employee[];
+}
+
+export async function createEmployee(emp: Omit<Employee, 'id' | 'created_at'>) {
+  const { data, error } = await supabase.from('employees').insert(emp).select().single();
+  if (error) throw error;
+  return data as Employee;
+}
+
+export async function updateEmployee(id: string, updates: Partial<Employee>) {
+  const { data, error } = await supabase.from('employees').update(updates).eq('id', id).select().single();
+  if (error) throw error;
+  return data as Employee;
+}
+
+export async function deleteEmployee(id: string) {
+  const { error } = await supabase.from('employees').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function getEmployeeCheckInsToday() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const { data, error } = await supabase
+    .from('employee_checkins')
+    .select('*')
+    .gte('check_in_time', today.toISOString())
+    .order('check_in_time', { ascending: false });
+  if (error) throw error;
+  return data as EmployeeCheckIn[];
+}
+
+export async function getEmployeeCheckIns(month?: number, year?: number) {
+  let q = supabase.from('employee_checkins').select('*').order('checked_in_at', { ascending: false });
+  if (month !== undefined && year !== undefined) {
+    const start = new Date(year, month, 1).toISOString();
+    const end = new Date(year, month + 1, 0, 23, 59, 59).toISOString();
+    q = q.gte('checked_in_at', start).lte('checked_in_at', end);
+  }
+  const { data, error } = await q;
+  if (error) throw error;
+  return data as EmployeeCheckIn[];
+}
+
+export async function clockInEmployee(employeeId: string) {
+  const { data, error } = await supabase
+    .from('employee_checkins')
+    .insert({ employee_id: employeeId })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as EmployeeCheckIn;
+}
+
+export async function clockOutEmployee(checkInId: string) {
+  const { data, error } = await supabase
+    .from('employee_checkins')
+    .update({ check_out_time: new Date().toISOString() })
+    .eq('id', checkInId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as EmployeeCheckIn;
+}
+
+export async function createEmployeeCheckIn(checkIn: Omit<EmployeeCheckIn, 'id' | 'created_at'>) {
+  const { data, error } = await supabase.from('employee_checkins').insert(checkIn).select().single();
+  if (error) throw error;
+  return data as EmployeeCheckIn;
+}
+
+export async function getEmployeeDeductions(employeeId?: string) {
+  let q = supabase.from('employee_deductions').select('*').order('created_at', { ascending: false });
+  if (employeeId) q = q.eq('employee_id', employeeId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data as EmployeeDeduction[];
+}
+
+export async function createEmployeeDeduction(ded: Omit<EmployeeDeduction, 'id' | 'created_at'>) {
+  const { data, error } = await supabase.from('employee_deductions').insert(ded).select().single();
+  if (error) throw error;
+  return data as EmployeeDeduction;
+}
+
+export async function deleteEmployeeDeduction(id: string) {
+  const { error } = await supabase.from('employee_deductions').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ── Finance Base Balances ────────────────────────────────────
+
+export async function getFinanceBaseBalances() {
+  const { data, error } = await supabase.from('finance_base_balances').select('*').order('year', { ascending: false });
+  if (error) throw error;
+  return data as FinanceBaseBalance[];
+}
+
+export async function upsertFinanceBaseBalance(balance: Omit<FinanceBaseBalance, 'id' | 'created_at'>) {
+  const { data, error } = await supabase
+    .from('finance_base_balances')
+    .upsert(balance, { onConflict: 'month,year' })
+    .select().single();
+  if (error) throw error;
+  return data as FinanceBaseBalance;
+}
+
+// ── Coach Deductions ─────────────────────────────────────────
+
+export async function getCoachDeductions() {
+  const { data, error } = await supabase.from('coach_deductions').select('*').order('date', { ascending: false });
+  if (error) throw error;
+  return data as CoachDeduction[];
+}
+
+export async function createCoachDeduction(deduction: Omit<CoachDeduction, 'id' | 'created_at'>) {
+  const { data, error } = await supabase.from('coach_deductions').insert(deduction).select().single();
+  if (error) throw error;
+  return data as CoachDeduction;
+}
+
+export async function deleteCoachDeduction(id: string) {
+  const { error } = await supabase.from('coach_deductions').delete().eq('id', id);
+  if (error) throw error;
+}
+
+
+export async function markCoachSessionsPaid(checkInIds: string[]) {
+  if (!checkInIds.length) return;
+  const { error } = await supabase.from('coach_check_ins')
+    .update({ is_paid: true })
+    .in('id', checkInIds);
+  if (error) throw error;
+}
+
+export async function unmarkCoachSessionsPaidForExpense(expenseId: string, coachId: string) {
+  // When deleting a salary expense for a coach, find the check-ins paid around that time
+  // and reset them to unpaid. We unmark the most recent paid check-ins for this coach.
+  const { data: expense } = await supabase.from('expenses').select('*').eq('uuid', expenseId).single();
+  if (!expense) return;
+  
+  // Get paid check-ins for this coach that are not tied to other expenses
+  const { data: checkIns } = await supabase
+    .from('coach_check_ins')
+    .select('id')
+    .eq('coach_id', coachId)
+    .eq('is_paid', true);
+    
+  if (!checkIns || !checkIns.length) return;
+  
+  // Reset all paid sessions for this coach to unpaid (rollback)
+  const ids = checkIns.map((ci: any) => ci.id);
+  const { error } = await supabase.from('coach_check_ins')
+    .update({ is_paid: false })
+    .in('id', ids);
+  if (error) throw error;
 }

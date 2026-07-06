@@ -1,26 +1,27 @@
-﻿/* ---------------------------------------------------------------
+/* ---------------------------------------------------------------
    use-data.ts — React Query hooks for all entities.
    Wraps queries.ts with useQuery / useMutation + cache invalidation.
    --------------------------------------------------------------- */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as q from '../lib/queries';
-import type { Member, SubscriptionPackage, Invoice, Discount, Coach, Lead, Expense, Liability, AuditLog, Sport, Class } from '../lib/types';
+import type { Member, SubscriptionPackage, Invoice, Discount, Coach, Lead, Expense, Liability, AuditLog, Sport, Class, Employee, InvoicePayment } from '../lib/types';
 
 // ── Query keys (centralized for easy invalidation) ──────────
 
 export const queryKeys = {
-  members:        ['members']       as const,
-  packages:       ['packages']      as const,
-  invoices:       ['invoices']      as const,
-  discounts:      ['discounts']     as const,
-  coaches:        ['coaches']       as const,
-  coachCheckIns:  ['coachCheckIns'] as const,
-  leads:          ['leads']         as const,
-  expenses:       ['expenses']      as const,
-  liabilities:    ['liabilities']   as const,
+  members: ['members'] as const,
+  packages: ['packages'] as const,
+  invoices: ['invoices'] as const,
+  discounts: ['discounts'] as const,
+  coaches: ['coaches'] as const,
+  coachCheckIns: ['coachCheckIns'] as const,
+  leads: ['leads'] as const,
+  expenses: ['expenses'] as const,
+  liabilities: ['liabilities'] as const,
   auditLogs: ['auditLogs'] as const,
   todayCheckIns: ['todayCheckIns'] as const,
+  employeeCheckIns: ['employeeCheckIns'] as const,
   classes: ['classes'] as const,
   sports: ['sports'] as const,
   profiles: ['profiles'] as const,
@@ -195,9 +196,9 @@ export function useCoachCheckInsToday() {
 }
 
 export function useCoachCheckInsForMonth(month: number, year: number) {
-  return useQuery({ 
-    queryKey: [...queryKeys.coachCheckIns, month, year], 
-    queryFn: () => q.getCoachCheckInsForMonth(month, year) 
+  return useQuery({
+    queryKey: [...queryKeys.coachCheckIns, month, year],
+    queryFn: () => q.getCoachCheckInsForMonth(month, year)
   });
 }
 
@@ -261,6 +262,16 @@ export function useDeleteLead() {
 
 export function useExpenses() {
   return useQuery({ queryKey: queryKeys.expenses, queryFn: q.getExpenses });
+}
+
+export function useMarkCoachSessionsPaid() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (checkInIds: string[]) => q.markCoachSessionsPaid(checkInIds),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.coachCheckIns });
+    }
+  });
 }
 
 export function useCreateExpense() {
@@ -408,5 +419,190 @@ export function useProfiles() {
 export function useCreateJointInvoiceGroup() {
   return useMutation({
     mutationFn: () => q.createJointInvoiceGroup(),
+  });
+}
+// ── Invoice Payments ──────────────────────────────────────────
+
+export function useInvoicePayments(invoiceUuid?: string) {
+  return useQuery({
+    queryKey: ['invoicePayments', invoiceUuid],
+    queryFn: () => q.getInvoicePayments(invoiceUuid),
+  });
+}
+
+export function useCreateInvoicePayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payment: Parameters<typeof q.createInvoicePayment>[0]) => q.createInvoicePayment(payment),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.invoices });
+      qc.invalidateQueries({ queryKey: ['invoicePayments'] });
+    },
+  });
+}
+
+// ── Historical Employee Check-Ins & Deductions ────────────────
+
+export function useEmployeeCheckIns(month?: number, year?: number) {
+  return useQuery({
+    queryKey: ['employeeCheckIns', month, year],
+    queryFn: () => q.getEmployeeCheckIns(month, year),
+  });
+}
+
+export function useCreateEmployeeCheckIn() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (checkIn: Parameters<typeof q.createEmployeeCheckIn>[0]) => q.createEmployeeCheckIn(checkIn),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.employeeCheckIns }),
+  });
+}
+
+export function useEmployeeDeductions(employeeId?: string) {
+  return useQuery({
+    queryKey: ['employeeDeductions', employeeId],
+    queryFn: () => q.getEmployeeDeductions(employeeId),
+  });
+}
+
+export function useCreateEmployeeDeduction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ded: Parameters<typeof q.createEmployeeDeduction>[0]) => q.createEmployeeDeduction(ded),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['employeeDeductions'] }),
+  });
+}
+
+export function useDeleteEmployeeDeduction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => q.deleteEmployeeDeduction(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['employeeDeductions'] }),
+  });
+}
+
+// -- Finance Base Balances --
+
+export function useFinanceBaseBalances() {
+  return useQuery({ queryKey: ['financeBaseBalances'], queryFn: q.getFinanceBaseBalances });
+}
+
+export function useUpsertFinanceBaseBalance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (balance: Parameters<typeof q.upsertFinanceBaseBalance>[0]) => q.upsertFinanceBaseBalance(balance),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['financeBaseBalances'] }),
+  });
+}
+
+// -- Coach Deductions --
+
+export function useCoachDeductions() {
+  return useQuery({ queryKey: ['coachDeductions'], queryFn: q.getCoachDeductions });
+}
+
+export function useCreateCoachDeduction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (deduction: Parameters<typeof q.createCoachDeduction>[0]) => q.createCoachDeduction(deduction),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['coachDeductions'] }),
+  });
+}
+
+export function useDeleteCoachDeduction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => q.deleteCoachDeduction(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['coachDeductions'] }),
+  });
+}
+
+// -- Additional Hooks --
+
+export function useCheckInCoachWithDetails() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: Parameters<typeof q.checkInCoachWithDetails>[0]) => q.checkInCoachWithDetails(args),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.coachCheckIns }),
+  });
+}
+
+export function useEmployees() {
+  return useQuery({ queryKey: ['employees'], queryFn: q.getEmployees });
+}
+
+export function useCreateEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (employee: Omit<Employee, 'id' | 'created_at'>) => q.createEmployee(employee as any),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['employees'] }),
+  });
+}
+
+export function useUpdateEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<Employee> }) => q.updateEmployee(id, updates as any),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['employees'] }),
+  });
+}
+
+export function useDeleteEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => q.deleteEmployee(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['employees'] }),
+  });
+}
+
+export function useEmployeeCheckInsToday() {
+  return useQuery({ queryKey: ['employeeCheckInsToday'], queryFn: q.getEmployeeCheckInsToday });
+}
+
+export function useClockInEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (employeeId: string) => q.clockInEmployee(employeeId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['employeeCheckInsToday'] }),
+  });
+}
+
+export function useClockOutEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (checkInId: string) => q.clockOutEmployee(checkInId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['employeeCheckInsToday'] }),
+  });
+}
+
+export function useMemberCheckIns(memberUuid: string) {
+  return useQuery({
+    queryKey: ['memberCheckIns', memberUuid],
+    queryFn: () => q.getMemberCheckIns(memberUuid),
+    enabled: !!memberUuid,
+  });
+}
+
+export function useCoachHistory(coachId: string | undefined) {
+  return useQuery({
+    queryKey: ['coachHistory', coachId],
+    queryFn: () => q.getCoachHistory(coachId!),
+    enabled: !!coachId,
+  });
+}
+
+export function useDeleteExpenseWithRollback() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ expenseId, coachId }: { expenseId: string; coachId: string | null }) => {
+      if (coachId) {
+        await q.unmarkCoachSessionsPaidForExpense(expenseId, coachId);
+      }
+      await q.deleteExpense(expenseId);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.expenses });
+      qc.invalidateQueries({ queryKey: queryKeys.coachCheckIns });
+    },
   });
 }

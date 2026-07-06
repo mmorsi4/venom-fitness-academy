@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Plus, Search, Phone, Calendar, Pencil, Trash2, Snowflake, Unlock, ArrowUpCircle, BicepsFlexed, Mail } from "lucide-react";
+import { Plus, Search, Phone, Calendar, Pencil, Trash2, Snowflake, Unlock, ArrowUpCircle, BicepsFlexed, Mail, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog, useFreezeMember, useUnfreezeMember, usePackages, useCreateInvoice } from "@/hooks/use-data";
+import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog, useFreezeMember, useUnfreezeMember, usePackages, useCreateInvoice, useAuditLogs, useMemberCheckIns, useInvoices } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
 import type { Member, Gender } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
@@ -43,6 +43,7 @@ interface MemberForm {
   phone: string;
   parentPhone: string;
   birthDate: string;
+  gender: string;
   id: number;
   customId: string;
   classId: string;
@@ -66,6 +67,7 @@ const emptyForm: MemberForm = {
 function memberToForm(m: Member): MemberForm {
   return {
     name: m.name, phone: m.phone, parentPhone: m.parent_phone ?? "",
+    birthDate: m.birth_date ?? "", gender: m.gender ?? "",
     id: m.id,
     customId: m.id !== -1 ? String(m.id) : "",
     classId: m.class_id ?? "",
@@ -84,6 +86,7 @@ function calcAge(birthDate?: string | null) {
 
 export default function Members() {
   const { data: members = [] } = useMembers();
+  const { data: invoices = [] } = useInvoices();
   const { data: coaches = [] } = useCoaches();
   const { data: classes = [] } = useClasses();
   const createMember = useCreateMember();
@@ -93,6 +96,7 @@ export default function Members() {
   const freezeMember = useFreezeMember();
   const unfreezeMember = useUnfreezeMember();
   const { data: packages = [] } = usePackages();
+  const { data: auditLogs = [] } = useAuditLogs();
   const createInvoice = useCreateInvoice();
   const { currentUser } = useAuth();
   const [, navigate] = useLocation();
@@ -107,6 +111,9 @@ export default function Members() {
   const [freezeDaysInput, setFreezeDaysInput] = useState("");
   const [upgradeMemberState, setUpgradeMemberState] = useState<Member | null>(null);
   const [upgradePackageId, setUpgradePackageId] = useState("");
+  const [historyMember, setHistoryMember] = useState<Member | null>(null);
+
+  const { data: checkInHistory = [] } = useMemberCheckIns(historyMember?.uuid || "");
 
   const [searchField, setSearchField] = useState<string>("all");
   const [classFilter, setClassFilter] = useState<string>("all");
@@ -221,6 +228,7 @@ export default function Members() {
         expires_at: null,
         member_since: new Date().toISOString(),
         package_id: null,
+        package_name: 'None',
         freeze_days_remaining: 0,
         invitations_remaining: 0,
         inbody_sessions_remaining: 0,
@@ -500,7 +508,7 @@ export default function Members() {
                           <span className="text-sm font-bold">{m.name.charAt(0)}</span>
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <p className="font-semibold text-foreground text-sm">{m.name}</p>
                             <StatusBadge status={m.status} />
                             {m.frozen_until && new Date(m.frozen_until) > new Date() && (
@@ -508,6 +516,35 @@ export default function Members() {
                                 FROZEN
                               </span>
                             )}
+                            {(() => {
+                              // 1. Try actual joint_invoice_group_id
+                              const jGroups = invoices.filter((i: any) => i.member_id === m.uuid && i.joint_invoice_group_id).map((i: any) => i.joint_invoice_group_id);
+                              let jIds: any[] = [];
+                              if (jGroups.length > 0) {
+                                const jInvs = invoices.filter((i: any) => jGroups.includes(i.joint_invoice_group_id) && i.member_id !== m.uuid);
+                                jIds = Array.from(new Set(jInvs.map((i: any) => members.find((mem: any) => mem.uuid === i.member_id)?.id))).filter(Boolean);
+                              }
+                              
+                              // 2. Try parsing discount_description (e.g. "10% joint 3354, 3355")
+                              if (jIds.length === 0) {
+                                const myInvs = invoices.filter((i: any) => i.member_id === m.uuid && i.discount_description);
+                                for (const inv of myInvs) {
+                                  const match = inv.discount_description?.match(/(?:joint|join)\s*(?:with)?\s*[:#-]?\s*([\d,\s&]+)/i);
+                                  if (match && match[1]) {
+                                    const extractedIds = match[1].replace(/&/g, ',').split(',').map((s: string) => s.trim()).filter((s: string) => s && !isNaN(Number(s)));
+                                    jIds.push(...extractedIds);
+                                  }
+                                }
+                                jIds = Array.from(new Set(jIds));
+                              }
+
+                              if (jIds.length === 0) return null;
+                              return (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">
+                                  Joint: {jIds.join(', ')}
+                                </span>
+                              );
+                            })()}
                           </div>
                           <p className="text-xs text-muted-foreground">
                             {m.id === -1 ? (
@@ -638,6 +675,14 @@ export default function Members() {
                           </button>
                         )}
                         <button
+                          data-testid={`btn-history-member-${m.uuid}`}
+                          onClick={() => setHistoryMember(m)}
+                          className="p-1.5 rounded-md hover:bg-indigo-50 transition-colors text-muted-foreground hover:text-indigo-600"
+                          title="Session History"
+                        >
+                          <Clock className="w-4 h-4" />
+                        </button>
+                        <button
                           data-testid={`btn-edit-member-${m.uuid}`}
                           onClick={() => openEdit(m)}
                           className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
@@ -709,8 +754,16 @@ export default function Members() {
           <DialogHeader>
             <DialogTitle>{editMember ? `Edit: ${editMember.name}` : "New Member"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-1">
-            {/* Clinic Visitor Checkbox */}
+          <Tabs defaultValue="details" className="w-full">
+            {editMember && (
+              <TabsList className="grid w-full grid-cols-2 mb-4">
+                <TabsTrigger value="details">Details</TabsTrigger>
+                <TabsTrigger value="history">History</TabsTrigger>
+              </TabsList>
+            )}
+            <TabsContent value="details">
+              <div className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-1">
+                {/* Clinic Visitor Checkbox */}
             <div className="flex items-center space-x-2">
               <Checkbox
                 id="is-clinic-visitor"
@@ -870,23 +923,50 @@ export default function Members() {
               </div>
             )}
 
-            {/* Preview age if birthdate set */}
-            {form.birthDate && (
-              <div className="px-3 py-2 rounded-lg bg-muted/50 text-xs text-muted-foreground">
-                Age: {calcAge(form.birthDate) ?? '—'} years old
               </div>
+              <DialogFooter className="mt-6">
+                <Button variant="outline" onClick={closeDialogs}>Cancel</Button>
+                <Button
+                  data-testid="btn-save-member"
+                  onClick={handleSave}
+                  disabled={createMember.isPending || updateMember.isPending}
+                >
+                  {createMember.isPending || updateMember.isPending ? "Saving..." : editMember ? "Save Changes" : "Create Member"}
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+
+            {editMember && (
+              <TabsContent value="history">
+                <div className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-1">
+                  {(() => {
+                    const history = auditLogs.filter(l => 
+                      (l.action_type === 'checkin' || l.action_type === 'override_checkin') && 
+                      l.details.includes(editMember.id.toString())
+                    ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+                    if (history.length === 0) {
+                      return <p className="text-sm text-muted-foreground text-center py-6">No check-in history found.</p>;
+                    }
+
+                    return (
+                      <div className="space-y-3">
+                        {history.map(log => (
+                          <div key={log.id} className="p-3 rounded-lg border bg-muted/30 text-sm">
+                            <div className="flex justify-between items-start mb-1">
+                              <span className="font-semibold">{format(parseISO(log.timestamp), "MMM d, yyyy h:mm a")}</span>
+                              <span className="text-xs text-muted-foreground">{log.action_type === 'override_checkin' ? 'Override' : 'Check-in'}</span>
+                            </div>
+                            <p className="text-muted-foreground text-xs leading-snug">{log.details}</p>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </TabsContent>
             )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={closeDialogs}>Cancel</Button>
-            <Button
-              data-testid="btn-save-member"
-              onClick={handleSave}
-              disabled={createMember.isPending || updateMember.isPending}
-            >
-              {createMember.isPending || updateMember.isPending ? "Saving..." : editMember ? "Save Changes" : "Create Member"}
-            </Button>
-          </DialogFooter>
+          </Tabs>
         </DialogContent>
       </Dialog>
 
@@ -914,6 +994,44 @@ export default function Members() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!historyMember} onOpenChange={(o) => !o && setHistoryMember(null)}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Session History: {historyMember?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-2 py-2">
+            {checkInHistory.filter(ci => {
+              if (!historyMember?.last_subscription_date) return true;
+              return new Date(ci.created_at) >= new Date(historyMember.last_subscription_date);
+            }).length === 0 ? (
+              <p className="text-center text-muted-foreground py-6">No sessions recorded in current subscription.</p>
+            ) : checkInHistory.filter(ci => {
+              if (!historyMember?.last_subscription_date) return true;
+              return new Date(ci.created_at) >= new Date(historyMember.last_subscription_date);
+            }).map(ci => {
+              return (
+                <div key={ci.id} className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                  <div>
+                    <p className="font-semibold text-sm">
+                      Session
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {new Date(ci.created_at).toLocaleString()}
+                    </p>
+                    {ci.is_override && (
+                      <Badge variant="outline" className="text-[10px] mt-1 bg-amber-50 text-amber-600 border-amber-200">Manual Override</Badge>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground">Checked in by: {ci.checked_in_by || 'System'}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Freeze Member Dialog */}
       <Dialog open={!!freezeMemberState} onOpenChange={o => { if (!o) { setFreezeMemberState(null); setFreezeDaysInput(""); } }}>
@@ -998,3 +1116,4 @@ export default function Members() {
     </div>
   );
 }
+import { Badge } from "@/components/ui/badge";

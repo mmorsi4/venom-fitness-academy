@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { useAuditLogs, useInvoices, useExpenses, useClasses } from "@/hooks/use-data";
+import { useAuditLogs, useInvoices, useExpenses, useClasses, useInvoicePayments } from "@/hooks/use-data";
 import { format, isSameDay, subDays, addDays, parseISO } from "date-fns";
 
 function isoToDate(s: string) {
@@ -22,6 +22,7 @@ export default function DailyReport() {
   const { data: invoices = [] } = useInvoices();
   const { data: expenses = [] } = useExpenses();
   const { data: classes = [] } = useClasses();
+  const { data: invoicePayments = [] } = useInvoicePayments();
 
   const [selectedDate, setSelectedDate] = useState(new Date());
 
@@ -56,9 +57,14 @@ export default function DailyReport() {
   const totalExpenses = expensesForDay.reduce((s, e) => s + e.amount, 0);
   const netBalance = totalIncome - totalExpenses;
   const totalAttendance = classesForDay.reduce((s, c) => s + c.attendance_count, 0);
+  
   const cashIncome = calculateIncomeByMethod(invoicesForDay, 'Cash');
   const visaIncome = calculateIncomeByMethod(invoicesForDay, 'Visa');
   const instapayIncome = calculateIncomeByMethod(invoicesForDay, 'InstaPay');
+
+  const cashExpenses = expensesForDay.filter(e => e.payment_method === 'Cash').reduce((s, e) => s + e.amount, 0);
+  const visaExpenses = expensesForDay.filter(e => e.payment_method === 'Visa').reduce((s, e) => s + e.amount, 0);
+  const instapayExpenses = expensesForDay.filter(e => e.payment_method === 'InstaPay').reduce((s, e) => s + e.amount, 0);
 
   const prevDay = () => setSelectedDate(d => subDays(d, 1));
   const nextDay = () => setSelectedDate(d => {
@@ -67,9 +73,9 @@ export default function DailyReport() {
   });
 
   const summaryCards = [
-    { label: "Members Checked In", value: checkIns.length, icon: Users, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
+    { label: "Door Check-ins", value: checkIns.length, icon: Users, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
     { label: "Classes Today", value: classesForDay.length, icon: Clock, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
-    { label: "Total Attendance", value: totalAttendance, icon: CheckCircle2, color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-100" },
+    { label: "Class Attendances", value: totalAttendance, icon: CheckCircle2, color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-100" },
     { label: "Overrides", value: overrides.length, icon: AlertTriangle, color: overrides.length > 0 ? "text-red-600" : "text-muted-foreground", bg: overrides.length > 0 ? "bg-red-50" : "bg-muted/50", border: overrides.length > 0 ? "border-red-100" : "border-border" },
   ];
 
@@ -130,17 +136,23 @@ export default function DailyReport() {
             </div>
             <p className="text-3xl font-bold text-emerald-600">{totalIncome.toLocaleString()}</p>
             <p className="text-xs text-muted-foreground mt-1">EGP collected</p>
-            <div className="flex flex-wrap gap-1.5 mt-3">
+            <div className="flex flex-wrap gap-2 mt-4">
               {cashIncome > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Cash: {cashIncome}</span>
+                <Badge variant="outline" className="text-sm px-3 py-1 font-semibold border-amber-200 bg-amber-50 text-amber-700 shadow-sm">
+                  Cash: {cashIncome.toLocaleString()} EGP
+                </Badge>
               )}
               {visaIncome > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Visa: {visaIncome}</span>
+                <Badge variant="outline" className="text-sm px-3 py-1 font-semibold border-blue-200 bg-blue-50 text-blue-700 shadow-sm">
+                  Visa: {visaIncome.toLocaleString()} EGP
+                </Badge>
               )}
               {instapayIncome > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">InstaPay: {instapayIncome}</span>
+                <Badge variant="outline" className="text-sm px-3 py-1 font-semibold border-violet-200 bg-violet-50 text-violet-700 shadow-sm">
+                  InstaPay: {instapayIncome.toLocaleString()} EGP
+                </Badge>
               )}
-              {totalIncome === 0 && <span className="text-xs text-muted-foreground">No payments</span>}
+              {totalIncome === 0 && <span className="text-sm text-muted-foreground">No payments</span>}
             </div>
           </CardContent>
         </Card>
@@ -152,9 +164,24 @@ export default function DailyReport() {
             </div>
             <p className="text-3xl font-bold text-red-600">{totalExpenses.toLocaleString()}</p>
             <p className="text-xs text-muted-foreground mt-1">EGP spent</p>
-            {expensesForDay.length > 0 && (
-              <p className="text-xs text-muted-foreground mt-3">{expensesForDay.length} expense record{expensesForDay.length > 1 ? 's' : ''}</p>
-            )}
+            <div className="flex flex-wrap gap-2 mt-4">
+              {cashExpenses > 0 && (
+                <Badge variant="outline" className="text-sm px-3 py-1 font-semibold border-amber-200 bg-amber-50 text-amber-700 shadow-sm">
+                  Cash: {cashExpenses.toLocaleString()} EGP
+                </Badge>
+              )}
+              {visaExpenses > 0 && (
+                <Badge variant="outline" className="text-sm px-3 py-1 font-semibold border-blue-200 bg-blue-50 text-blue-700 shadow-sm">
+                  Visa: {visaExpenses.toLocaleString()} EGP
+                </Badge>
+              )}
+              {instapayExpenses > 0 && (
+                <Badge variant="outline" className="text-sm px-3 py-1 font-semibold border-violet-200 bg-violet-50 text-violet-700 shadow-sm">
+                  InstaPay: {instapayExpenses.toLocaleString()} EGP
+                </Badge>
+              )}
+              {totalExpenses === 0 && <span className="text-sm text-muted-foreground">No expenses</span>}
+            </div>
           </CardContent>
         </Card>
         <Card className={netBalance >= 0 ? "border-emerald-100" : "border-red-100"}>
@@ -170,6 +197,35 @@ export default function DailyReport() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Account Balance by Method */}
+      <Card>
+        <CardContent className="p-5">
+          <p className="text-sm font-semibold text-muted-foreground mb-3">Account Balance (Today)</p>
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { label: 'Cash', income: cashIncome, expense: cashExpenses },
+              { label: 'Visa', income: visaIncome, expense: visaExpenses },
+              { label: 'InstaPay', income: instapayIncome, expense: instapayExpenses },
+            ].map(({ label, income, expense }) => {
+              const net = income - expense;
+              const positive = net >= 0;
+              return (
+                <div key={label} className={`rounded-lg border p-3 ${positive ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">{label}</p>
+                  <p className={`text-xl font-bold ${positive ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {positive ? '' : '-'}{Math.abs(net).toLocaleString()} <span className="text-xs font-normal">EGP</span>
+                  </p>
+                  <div className="flex gap-3 mt-1.5 text-[11px]">
+                    <span className="text-emerald-600">↑ {income.toLocaleString()}</span>
+                    <span className="text-red-500">↓ {expense.toLocaleString()}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Sessions */}
@@ -213,13 +269,13 @@ export default function DailyReport() {
           </CardContent>
         </Card>
 
-        {/* Members checked in */}
+        {/* Door Check-ins */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center justify-between">
               <span className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                Members Checked In ({checkIns.length})
+                Door Check-ins ({checkIns.length})
               </span>
             </CardTitle>
           </CardHeader>
@@ -241,7 +297,7 @@ export default function DailyReport() {
                         <p className="text-xs text-red-600">Override — expired member</p>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground flex-shrink-0">{format(isoToDate(log.timestamp), "HH:mm")}</p>
+                    <p className="text-xs text-muted-foreground flex-shrink-0">{format(isoToDate(log.timestamp), "hh:mm a")}</p>
                   </div>
                 ))}
               </div>

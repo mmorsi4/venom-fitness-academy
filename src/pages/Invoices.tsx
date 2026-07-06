@@ -52,9 +52,9 @@ const emptyForm = {
   activationDate: "",
   customId: "",
   splitPayments: [] as { method: string, amount: string }[],
-  jointMembersData: [] as { 
-    memberId: string, classId: string, invoiceDate: string, activationDate: string, 
-    packageId: string, paidAmount: string, paymentMethod: string, splitPayments: { method: string, amount: string }[] 
+  jointMembersData: [] as {
+    memberId: string, classId: string, invoiceDate: string, activationDate: string,
+    packageId: string, paidAmount: string, paymentMethod: string, splitPayments: { method: string, amount: string }[]
   }[],
 };
 
@@ -77,8 +77,14 @@ export default function Invoices() {
   const [showVerificationDialog, setShowVerificationDialog] = useState(false);
   const [verificationAction, setVerificationAction] = useState<'create' | 'edit'>('create');
   const [verificationPassword, setVerificationPassword] = useState("");
+  const [packageCategoryFilter, setPackageCategoryFilter] = useState<'All' | 'Normal' | 'PT' | 'Clinic'>('All');
   const [form, setForm] = useState(emptyForm);
   const [jointStep, setJointStep] = useState(1);
+  const [paymentModalInvoice, setPaymentModalInvoice] = useState<Invoice | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [paymentMethod, setPaymentMethod] = useState<string>("Cash");
+  const [paymentCustomId, setPaymentCustomId] = useState<string>("");
+  const [paymentDate, setPaymentDate] = useState<string>("");
   const [, navigate] = useLocation();
   const searchString = useSearch();
   const hasConsumedParams = useRef(false);
@@ -104,19 +110,19 @@ export default function Invoices() {
 
   // Edit invoice state
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null);
-  const [editForm, setEditForm] = useState({ 
-    memberId: "", 
-    packageId: "", 
+  const [editForm, setEditForm] = useState({
+    memberId: "",
+    packageId: "",
     classId: "",
     discountMode: "none" as DiscountMode,
     discountGroupId: "",
     customDiscountType: "fixed" as CustomDiscountType,
     customDiscountValue: "",
     customDiscountDescription: "",
-    paidAmount: "", 
-    paymentMethod: "Cash", 
+    paidAmount: "",
+    paymentMethod: "Cash",
     splitPayments: [] as { method: string; amount: string }[],
-    status: "paid" as any, 
+    status: "paid" as any,
     activationDate: "",
     invoiceDate: "",
     customId: "",
@@ -209,7 +215,15 @@ export default function Invoices() {
 
   const selectedPackage = packages.find(p => p.id === form.packageId);
   const selectedMember = members.find(m => m.uuid === form.memberId);
-  const createAvailablePackages = packages.filter(p => selectedMember?.id === -1 ? p.is_clinic : true);
+  const createAvailablePackages = packages.filter(p => {
+    if (selectedMember?.id === -1 && !p.is_clinic && p.category !== 'Clinic') return false;
+    if (packageCategoryFilter !== 'All') {
+      if (packageCategoryFilter === 'PT' && !p.is_pt && p.category !== 'PT') return false;
+      if (packageCategoryFilter === 'Clinic' && !p.is_clinic && p.category !== 'Clinic') return false;
+      if (packageCategoryFilter === 'Normal' && (p.is_pt || p.is_clinic || (p.category && p.category !== 'Normal'))) return false;
+    }
+    return true;
+  });
   const activeDiscounts = discounts.filter(d => d.active);
   const selectedGroup = activeDiscounts.find(d => d.id === form.discountGroupId);
 
@@ -264,7 +278,7 @@ export default function Invoices() {
     }
   }
 
-  const editTotal = selectedEditPackage ? Math.max(0, selectedEditPackage.price - editDiscountAmount) : 0;
+  const editTotal = selectedEditPackage ? Math.max(0, selectedEditPackage.price - editDiscountAmount) : (editInvoice?.total_amount ?? 0);
   const editNeedsDescription = editForm.discountMode === 'custom' && editDiscountAmount > 0 && !editForm.customDiscountDescription.trim();
 
   const resetForm = () => { setForm(emptyForm); setJointStep(1); };
@@ -324,7 +338,7 @@ export default function Invoices() {
 
   const submitCreate = async () => {
     const jointCount = selectedGroup?.is_joint ? selectedGroup.joint_count : 1;
-    
+
     const allMembersData = [{
       memberId: form.memberId,
       classId: form.classId,
@@ -367,11 +381,11 @@ export default function Invoices() {
         const memPkg = isMain ? selectedPackage : packages.find(p => p.id === (data.packageId || form.packageId));
         const memDiscount = isMain ? discountAmount : computeDiscountAmount(memPkg);
         const memTotal = memPkg ? Math.max(0, memPkg.price - memDiscount) : 0;
-        
+
         const memPaid = isMain ? paid : (data.paymentMethod === 'Split'
           ? (data.splitPayments || []).reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0)
           : (data.paidAmount !== undefined && data.paidAmount !== "" ? Number(data.paidAmount) : memTotal));
-          
+
         const memInvStatus = memPaid >= memTotal ? 'paid' : memPaid > 0 ? 'partial' : 'unpaid';
         const memPaymentMethod = isMain ? form.paymentMethod : (data.paymentMethod || form.paymentMethod);
         const memSplitPayments = isMain ? form.splitPayments : (data.splitPayments || []);
@@ -447,16 +461,78 @@ export default function Invoices() {
   const totalPages = Math.ceil(filtered.length / pageSize);
   const paginatedInvoices = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
+  const handleCollectPayment = () => {
+    if (!paymentModalInvoice) return;
+    const payment = Number(paymentAmount);
+    if (isNaN(payment) || payment <= 0) {
+      toast.error("Enter a valid payment amount");
+      return;
+    }
+    const remaining = paymentModalInvoice.total_amount - paymentModalInvoice.paid_amount;
+    if (payment > remaining) {
+      // Allow small overrides but warn
+      toast.info(`Note: Payment is ${(payment - remaining).toLocaleString()} EGP over the remaining balance. Proceeding as override.`);
+    }
+
+    createInvoice.mutate({
+      member_id: paymentModalInvoice.member_id,
+      member_name: paymentModalInvoice.member_name,
+      package_id: null,
+      package_name: `Payment Completion: ${paymentModalInvoice.package_name || 'Invoice'}`,
+      class_id: paymentModalInvoice.class_id,
+      paid_amount: payment,
+      total_amount: payment,
+      payment_method: paymentMethod as any,
+      status: 'paid',
+      discount_amount: 0,
+      discount_id: null,
+      discount_description: null,
+      activation_date: paymentDate ? new Date(paymentDate).toISOString() : new Date().toISOString(),
+      ...(paymentCustomId.trim() ? { id: paymentCustomId.trim() } : {}),
+      ...(paymentDate ? { created_at: new Date(paymentDate).toISOString() } : {})
+    } as any, {
+      onSuccess: () => {
+        // Now update the original invoice's paid amount
+        const newPaidAmount = paymentModalInvoice.paid_amount + payment;
+        const newStatus = newPaidAmount >= paymentModalInvoice.total_amount ? 'paid' : 'partial';
+        updateInvoice.mutate({
+          uuid: paymentModalInvoice.uuid,
+          updates: {
+            paid_amount: newPaidAmount,
+            status: newStatus
+          }
+        }, {
+          onSuccess: () => {
+            createAuditLog.mutate({
+              action: 'Collect Payment',
+              action_type: 'edit_payment',
+              performed_by: currentUser?.id ?? null,
+              performer_name: currentUser?.name ?? 'System',
+              member_id: paymentModalInvoice.member_id,
+              member_name: paymentModalInvoice.member_name,
+              timestamp: new Date().toISOString(),
+              details: `Collected ${payment} EGP for invoice ${paymentModalInvoice.id}. New paid total: ${newPaidAmount}. Created completion invoice.`
+            });
+            toast.success("Payment collected and new invoice generated");
+            setPaymentModalInvoice(null);
+            setPaymentAmount("");
+          }
+        });
+      },
+      onError: (err: any) => toast.error(`Error creating payment invoice: ${err.message}`)
+    });
+  };
+
   const handleEditInvoice = () => {
     if (!editInvoice) return;
     if (editNeedsDescription) { toast.error("A reason is required for custom discounts"); return; }
-    
+
     if (editForm.discountMode === 'custom' && editDiscountAmount > 0 && String(editDiscountAmount) !== String(editInvoice.discount_amount)) {
       setVerificationAction('edit');
       setShowVerificationDialog(true);
       return;
     }
-    
+
     submitEdit();
   };
 
@@ -694,7 +770,7 @@ export default function Invoices() {
                   {paginatedInvoices.map(inv => {
                     const shortId = members.find(m => m.uuid === inv.member_id)?.id;
                     const jointRelated = inv.joint_invoice_group_id ? invoices.filter(i => i.joint_invoice_group_id === inv.joint_invoice_group_id && i.uuid !== inv.uuid) : [];
-                    
+
                     return (
                       <TableRow key={inv.uuid} data-testid={`invoice-${inv.uuid}`}>
                         <TableCell className="font-bold text-xs text-muted-foreground">
@@ -734,7 +810,20 @@ export default function Invoices() {
                               )}
                             </div>
                             {inv.status === 'partial' && (
-                              <p className="text-[10px] text-muted-foreground">Paid: {inv.paid_amount} / {inv.total_amount}</p>
+                              <div className="space-y-1">
+                                <p className="text-[10px] text-muted-foreground">Paid: {inv.paid_amount} / {inv.total_amount}</p>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  className="h-6 text-[10px] px-2"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPaymentModalInvoice(inv);
+                                  }}
+                                >
+                                  Collect
+                                </Button>
+                              </div>
                             )}
                           </div>
                         </TableCell>
@@ -822,251 +911,265 @@ export default function Invoices() {
                   <>
                     <div className="space-y-1.5">
                       <Label>{selectedGroup?.is_joint ? "Primary Member" : "Member"}</Label>
-                  <SearchableSelect
-                    data-testid="select-invoice-member"
-                    options={members.map(m => ({
-                      value: m.uuid,
-                      label: `${m.name} (${m.id === -1 ? 'Clinic Visitor' : m.id})`,
-                      searchTerms: `${m.phone} ${m.id}`,
-                    }))}
-                    value={form.memberId}
-                    onValueChange={v => setForm(p => ({ ...p, memberId: v }))}
-                    placeholder="Search member by name, phone, or ID..."
-                    searchPlaceholder="Type name, phone, or member ID..."
-                    emptyMessage="No members found"
-                  />
-                </div>
+                      <SearchableSelect
+                        data-testid="select-invoice-member"
+                        options={members.map(m => ({
+                          value: m.uuid,
+                          label: `${m.name} (${m.id === -1 ? 'Clinic Visitor' : m.id})`,
+                          searchTerms: `${m.phone} ${m.id}`,
+                        }))}
+                        value={form.memberId}
+                        onValueChange={v => setForm(p => ({ ...p, memberId: v }))}
+                        placeholder="Search member by name, phone, or ID..."
+                        searchPlaceholder="Type name, phone, or member ID..."
+                        emptyMessage="No members found"
+                      />
+                    </div>
 
 
 
-                <div className="space-y-1.5">
-                  <Label>Package</Label>
-                  <Select value={form.packageId} onValueChange={v => setForm(p => ({ ...p, packageId: v }))}>
-                    <SelectTrigger data-testid="select-invoice-package"><SelectValue placeholder="Select package..." /></SelectTrigger>
-                    <SelectContent>{createAvailablePackages.map(p => <SelectItem key={p.id} value={p.id}>{p.name} — {p.price} EGP</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Class (Optional)</Label>
-                  <Select value={form.classId} onValueChange={v => setForm(p => ({ ...p, classId: v }))}>
-                    <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {classes.map(c => (
-                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Discount */}
-                <div className="space-y-3">
-                  <Label>Discount</Label>
-                  <div className="flex gap-2">
-                    {(['none', 'group', 'custom'] as DiscountMode[]).map(mode => (
-                      <button
-                        key={mode}
-                        onClick={() => setForm(p => ({ ...p, discountMode: mode, discountGroupId: '', customDiscountValue: '', customDiscountDescription: '' }))}
-                        className={`flex-1 py-1.5 px-2 rounded-lg border text-xs font-medium transition-colors ${form.discountMode === mode ? 'bg-primary text-primary-foreground border-primary' : 'bg-card hover:bg-accent'}`}
-                      >
-                        {mode === 'none' ? 'No Discount' : mode === 'group' ? 'Discount Group' : 'Custom'}
-                      </button>
-                    ))}
-                  </div>
-
-                  {form.discountMode === 'group' && (
                     <div className="space-y-1.5">
-                      <Select value={form.discountGroupId} onValueChange={v => setForm(p => ({ ...p, discountGroupId: v }))}>
-                        <SelectTrigger><SelectValue placeholder="Select discount group..." /></SelectTrigger>
+                      <div className="flex items-center justify-between">
+                        <Label>Package</Label>
+                        <Tabs value={packageCategoryFilter} onValueChange={(v: any) => setPackageCategoryFilter(v)} className="w-[200px]">
+                          <TabsList className="grid w-full grid-cols-4 h-7 text-[10px]">
+                            <TabsTrigger value="All" className="text-[10px]">All</TabsTrigger>
+                            <TabsTrigger value="Normal" className="text-[10px]">Gym</TabsTrigger>
+                            <TabsTrigger value="PT" className="text-[10px]">PT</TabsTrigger>
+                            <TabsTrigger value="Clinic" className="text-[10px]">Clinic</TabsTrigger>
+                          </TabsList>
+                        </Tabs>
+                      </div>
+                      <SearchableSelect
+                        options={createAvailablePackages.map(p => ({ value: p.id, label: `${p.name} — ${p.price} EGP`, searchTerms: p.category }))}
+                        value={form.packageId}
+                        onValueChange={v => setForm(p => ({ ...p, packageId: v }))}
+                        placeholder="Select package..."
+                        searchPlaceholder="Search packages..."
+                        data-testid="select-invoice-package"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Class (Optional)</Label>
+                      <Select value={form.classId} onValueChange={v => setForm(p => ({ ...p, classId: v }))}>
+                        <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
                         <SelectContent>
-                          {activeDiscounts.length === 0
-                            ? <SelectItem value="__none__" disabled>No active groups</SelectItem>
-                            : activeDiscounts.map(d => (
-                              <SelectItem key={d.id} value={d.id}>
-                                {d.name} ({d.discount_type === 'fixed' ? `${d.value} EGP` : `${d.value}%`})
-                              </SelectItem>
-                            ))}
+                          <SelectItem value="none">None</SelectItem>
+                          {classes.map(c => (
+                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
-                      {selectedGroup && selectedPackage && (
-                        <p className="text-xs text-emerald-600 font-medium">Applied: -{discountAmount} EGP off {selectedPackage.price} EGP</p>
-                      )}
                     </div>
-                  )}
 
-                  {form.discountMode === 'custom' && (
+                    {/* Discount */}
                     <div className="space-y-3">
-                      {/* Fixed / Percentage toggle */}
+                      <Label>Discount</Label>
                       <div className="flex gap-2">
-                        {(['fixed', 'percentage'] as CustomDiscountType[]).map(t => (
+                        {(['none', 'group', 'custom'] as DiscountMode[]).map(mode => (
                           <button
-                            key={t}
-                            onClick={() => setForm(p => ({ ...p, customDiscountType: t, customDiscountValue: '' }))}
-                            className={`flex-1 py-1.5 rounded-lg border text-xs font-medium transition-colors ${form.customDiscountType === t ? 'bg-foreground text-background border-foreground' : 'bg-card hover:bg-accent'}`}
+                            key={mode}
+                            onClick={() => setForm(p => ({ ...p, discountMode: mode, discountGroupId: '', customDiscountValue: '', customDiscountDescription: '' }))}
+                            className={`flex-1 py-1.5 px-2 rounded-lg border text-xs font-medium transition-colors ${form.discountMode === mode ? 'bg-primary text-primary-foreground border-primary' : 'bg-card hover:bg-accent'}`}
                           >
-                            {t === 'fixed' ? 'Fixed Amount (EGP)' : 'Percentage (%)'}
+                            {mode === 'none' ? 'No Discount' : mode === 'group' ? 'Discount Group' : 'Custom'}
                           </button>
                         ))}
                       </div>
+
+                      {form.discountMode === 'group' && (
+                        <div className="space-y-1.5">
+                          <Select value={form.discountGroupId} onValueChange={v => setForm(p => ({ ...p, discountGroupId: v }))}>
+                            <SelectTrigger><SelectValue placeholder="Select discount group..." /></SelectTrigger>
+                            <SelectContent>
+                              {activeDiscounts.length === 0
+                                ? <SelectItem value="__none__" disabled>No active groups</SelectItem>
+                                : activeDiscounts.map(d => (
+                                  <SelectItem key={d.id} value={d.id}>
+                                    {d.name} ({d.discount_type === 'fixed' ? `${d.value} EGP` : `${d.value}%`})
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                          {selectedGroup && selectedPackage && (
+                            <p className="text-xs text-emerald-600 font-medium">Applied: -{discountAmount} EGP off {selectedPackage.price} EGP</p>
+                          )}
+                        </div>
+                      )}
+
+                      {form.discountMode === 'custom' && (
+                        <div className="space-y-3">
+                          {/* Fixed / Percentage toggle */}
+                          <div className="flex gap-2">
+                            {(['fixed', 'percentage'] as CustomDiscountType[]).map(t => (
+                              <button
+                                key={t}
+                                onClick={() => setForm(p => ({ ...p, customDiscountType: t, customDiscountValue: '' }))}
+                                className={`flex-1 py-1.5 rounded-lg border text-xs font-medium transition-colors ${form.customDiscountType === t ? 'bg-foreground text-background border-foreground' : 'bg-card hover:bg-accent'}`}
+                              >
+                                {t === 'fixed' ? 'Fixed Amount (EGP)' : 'Percentage (%)'}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">
+                              {form.customDiscountType === 'fixed' ? 'Discount Amount (EGP)' : 'Discount (%)'}
+                            </Label>
+                            <Input
+                              data-testid="input-invoice-discount"
+                              type="number" min="0"
+                              max={form.customDiscountType === 'percentage' ? "100" : undefined}
+                              placeholder={form.customDiscountType === 'fixed' ? '0' : '0 – 100'}
+                              value={form.customDiscountValue}
+                              onChange={e => setForm(p => ({ ...p, customDiscountValue: e.target.value }))}
+                            />
+                            {form.customDiscountType === 'percentage' && selectedPackage && form.customDiscountValue && (
+                              <p className="text-xs text-muted-foreground">= {discountAmount} EGP off</p>
+                            )}
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Reason for Discount *</Label>
+                            <Textarea
+                              data-testid="input-invoice-discount-reason"
+                              placeholder="Required: explain why this discount is applied..."
+                              value={form.customDiscountDescription}
+                              onChange={e => setForm(p => ({ ...p, customDiscountDescription: e.target.value }))}
+                              rows={2}
+                              className={needsDescription ? 'border-red-400' : ''}
+                            />
+                            {needsDescription && <p className="text-xs text-red-500">Required when applying a custom discount</p>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label className="text-xs">
-                          {form.customDiscountType === 'fixed' ? 'Discount Amount (EGP)' : 'Discount (%)'}
-                        </Label>
-                        <Input
-                          data-testid="input-invoice-discount"
-                          type="number" min="0"
-                          max={form.customDiscountType === 'percentage' ? "100" : undefined}
-                          placeholder={form.customDiscountType === 'fixed' ? '0' : '0 – 100'}
-                          value={form.customDiscountValue}
-                          onChange={e => setForm(p => ({ ...p, customDiscountValue: e.target.value }))}
-                        />
-                        {form.customDiscountType === 'percentage' && selectedPackage && form.customDiscountValue && (
-                          <p className="text-xs text-muted-foreground">= {discountAmount} EGP off</p>
+                        <Label>Payment Method</Label>
+                        <Select value={form.paymentMethod} onValueChange={v => {
+                          setForm(p => ({
+                            ...p,
+                            paymentMethod: v,
+                            splitPayments: v === 'Split' && p.splitPayments.length === 0 ? [{ method: 'Cash', amount: '' }] : p.splitPayments
+                          }));
+                        }}>
+                          <SelectTrigger data-testid="select-invoice-method"><SelectValue /></SelectTrigger>
+                          <SelectContent>{paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Amount Paid (EGP)</Label>
+                        {form.paymentMethod === 'Split' ? (
+                          <div className="flex h-9 items-center px-3 border rounded-md bg-muted/50 text-muted-foreground text-sm">
+                            {paid}
+                          </div>
+                        ) : (
+                          <Input
+                            data-testid="input-invoice-paid"
+                            type="number" placeholder={String(total)}
+                            value={form.paidAmount}
+                            onChange={e => setForm(p => ({ ...p, paidAmount: e.target.value }))}
+                          />
                         )}
                       </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Reason for Discount *</Label>
-                        <Textarea
-                          data-testid="input-invoice-discount-reason"
-                          placeholder="Required: explain why this discount is applied..."
-                          value={form.customDiscountDescription}
-                          onChange={e => setForm(p => ({ ...p, customDiscountDescription: e.target.value }))}
-                          rows={2}
-                          className={needsDescription ? 'border-red-400' : ''}
-                        />
-                        {needsDescription && <p className="text-xs text-red-500">Required when applying a custom discount</p>}
-                      </div>
                     </div>
-                  )}
-                </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>Payment Method</Label>
-                    <Select value={form.paymentMethod} onValueChange={v => {
-                      setForm(p => ({
-                        ...p,
-                        paymentMethod: v,
-                        splitPayments: v === 'Split' && p.splitPayments.length === 0 ? [{ method: 'Cash', amount: '' }] : p.splitPayments
-                      }));
-                    }}>
-                      <SelectTrigger data-testid="select-invoice-method"><SelectValue /></SelectTrigger>
-                      <SelectContent>{paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Amount Paid (EGP)</Label>
-                    {form.paymentMethod === 'Split' ? (
-                      <div className="flex h-9 items-center px-3 border rounded-md bg-muted/50 text-muted-foreground text-sm">
-                        {paid}
+                    {form.paymentMethod === 'Split' && (
+                      <div className="space-y-3 p-3 border rounded-md bg-muted/20">
+                        <div className="flex items-center justify-between">
+                          <Label>Split Payment Details</Label>
+                          <Button
+                            variant="outline" size="sm" className="h-7 text-xs"
+                            onClick={() => setForm(p => ({ ...p, splitPayments: [...p.splitPayments, { method: 'Cash', amount: '' }] }))}
+                          >
+                            <Plus className="w-3 h-3 mr-1" /> Add Payment
+                          </Button>
+                        </div>
+                        {form.splitPayments.map((sp, idx) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <Select
+                              value={sp.method}
+                              onValueChange={v => {
+                                const newSp = [...form.splitPayments];
+                                newSp[idx].method = v;
+                                setForm(p => ({ ...p, splitPayments: newSp }));
+                              }}
+                            >
+                              <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {["Cash", "Visa", "InstaPay"].map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <Input
+                              type="number" placeholder="Amount"
+                              value={sp.amount}
+                              onChange={e => {
+                                const newSp = [...form.splitPayments];
+                                newSp[idx].amount = e.target.value;
+                                setForm(p => ({ ...p, splitPayments: newSp }));
+                              }}
+                            />
+                            <Button
+                              variant="ghost" size="icon" className="text-red-500 shrink-0"
+                              disabled={form.splitPayments.length <= 1}
+                              onClick={() => {
+                                const newSp = form.splitPayments.filter((_, i) => i !== idx);
+                                setForm(p => ({ ...p, splitPayments: newSp }));
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ))}
                       </div>
-                    ) : (
+                    )}
+
+                    {/* Custom Invoice ID */}
+                    <div className="space-y-1.5">
+                      <Label>Custom Invoice ID</Label>
                       <Input
-                        data-testid="input-invoice-paid"
-                        type="number" placeholder={String(total)}
-                        value={form.paidAmount}
-                        onChange={e => setForm(p => ({ ...p, paidAmount: e.target.value }))}
+                        placeholder="Leave empty for auto-generated"
+                        value={form.customId}
+                        onChange={e => setForm(p => ({ ...p, customId: e.target.value }))}
                       />
-                    )}
-                  </div>
-                </div>
-
-                {form.paymentMethod === 'Split' && (
-                  <div className="space-y-3 p-3 border rounded-md bg-muted/20">
-                    <div className="flex items-center justify-between">
-                      <Label>Split Payment Details</Label>
-                      <Button
-                        variant="outline" size="sm" className="h-7 text-xs"
-                        onClick={() => setForm(p => ({ ...p, splitPayments: [...p.splitPayments, { method: 'Cash', amount: '' }] }))}
-                      >
-                        <Plus className="w-3 h-3 mr-1" /> Add Payment
-                      </Button>
                     </div>
-                    {form.splitPayments.map((sp, idx) => (
-                      <div key={idx} className="flex items-center gap-2">
-                        <Select
-                          value={sp.method}
-                          onValueChange={v => {
-                            const newSp = [...form.splitPayments];
-                            newSp[idx].method = v;
-                            setForm(p => ({ ...p, splitPayments: newSp }));
-                          }}
-                        >
-                          <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {["Cash", "Visa", "InstaPay"].map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+
+                    {/* Invoice Date & Activation Date */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label>Invoice Date</Label>
                         <Input
-                          type="number" placeholder="Amount"
-                          value={sp.amount}
-                          onChange={e => {
-                            const newSp = [...form.splitPayments];
-                            newSp[idx].amount = e.target.value;
-                            setForm(p => ({ ...p, splitPayments: newSp }));
-                          }}
+                          type="date"
+                          data-testid="input-invoice-date"
+                          value={form.invoiceDate}
+                          onChange={e => setForm(p => ({ ...p, invoiceDate: e.target.value }))}
                         />
-                        <Button
-                          variant="ghost" size="icon" className="text-red-500 shrink-0"
-                          disabled={form.splitPayments.length <= 1}
-                          onClick={() => {
-                            const newSp = form.splitPayments.filter((_, i) => i !== idx);
-                            setForm(p => ({ ...p, splitPayments: newSp }));
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                        <p className="text-[10px] text-muted-foreground">Leave empty for today</p>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <div className="space-y-1.5">
+                        <Label>Activation Date</Label>
+                        <Input
+                          type="date"
+                          data-testid="input-activation-date"
+                          value={form.activationDate}
+                          onChange={e => setForm(p => ({ ...p, activationDate: e.target.value }))}
+                        />
+                        <p className="text-[10px] text-muted-foreground">Leave empty to activate today</p>
+                      </div>
+                    </div>
 
-                {/* Custom Invoice ID */}
-                <div className="space-y-1.5">
-                  <Label>Custom Invoice ID</Label>
-                  <Input
-                    placeholder="Leave empty for auto-generated"
-                    value={form.customId}
-                    onChange={e => setForm(p => ({ ...p, customId: e.target.value }))}
-                  />
-                </div>
-
-                {/* Invoice Date & Activation Date */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>Invoice Date</Label>
-                    <Input
-                      type="date"
-                      data-testid="input-invoice-date"
-                      value={form.invoiceDate}
-                      onChange={e => setForm(p => ({ ...p, invoiceDate: e.target.value }))}
-                    />
-                    <p className="text-[10px] text-muted-foreground">Leave empty for today</p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Activation Date</Label>
-                    <Input
-                      type="date"
-                      data-testid="input-activation-date"
-                      value={form.activationDate}
-                      onChange={e => setForm(p => ({ ...p, activationDate: e.target.value }))}
-                    />
-                    <p className="text-[10px] text-muted-foreground">Leave empty to activate today</p>
-                  </div>
-                </div>
-
-                {selectedPackage && (
-                  <div className="p-3 rounded-lg bg-muted/50 text-sm space-y-1">
-                    <div className="flex justify-between"><span className="text-muted-foreground">Package price</span><span>{selectedPackage.price} EGP</span></div>
-                    {discountAmount > 0 && (
-                      <div className="flex justify-between text-emerald-600">
-                        <span>Discount</span><span>-{discountAmount} EGP</span>
+                    {selectedPackage && (
+                      <div className="p-3 rounded-lg bg-muted/50 text-sm space-y-1">
+                        <div className="flex justify-between"><span className="text-muted-foreground">Package price</span><span>{selectedPackage.price} EGP</span></div>
+                        {discountAmount > 0 && (
+                          <div className="flex justify-between text-emerald-600">
+                            <span>Discount</span><span>-{discountAmount} EGP</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between font-bold pt-1 border-t border-border"><span>Total</span><span>{total} EGP</span></div>
+                        <div className="flex justify-between text-muted-foreground"><span>Status</span><span className="capitalize">{paid >= total ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid'}</span></div>
                       </div>
                     )}
-                    <div className="flex justify-between font-bold pt-1 border-t border-border"><span>Total</span><span>{total} EGP</span></div>
-                    <div className="flex justify-between text-muted-foreground"><span>Status</span><span className="capitalize">{paid >= total ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid'}</span></div>
-                  </div>
-                )}
                   </>
                 ) : (
                   <>
@@ -1090,7 +1193,7 @@ export default function Invoices() {
                         value={form.jointMembersData[jointStep - 2]?.memberId || ""}
                         onValueChange={v => {
                           const newData = [...form.jointMembersData];
-                          if (!newData[jointStep - 2]) newData[jointStep - 2] = { memberId: v, classId: "", invoiceDate: "", activationDate: "" };
+                          if (!newData[jointStep - 2]) newData[jointStep - 2] = { memberId: v, classId: "", invoiceDate: "", activationDate: "", packageId: "", paidAmount: "", paymentMethod: "Cash", splitPayments: [] };
                           else newData[jointStep - 2].memberId = v;
                           setForm(p => ({ ...p, jointMembersData: newData }));
                         }}
@@ -1101,11 +1204,11 @@ export default function Invoices() {
                     </div>
                     <div className="space-y-1.5">
                       <Label>Class (Optional)</Label>
-                      <Select 
-                        value={form.jointMembersData[jointStep - 2]?.classId || ""} 
+                      <Select
+                        value={form.jointMembersData[jointStep - 2]?.classId || ""}
                         onValueChange={v => {
                           const newData = [...form.jointMembersData];
-                          if (!newData[jointStep - 2]) newData[jointStep - 2] = { memberId: "", classId: v, invoiceDate: "", activationDate: "" };
+                          if (!newData[jointStep - 2]) newData[jointStep - 2] = { memberId: "", classId: v, invoiceDate: "", activationDate: "", packageId: "", paidAmount: "", paymentMethod: "Cash", splitPayments: [] };
                           else newData[jointStep - 2].classId = v;
                           setForm(p => ({ ...p, jointMembersData: newData }));
                         }}
@@ -1120,19 +1223,29 @@ export default function Invoices() {
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label>Package</Label>
-                      <Select 
-                        value={form.jointMembersData[jointStep - 2]?.packageId || form.packageId} 
+                      <div className="flex items-center justify-between">
+                        <Label>Package</Label>
+                        <Tabs value={packageCategoryFilter} onValueChange={(v: any) => setPackageCategoryFilter(v)} className="w-[200px]">
+                          <TabsList className="grid w-full grid-cols-4 h-7 text-[10px]">
+                            <TabsTrigger value="All" className="text-[10px]">All</TabsTrigger>
+                            <TabsTrigger value="Normal" className="text-[10px]">Gym</TabsTrigger>
+                            <TabsTrigger value="PT" className="text-[10px]">PT</TabsTrigger>
+                            <TabsTrigger value="Clinic" className="text-[10px]">Clinic</TabsTrigger>
+                          </TabsList>
+                        </Tabs>
+                      </div>
+                      <SearchableSelect
+                        options={createAvailablePackages.map(p => ({ value: p.id, label: `${p.name} — ${p.price} EGP`, searchTerms: p.category }))}
+                        value={form.jointMembersData[jointStep - 2]?.packageId || form.packageId}
                         onValueChange={v => {
                           const newData = [...form.jointMembersData];
                           if (!newData[jointStep - 2]) newData[jointStep - 2] = { memberId: "", classId: "", invoiceDate: "", activationDate: "", packageId: v, paidAmount: "", paymentMethod: "Cash", splitPayments: [] };
                           else newData[jointStep - 2].packageId = v;
                           setForm(p => ({ ...p, jointMembersData: newData }));
                         }}
-                      >
-                        <SelectTrigger><SelectValue placeholder="Select package..." /></SelectTrigger>
-                        <SelectContent>{createAvailablePackages.map(p => <SelectItem key={p.id} value={p.id}>{p.name} — {p.price} EGP</SelectItem>)}</SelectContent>
-                      </Select>
+                        placeholder="Select package..."
+                        searchPlaceholder="Search packages..."
+                      />
                       <p className="text-[10px] font-medium text-emerald-600">Discount applied: -{jointDiscountAmount} EGP (Total: {jointTotal} EGP)</p>
                     </div>
 
@@ -1170,8 +1283,8 @@ export default function Invoices() {
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label>Payment Method</Label>
-                        <Select 
-                          value={form.jointMembersData[jointStep - 2]?.paymentMethod || form.paymentMethod} 
+                        <Select
+                          value={form.jointMembersData[jointStep - 2]?.paymentMethod || form.paymentMethod}
                           onValueChange={v => {
                             const newData = [...form.jointMembersData];
                             if (!newData[jointStep - 2]) newData[jointStep - 2] = { memberId: "", classId: "", invoiceDate: "", activationDate: "", packageId: form.packageId, paidAmount: "", paymentMethod: v, splitPayments: v === 'Split' ? [{ method: 'Cash', amount: '' }] : [] };
@@ -1279,7 +1392,7 @@ export default function Invoices() {
               <DialogFooter>
                 <Button variant="outline" onClick={() => { resetForm(); setShowCreate(false); }}>Cancel</Button>
                 <Button data-testid="btn-save-invoice" onClick={handleCreate} disabled={createInvoice.isPending}>
-                  {createInvoice.isPending ? "Processing..." : (jointStep < (selectedGroup?.is_joint ? selectedGroup.joint_count : 1) ? `Next: Member #${jointStep + 1}` : "Create Invoice" )}
+                  {createInvoice.isPending ? "Processing..." : (jointStep < (selectedGroup?.is_joint ? selectedGroup.joint_count : 1) ? `Next: Member #${jointStep + 1}` : "Create Invoice")}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -1305,12 +1418,13 @@ export default function Invoices() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Package</Label>
-                  <Select value={editForm.packageId} onValueChange={v => setEditForm(p => ({ ...p, packageId: v }))}>
-                    <SelectTrigger><SelectValue placeholder="Select package..." /></SelectTrigger>
-                    <SelectContent>
-                      {packages.map(p => <SelectItem key={p.id} value={p.id}>{p.name} — {p.price} EGP</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    options={packages.map(p => ({ value: p.id, label: `${p.name} — ${p.price} EGP`, searchTerms: p.category }))}
+                    value={editForm.packageId}
+                    onValueChange={v => setEditForm(p => ({ ...p, packageId: v }))}
+                    placeholder="Select package..."
+                    searchPlaceholder="Search packages..."
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Class (Optional)</Label>
@@ -1427,8 +1541,8 @@ export default function Invoices() {
                   </div>
                   <div className="space-y-1.5">
                     <Label>Payment Method</Label>
-                    <Select value={editForm.paymentMethod} onValueChange={v => setEditForm(p => ({ 
-                      ...p, 
+                    <Select value={editForm.paymentMethod} onValueChange={v => setEditForm(p => ({
+                      ...p,
                       paymentMethod: v,
                       splitPayments: v === 'Split' && p.splitPayments.length === 0 ? [{ method: 'Cash', amount: '' }] : p.splitPayments
                     }))}>
@@ -1444,8 +1558,8 @@ export default function Invoices() {
                   <div className="space-y-3 p-3 border rounded-md bg-muted/20">
                     <div className="flex items-center justify-between">
                       <Label>Split Payment Details</Label>
-                      <Button 
-                        type="button" 
+                      <Button
+                        type="button"
                         variant="outline" size="sm" className="h-7 text-xs"
                         onClick={() => setEditForm(p => ({ ...p, splitPayments: [...p.splitPayments, { method: 'Cash', amount: '' }] }))}
                       >
@@ -1454,8 +1568,8 @@ export default function Invoices() {
                     </div>
                     {editForm.splitPayments.map((split, i) => (
                       <div key={i} className="flex items-center gap-2">
-                        <Select 
-                          value={split.method} 
+                        <Select
+                          value={split.method}
                           onValueChange={v => {
                             const newSplits = [...editForm.splitPayments];
                             newSplits[i].method = v;
@@ -1468,8 +1582,8 @@ export default function Invoices() {
                           </SelectContent>
                         </Select>
                         <Input
-                          type="number" 
-                          placeholder="Amount" 
+                          type="number"
+                          placeholder="Amount"
                           value={split.amount}
                           onChange={e => {
                             const newSplits = [...editForm.splitPayments];
@@ -1478,10 +1592,10 @@ export default function Invoices() {
                           }}
                         />
                         {editForm.splitPayments.length > 1 && (
-                          <Button 
-                            type="button" 
-                            variant="ghost" size="icon" 
-                            className="h-9 w-9 text-red-500 hover:text-red-600 hover:bg-red-50" 
+                          <Button
+                            type="button"
+                            variant="ghost" size="icon"
+                            className="h-9 w-9 text-red-500 hover:text-red-600 hover:bg-red-50"
                             onClick={() => {
                               const newSplits = editForm.splitPayments.filter((_, idx) => idx !== i);
                               setEditForm(p => ({ ...p, splitPayments: newSplits }));
@@ -1527,6 +1641,69 @@ export default function Invoices() {
                 <Button variant="outline" onClick={() => setEditInvoice(null)}>Cancel</Button>
                 <Button onClick={handleEditInvoice} disabled={updateInvoice.isPending}>
                   {updateInvoice.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Payment Collection Dialog */}
+          <Dialog open={!!paymentModalInvoice} onOpenChange={o => !o && setPaymentModalInvoice(null)}>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader><DialogTitle>Collect Payment</DialogTitle></DialogHeader>
+              <div className="py-4 space-y-4">
+                <div className="bg-muted p-3 rounded-md space-y-1 text-sm">
+                  <p className="font-medium">Invoice: {paymentModalInvoice?.id}</p>
+                  <p>Total: {paymentModalInvoice?.total_amount} EGP</p>
+                  <p>Paid: {paymentModalInvoice?.paid_amount} EGP</p>
+                  <p className="font-bold text-destructive">Remaining: {(paymentModalInvoice?.total_amount || 0) - (paymentModalInvoice?.paid_amount || 0)} EGP</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Payment Amount (EGP)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max={(paymentModalInvoice?.total_amount || 0) - (paymentModalInvoice?.paid_amount || 0)}
+                      value={paymentAmount}
+                      onChange={(e) => setPaymentAmount(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Payment Method</Label>
+                    <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Cash">Cash</SelectItem>
+                        <SelectItem value="Visa">Visa</SelectItem>
+                        <SelectItem value="InstaPay">InstaPay</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Invoice ID</Label>
+                    <Input
+                      placeholder="Auto-generated"
+                      value={paymentCustomId}
+                      onChange={(e) => setPaymentCustomId(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Payment Date</Label>
+                    <Input
+                      type="date"
+                      value={paymentDate}
+                      onChange={(e) => setPaymentDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => { setPaymentModalInvoice(null); setPaymentAmount(""); setPaymentCustomId(""); setPaymentDate(""); }}>Cancel</Button>
+                <Button onClick={handleCollectPayment} disabled={createInvoice.isPending || updateInvoice.isPending}>
+                  {createInvoice.isPending || updateInvoice.isPending ? "Processing..." : "Collect"}
                 </Button>
               </DialogFooter>
             </DialogContent>

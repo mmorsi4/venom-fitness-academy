@@ -18,7 +18,8 @@ import {
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { useExpenses, useLiabilities, useCreateExpense, useUpdateExpense, useDeleteExpense } from "@/hooks/use-data";
+import { useExpenses, useLiabilities, useCoaches, useClasses, useCoachCheckInsForMonth, useMembers, useCreateExpense, useUpdateExpense, useDeleteExpense, useMarkCoachSessionsPaid, useDeleteExpenseWithRollback } from "@/hooks/use-data";
+import { calculateCoachPayroll } from "@/lib/utils";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import type { Expense } from "@/lib/types";
@@ -37,14 +38,22 @@ const emptyForm = {
   date: "",
   paymentMethod: "Cash",
   splitPayments: [] as { method: string; amount: string }[],
+  coachId: "",
+  coachUnpaidIds: [] as string[],
 };
 
 export function ExpensesView() {
   const { data: expenses = [] } = useExpenses();
   const { data: liabilities = [] } = useLiabilities();
   const createExpense = useCreateExpense();
+  const markSessionsPaid = useMarkCoachSessionsPaid();
+  const { data: coaches = [] } = useCoaches();
+  const { data: classes = [] } = useClasses();
+  const { data: coachCheckIns = [] } = useCoachCheckInsForMonth(new Date().getMonth(), new Date().getFullYear());
+  const { data: members = [] } = useMembers();
   const updateExpense = useUpdateExpense();
   const deleteExpense = useDeleteExpense();
+  const deleteExpenseWithRollback = useDeleteExpenseWithRollback();
 
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -156,12 +165,15 @@ export function ExpensesView() {
 
     createExpense.mutate(payload, {
       onSuccess: () => {
+        if (form.category === 'Salaries' && form.coachUnpaidIds?.length > 0) {
+          markSessionsPaid.mutate(form.coachUnpaidIds);
+        }
         if (isLiabilityPayment && selectedLiability) {
           const newPaid = selectedLiability.paid_amount + Number(form.amount);
           const complete = newPaid >= selectedLiability.total_amount;
           toast.success(`Payment recorded for "${selectedLiability.name}"`, {
             description: complete
-              ? "Liability fully paid off! 🎉"
+              ? "Liability fully paid off! ??"
               : `${Math.round((newPaid / selectedLiability.total_amount) * 100)}% of total paid`,
           });
         } else {
@@ -214,13 +226,20 @@ export function ExpensesView() {
 
   const handleDelete = () => {
     if (!confirmDelete) return;
-    deleteExpense.mutate(confirmDelete.uuid, {
-      onSuccess: () => {
-        toast.success("Expense deleted");
-        setConfirmDelete(null);
-      },
-      onError: (err) => toast.error(`Error deleting expense: ${err.message}`)
-    });
+    if (confirmDelete.category === 'Salaries' && confirmDelete.coach_id) {
+      deleteExpenseWithRollback.mutate(
+        { expenseId: confirmDelete.uuid, coachId: confirmDelete.coach_id },
+        {
+          onSuccess: () => { toast.success('Expense deleted & sessions restored'); setConfirmDelete(null); },
+          onError: (err) => toast.error(`Error deleting expense: ${err.message}`)
+        }
+      );
+    } else {
+      deleteExpense.mutate(confirmDelete.uuid, {
+        onSuccess: () => { toast.success('Expense deleted'); setConfirmDelete(null); },
+        onError: (err) => toast.error(`Error deleting expense: ${err.message}`)
+      });
+    }
   };
 
   return (
@@ -394,6 +413,62 @@ export function ExpensesView() {
               </div>
             </div>
 
+                        {form.category === 'Salaries' && (
+              <div className="space-y-3 p-3 bg-muted/50 rounded-lg border border-border mt-3 mb-3">
+                <div className="space-y-1.5">
+                  <Label>Select Coach</Label>
+                  <Select value={form.coachId} onValueChange={(id) => {
+                    const coach = coaches.find(c => c.id === id);
+                    if (!coach) return;
+                    // Calculate payroll for current month
+                    const now = new Date();
+                    const checkInsThisMonth = coachCheckIns.filter(ci => new Date(ci.check_in_date).getMonth() === now.getMonth() && new Date(ci.check_in_date).getFullYear() === now.getFullYear());
+                    const monthlyRevenue = 0; // approximate, not used for standard coaches usually
+                    const newMembersThisMonth = 0;
+                    
+                    const stats = calculateCoachPayroll(coach, now.getMonth(), now.getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth);
+                    
+                    // Count unpaid sessions explicitly
+                    const ptUnpaid = checkInsThisMonth.filter(ci => ci.coach_id === id && ci.session_type === 'pt' && !ci.is_paid).length;
+                    const groupMainUnpaid = checkInsThisMonth.filter(ci => ci.coach_id === id && ci.session_type === 'group' && !ci.is_substitute && !ci.is_paid).length;
+                    const groupSubUnpaid = checkInsThisMonth.filter(ci => ci.coach_id === id && ci.session_type === 'group' && ci.is_substitute && !ci.is_paid).length;
+                    const totalUnpaid = ptUnpaid + groupMainUnpaid + groupSubUnpaid;
+                    
+                    // Calculate amount owed
+                    let owed = 0;
+                    if (coach.payment_type === 'per_session') {
+                      owed = (groupMainUnpaid + groupSubUnpaid) * coach.rate + (ptUnpaid * (coach.pt_rate || 250));
+                    } else {
+                      const originalScheduled = stats.scheduledSlotsInMonth + checkInsThisMonth.filter(ci => ci.coach_id === id && ci.session_type === 'group' && !ci.is_substitute && ci.is_paid).length;
+                      const perSessionRate = originalScheduled > 0 ? (coach.rate / originalScheduled) : 0;
+                      owed = (groupSubUnpaid * perSessionRate) + (ptUnpaid * (coach.pt_rate || 250));
+                    }
+
+                    setForm(p => ({ 
+                      ...p, 
+                      coachId: id, 
+                      amount: String(owed),
+                      description: `Salary payment for ${coach.name} (${totalUnpaid} sessions)`,
+                      coachUnpaidIds: stats.unpaidCheckInIds || []
+                    }));
+                  }}>
+                    <SelectTrigger><SelectValue placeholder="Select a coach..." /></SelectTrigger>
+                    <SelectContent>
+                      {coaches.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {form.coachId && (
+                  <div className="flex gap-4">
+                    <div className="space-y-1.5 flex-1">
+                      <Label>Unpaid Sessions</Label>
+                      <Input readOnly value={form.coachUnpaidIds?.length || 0} className="bg-muted" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label>Category</Label>
               <Select value={form.category} onValueChange={handleCategoryChange}>
@@ -439,6 +514,8 @@ export function ExpensesView() {
                 )}
               </div>
             )}
+
+
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
@@ -562,6 +639,7 @@ export function ExpensesView() {
                 />
               </div>
             )}
+
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">

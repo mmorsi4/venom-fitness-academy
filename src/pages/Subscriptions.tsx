@@ -21,12 +21,12 @@ interface PkgForm {
   freezeDays: string;
   invitations: string;
   inBodySessions: string;
-  isClinic: boolean;
+  category: 'PT' | 'Clinic' | 'Normal';
 }
 
 const emptyForm: PkgForm = {
   name: "", sessions: "", price: "", validityDays: "30",
-  freezeDays: "7", invitations: "1", inBodySessions: "1", isClinic: false,
+  freezeDays: "7", invitations: "1", inBodySessions: "1", category: "Normal",
 };
 
 function pkgToForm(p: SubscriptionPackage): PkgForm {
@@ -34,7 +34,7 @@ function pkgToForm(p: SubscriptionPackage): PkgForm {
     name: p.name, sessions: p.sessions === 999 ? "0" : String(p.sessions),
     price: String(p.price), validityDays: String(p.validity_days),
     freezeDays: String(p.freeze_days), invitations: String(p.invitations),
-    inBodySessions: String(p.inbody_sessions), isClinic: p.is_clinic || false,
+    inBodySessions: String(p.inbody_sessions), category: p.category || 'Normal',
   };
 }
 
@@ -79,7 +79,9 @@ export default function Subscriptions() {
           freeze_days: form.freezeDays === "" ? 0 : Number(form.freezeDays),
           invitations: form.invitations === "" ? 0 : Number(form.invitations),
           inbody_sessions: form.inBodySessions === "" ? 0 : Number(form.inBodySessions),
-          is_clinic: form.isClinic,
+          category: form.category,
+          is_clinic: form.category === 'Clinic',
+          is_pt: form.category === 'PT',
         }
       }, {
         onSuccess: () => {
@@ -97,7 +99,9 @@ export default function Subscriptions() {
         freeze_days: form.freezeDays === "" ? 0 : Number(form.freezeDays),
         invitations: form.invitations === "" ? 0 : Number(form.invitations),
         inbody_sessions: form.inBodySessions === "" ? 0 : Number(form.inBodySessions),
-        is_clinic: form.isClinic,
+        category: form.category,
+        is_clinic: form.category === 'Clinic',
+        is_pt: form.category === 'PT',
       }, {
         onSuccess: () => {
           toast.success(`Package created: ${form.name}`);
@@ -155,7 +159,8 @@ export default function Subscriptions() {
                   <div>
                     <div className="flex items-center gap-2">
                       <CardTitle className="text-base">{pkg.name}</CardTitle>
-                      {pkg.is_clinic && <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Clinic</Badge>}
+                      {pkg.category === 'Clinic' && <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Clinic</Badge>}
+                      {pkg.category === 'PT' && <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">PT</Badge>}
                     </div>
                     <p className="text-sm text-muted-foreground mt-0.5">{pkg.validity_days}-day validity</p>
                   </div>
@@ -253,17 +258,17 @@ export default function Subscriptions() {
               <Input placeholder="e.g. 12 Sessions" value={form.name} onChange={f('name')} />
             </div>
 
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="is-clinic-pkg"
-                checked={form.isClinic}
-                onChange={(e) => setForm(p => ({ ...p, isClinic: e.target.checked }))}
-                className="rounded border-gray-300 text-primary focus:ring-primary"
-              />
-              <Label htmlFor="is-clinic-pkg" className="text-sm font-medium leading-none">
-                This is a Clinic Package
-              </Label>
+            <div className="space-y-1.5">
+              <Label>Category</Label>
+              <select
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                value={form.category}
+                onChange={(e) => setForm(p => ({ ...p, category: e.target.value as any }))}
+              >
+                <option value="Normal">Normal</option>
+                <option value="PT">PT (Personal Training)</option>
+                <option value="Clinic">Clinic</option>
+              </select>
             </div>
 
             <div className="space-y-2">

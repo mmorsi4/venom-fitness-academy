@@ -23,7 +23,7 @@ export type Gender = 'male' | 'female';
 export type InvoiceStatus = 'paid' | 'partial' | 'unpaid';
 export type PaymentMethod = 'Cash' | 'Visa' | 'InstaPay' | 'Split';
 export type CoachPaymentType = 'salary' | 'per_session';
-export type LeadStatus = 'New' | 'Contacted' | 'Follow-up' | 'Converted' | 'Lost';
+export type LeadStatus = 'New' | 'Contacted' | 'Follow-up' | 'Converted' | 'Lost' | 'Invited';
 export type LiabilityType = 'installment' | 'one_time';
 export type DiscountType = 'fixed' | 'percentage';
 export type AuditActionType =
@@ -74,13 +74,15 @@ export interface Member {
 export interface SubscriptionPackage {
   id: string;
   name: string;
+  category: 'PT' | 'Clinic' | 'Normal';
   sessions: number;
   price: number;
   validity_days: number;
   freeze_days: number;
   invitations: number;
   inbody_sessions: number;
-  is_clinic: boolean;
+  is_clinic?: boolean;
+  is_pt?: boolean;
   created_at: string;
 }
 
@@ -104,6 +106,7 @@ export interface Invoice {
   activation_date: string;
   is_applied: boolean;
   joint_invoice_group_id?: string | null;
+  settled_by_invoice_id?: string | null;
 }
 
 export interface Discount {
@@ -123,6 +126,9 @@ export interface Coach {
   phone: string;
   payment_type: CoachPaymentType;
   rate: number;
+  pt_sessions_done: number;
+  pt_rate: number;
+  user_id?: string | null;
   created_at: string;
 }
 
@@ -138,6 +144,7 @@ export interface Lead {
   assigned_to: string | null;
   inviting_member_id?: string | null;
   calls_made: number;
+  took_invitation: boolean;
   created_at: string;
 }
 
@@ -149,6 +156,7 @@ export interface Expense {
   description: string;
   date: string;
   liability_id: string | null;
+  coach_id: string | null;
   payment_method: PaymentMethod;
   split_payments?: { method: PaymentMethod; amount: number }[] | null;
   created_at: string;
@@ -195,8 +203,15 @@ export interface CoachCheckIn {
   coach_id: string;
   class_id?: string;
   check_in_date: string;
+  is_substitute: boolean;
+  original_coach_id?: string | null;
+  session_type: 'group' | 'pt';
+  member_uuid?: string | null;
+  is_paid: boolean;
   created_at: string;
 }
+
+
 
 export interface Sport {
   id: string;
@@ -232,6 +247,74 @@ export interface DiscountMember {
 export interface DiscountInvoice {
   discount_id: string;
   invoice_id: string;
+}
+
+export interface Employee {
+  id: string;
+  name: string;
+  phone: string;
+  department: string;
+  rate: number;
+  work_days: string[];
+  shift_start: string | null;
+  shift_end: string | null;
+  late_threshold_minutes: number;
+  deduction_per_minute: number;
+  user_id?: string | null;
+  created_at: string;
+}
+
+export interface EmployeeCheckIn {
+  id: string;
+  employee_id: string;
+  check_in_time?: string;
+  check_out_time?: string | null;
+  checked_in_at?: string;
+  late_minutes?: number;
+  deduction?: number;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface EmployeeDeduction {
+  id: string;
+  employee_id: string;
+  amount: number;
+  reason: string;
+  created_at: string;
+}
+
+export interface FinanceBaseBalance {
+  id: string;
+  month: number;
+  year: number;
+  cash: number;
+  visa: number;
+  instapay: number;
+  created_at: string;
+}
+
+export interface CoachDeduction {
+  id: string;
+  coach_id: string;
+  amount: number;
+  forgiven_sessions: number;
+  reason: string;
+  date: string;
+  created_at: string;
+}
+
+export interface InvoicePayment {
+  id: string;
+  custom_id?: string | null;
+  invoice_uuid: string;
+  amount: number;
+  payment_method: PaymentMethod;
+  split_payments?: { method: PaymentMethod; amount: number }[] | null;
+  paid_at: string;
+  recorded_by: string | null;
+  notes: string | null;
+  created_at: string;
 }
 
 // ── Supabase Database type (for typed client) ──────────────────

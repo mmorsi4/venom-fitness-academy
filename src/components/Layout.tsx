@@ -29,6 +29,7 @@ const ALL_NAV_ITEMS = [
   { href: "/liabilities", label: "Liabilities", icon: Landmark },
   { href: "/audit", label: "Audit Log", icon: ClipboardList },
   { href: "/users", label: "User Management", icon: UserCog },
+  { href: "/employees", label: "Employees", icon: Users },
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {

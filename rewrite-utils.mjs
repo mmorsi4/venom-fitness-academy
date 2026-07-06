@@ -1,15 +1,8 @@
-import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
-import { eachDayOfInterval, startOfMonth, endOfMonth, isBefore, startOfDay, format } from "date-fns"
-import type { Coach, Class, CoachCheckIn, Invoice, PaymentMethod, CoachDeduction, Expense } from "./types"
+import fs from 'fs';
+const path = 'src/lib/utils.ts';
+let content = fs.readFileSync(path, 'utf8');
 
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
-}
-
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-export function calculateCoachPayroll(
+const calculateFn = `export function calculateCoachPayroll(
   coach: Coach,
   month: number, // 0-indexed
   year: number,
@@ -81,9 +74,6 @@ export function calculateCoachPayroll(
 
   missedSessions = Math.max(0, missedSessions - totalForgivenSessions);
 
-  let expectedAmount = 0;
-  let paidAmount = 0;
-
   if (coach.payment_type === 'salary') {
     baseAmount = coach.rate;
     const perSessionRate = originalScheduledSlots > 0 ? (coach.rate / originalScheduledSlots) : 0;
@@ -92,23 +82,11 @@ export function calculateCoachPayroll(
     const subExtraPay = unpaidGroupSub.length * perSessionRate;
     
     finalAmount = Math.max(0, baseAmount - deduction) + subExtraPay + ptAmount;
-
-    expectedAmount = coach.rate + (groupCheckInsAsSub.length * perSessionRate) + (ptCheckIns.length * (coach.pt_rate || 250));
-    // Paid amount for salary coaches is hard to derive just from checkins because base salary is paid as a lump sum.
-    // For now, we calculate paid based on the value of paid checkins plus any advances.
-    const paidPt = ptCheckIns.filter(ci => ci.is_paid).length * (coach.pt_rate || 250);
-    const paidSub = groupCheckInsAsSub.filter(ci => ci.is_paid).length * perSessionRate;
-    // We assume if they took advances, that's part of what was "paid so far".
-    paidAmount = paidPt + paidSub + totalAdvances;
-
   } else if (coach.payment_type === 'per_session') {
     const groupAmount = (unpaidGroupMain.length + unpaidGroupSub.length) * coach.rate;
     baseAmount = groupAmount;
     deduction = 0;
     finalAmount = baseAmount + ptAmount; 
-
-    expectedAmount = (groupCheckInsAsMain.length + groupCheckInsAsSub.length) * coach.rate + (ptCheckIns.length * (coach.pt_rate || 250));
-    paidAmount = (paidGroupMain.length + groupCheckInsAsSub.filter(ci => ci.is_paid).length) * coach.rate + (ptCheckIns.filter(ci => ci.is_paid).length * (coach.pt_rate || 250)) + totalAdvances;
   }
   finalAmount = Math.max(0, finalAmount - totalAdvances);
   
@@ -121,34 +99,18 @@ export function calculateCoachPayroll(
     deduction,
     totalAdvances,
     calculatedAmount: Math.round(finalAmount),
-    expectedAmount: Math.round(expectedAmount),
-    paidAmount: Math.round(paidAmount),
     ptCheckIns: ptCheckIns.length,
     subCheckIns: groupCheckInsAsSub.length,
     unpaidCheckInIds: [...unpaidGroupMain, ...unpaidGroupSub, ...unpaidPtCheckIns].map(ci => ci.id)
   };
-}
+}`;
 
-export function calculateIncomeByMethod(invoices: Invoice[], method: PaymentMethod): number {
-  return invoices.reduce((sum, inv) => {
-    if (inv.payment_method === 'Split' && inv.split_payments) {
-      return sum + inv.split_payments.filter(sp => sp.method === method).reduce((s, sp) => s + sp.amount, 0);
-    }
-    if (inv.payment_method === method) {
-      return sum + inv.paid_amount;
-    }
-    return sum;
-  }, 0);
-}
+const startIndex = content.indexOf('export function calculateCoachPayroll(');
+const endIndex = content.indexOf('export function calculateIncomeByMethod(');
 
-export function calculateExpenseByMethod(expenses: Expense[], method: PaymentMethod): number {
-  return expenses.reduce((sum, exp) => {
-    if (exp.payment_method === 'Split' && exp.split_payments) {
-      return sum + exp.split_payments.filter((sp: any) => sp.method === method).reduce((s: any, sp: any) => s + sp.amount, 0);
-    }
-    if (exp.payment_method === method) {
-      return sum + exp.amount;
-    }
-    return sum;
-  }, 0);
+if (startIndex !== -1 && endIndex !== -1) {
+  content = content.substring(0, startIndex) + calculateFn + '\n\n' + content.substring(endIndex);
+  fs.writeFileSync(path, content, 'utf8');
+} else {
+  console.log("Could not find calculateCoachPayroll or calculateIncomeByMethod", startIndex, endIndex);
 }

@@ -9,24 +9,41 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle
 } from "@/components/ui/alert-dialog";
-import { useMembers, useCheckInMember, usePackages } from "@/hooks/use-data";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { useMembers, useCheckInMember, usePackages, useCoaches, useCheckInCoachWithDetails, useClasses, useCoachCheckInsToday, useCheckInCoach } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
-import type { Member, SubscriptionPackage } from "@/lib/types";
+import type { Member, SubscriptionPackage, Coach } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 export default function CheckIn() {
   const { data: members = [] } = useMembers();
   const { data: packages = [] } = usePackages();
+  const { data: coaches = [] } = useCoaches();
+  const { data: classes = [] } = useClasses();
+  const { data: checkIns = [] } = useCoachCheckInsToday();
   const checkInMutation = useCheckInMember();
+  const coachCheckInMutation = useCheckInCoachWithDetails();
+  const checkInCoachStandard = useCheckInCoach();
   const { currentUser } = useAuth();
   
+  const [tab, setTab] = useState("members");
   const [query, setQuery] = useState("");
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
+  
+  const [ptCoachId, setPtCoachId] = useState<string>("");
 
   const [successMember, setSuccessMember] = useState<Member | null>(null);
   const [checkedInToday, setCheckedInToday] = useState<string[]>([]);
+
+  const [coachQuery, setCoachQuery] = useState("");
+  const [selectedCoach, setSelectedCoach] = useState<Coach | null>(null);
+  const [selectedClassId, setSelectedClassId] = useState<string>("none");
 
   const results = query.length >= 1
     ? members.filter(m =>
@@ -36,6 +53,26 @@ export default function CheckIn() {
       ).slice(0, 6)
     : [];
 
+  const handleSuccess = (member: Member, msg: string, desc: string) => {
+    if (ptCoachId) {
+      coachCheckInMutation.mutate({
+        coachId: ptCoachId,
+        sessionType: 'pt',
+        memberUuid: member.uuid,
+        isSubstitute: false,
+      }, {
+        onSuccess: () => toast.success(`Coach PT session recorded`),
+        onError: (err) => toast.error(`Coach check-in failed: ${err.message}`)
+      });
+    }
+    setCheckedInToday(prev => [...prev, member.uuid]);
+    setSuccessMember(member);
+    setSelectedMember(null);
+    setPtCoachId("");
+    setQuery("");
+    toast.success(msg, { description: desc });
+  };
+
   const doCheckIn = (member: Member) => {
     checkInMutation.mutate({
       memberId: member.uuid,
@@ -44,16 +81,8 @@ export default function CheckIn() {
       performedBy: currentUser?.id,
       performerName: currentUser?.name
     }, {
-      onSuccess: () => {
-        setCheckedInToday(prev => [...prev, member.uuid]);
-        setSuccessMember(member);
-        setSelectedMember(null);
-        setQuery("");
-        toast.success(`Checked in: ${member.name}`, { description: `Session deducted` });
-      },
-      onError: (err) => {
-        toast.error(`Check-in failed: ${err.message}`);
-      }
+      onSuccess: () => handleSuccess(member, `Checked in: ${member.name}`, `Session deducted`),
+      onError: (err) => toast.error(`Check-in failed: ${err.message}`)
     });
   };
 
@@ -66,8 +95,18 @@ export default function CheckIn() {
     ? (selectedMember.id === -1 || (packages.find(p => p.id === selectedMember.package_id)?.is_clinic || false))
     : false;
 
+  const isPT = selectedMember 
+    ? (packages.find(p => p.id === selectedMember.package_id)?.is_pt || false)
+    : false;
+
   const handleCheckInClick = () => {
     if (!selectedMember) return;
+
+    if (isPT && !ptCoachId) {
+      toast.error("Please select a coach for this PT session.");
+      return;
+    }
+
     const isFrozen = selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date();
     
     // 1. If frozen, we allow override check-in
@@ -95,16 +134,8 @@ export default function CheckIn() {
         performedBy: currentUser?.id,
         performerName: currentUser?.name
       }, {
-        onSuccess: () => {
-          setCheckedInToday(prev => [...prev, selectedMember.uuid]);
-          setSuccessMember(selectedMember);
-          setSelectedMember(null);
-          setQuery("");
-          toast.success(`Check-in Override Successful`, { description: `Freeze cancelled and checked in.` });
-        },
-        onError: (err) => {
-          toast.error(`Check-in override failed: ${err.message}`);
-        }
+        onSuccess: () => handleSuccess(selectedMember, `Check-in Override Successful`, `Freeze cancelled and checked in.`),
+        onError: (err) => toast.error(`Check-in override failed: ${err.message}`)
       });
       return;
     }
@@ -123,16 +154,8 @@ export default function CheckIn() {
         performedBy: currentUser?.id,
         performerName: currentUser?.name
       }, {
-        onSuccess: () => {
-          setCheckedInToday(prev => [...prev, selectedMember.uuid]);
-          setSuccessMember(selectedMember);
-          setSelectedMember(null);
-          setQuery("");
-          toast.success(`Check-in Override Successful`, { description: `Session debt increased or expired member checked in.` });
-        },
-        onError: (err) => {
-          toast.error(`Check-in override failed: ${err.message}`);
-        }
+        onSuccess: () => handleSuccess(selectedMember, `Check-in Override Successful`, `Session debt increased or expired member checked in.`),
+        onError: (err) => toast.error(`Check-in override failed: ${err.message}`)
       });
       return;
     }
@@ -151,17 +174,71 @@ export default function CheckIn() {
     doCheckIn(selectedMember);
   };
 
+  const todayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][new Date().getDay()];
+  const todaysClasses = classes.filter(cls => (cls.schedules || []).some(s => s.day === todayName));
+
+  const submitTodayClassCheckIn = (classId: string, coachId: string, originalCoachId: string) => {
+    coachCheckInMutation.mutate({
+      coachId,
+      classId,
+      isSubstitute: coachId !== originalCoachId,
+      originalCoachId: coachId !== originalCoachId ? originalCoachId : undefined,
+      sessionType: 'group'
+    }, {
+      onSuccess: () => toast.success("Coach checked in successfully"),
+      onError: (err) => toast.error(`Failed: ${err.message}`)
+    });
+  };
+
   const recentlyCheckedIn = members.filter(m => checkedInToday.includes(m.uuid));
+
+  const doCoachCheckIn = () => {
+    if (!selectedCoach) return;
+    if (selectedClassId === "none") {
+      toast.error("Please select a specific class to check into.");
+      return;
+    }
+    const classData = classes.find(c => c.id === selectedClassId);
+    if (!classData) return;
+    const todayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][new Date().getDay()];
+    const scheduledSlotsForToday = classData.schedules.filter(s => s.day === todayName).length;
+    if (scheduledSlotsForToday === 0) {
+      toast.error(`This class is not scheduled for today (${todayName}).`);
+      return;
+    }
+    const checkInsForThisClassToday = checkIns.filter(ci => ci.coach_id === selectedCoach.id && ci.class_id === selectedClassId).length;
+    if (checkInsForThisClassToday >= scheduledSlotsForToday) {
+      toast.error(`Coach has already checked in ${checkInsForThisClassToday} time(s) for this class today.`);
+      return;
+    }
+    checkInCoachStandard.mutate({ coachId: selectedCoach.id, classId: selectedClassId }, {
+      onSuccess: () => { toast.success(`${selectedCoach.name} checked in`); setSelectedCoach(null); },
+      onError: (err) => toast.error(`Failed to check in: ${err.message}`)
+    });
+  };
+
+  const coachResults = coachQuery.length >= 1
+    ? coaches.filter(c => c.name.toLowerCase().includes(coachQuery.toLowerCase()) || c.phone?.includes(coachQuery)).slice(0, 6)
+    : [];
 
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Member Check-In</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Search by name, member ID, or phone number</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Check-In</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Manage daily attendance</p>
+        </div>
       </div>
 
-      {/* Search */}
-      <div className="relative">
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="members">Members</TabsTrigger>
+          <TabsTrigger value="coaches">Coaches</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="members" className="space-y-6 mt-6">
+          {/* Search */}
+          <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
         <Input
           data-testid="input-checkin-search"
@@ -285,6 +362,20 @@ export default function CheckIn() {
               </div>
             )}
 
+            {isPT && (
+              <div className="p-3 rounded-lg bg-indigo-50 border border-indigo-100 space-y-2">
+                <Label className="text-indigo-900 font-semibold">Trained by Coach (PT Session) *</Label>
+                <Select value={ptCoachId} onValueChange={setPtCoachId}>
+                  <SelectTrigger className="bg-white"><SelectValue placeholder="Select Coach..." /></SelectTrigger>
+                  <SelectContent>
+                    {coaches.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="flex gap-2">
               {!(selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999) && !(isClinic && selectedMember.sessions_remaining <= 0) && (
                 <Button
@@ -317,7 +408,7 @@ export default function CheckIn() {
           <CardContent className="p-6 text-center space-y-2">
             <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
             <p className="text-xl font-bold text-emerald-800">{successMember.name}</p>
-            <p className="text-sm text-emerald-700">Checked in successfully at {format(new Date(), "HH:mm")}</p>
+            <p className="text-sm text-emerald-700">Checked in successfully at {format(new Date(), "hh:mm a")}</p>
             <p className="text-sm text-emerald-700">
               {successMember.sessions_remaining === 999 
                 ? "Unlimited sessions" 
@@ -330,6 +421,80 @@ export default function CheckIn() {
 
 
 
+        </TabsContent>
+
+        <TabsContent value="coaches" className="space-y-6 mt-6">
+          <div className="space-y-3 py-2 max-h-[70vh] overflow-y-auto pr-1">
+            {todaysClasses.length === 0 ? (
+              <p className="text-center text-muted-foreground py-6">No classes scheduled for today.</p>
+            ) : todaysClasses.map(cls => {
+              const mainCoach = coaches.find(c => c.id === cls.coach_id);
+              const timeSlot = (cls.schedules || []).find(s => s.day === todayName)?.time;
+              const checkedInForClass = checkIns.filter(ci => ci.class_id === cls.id);
+              const alreadyDone = checkedInForClass.length > 0;
+
+              return (
+                <div key={cls.id} className={`rounded-xl border p-4 space-y-3 ${alreadyDone ? 'bg-emerald-50 border-emerald-200' : 'bg-card'}`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-foreground">{cls.name}</p>
+                      <p className="text-xs text-muted-foreground">{timeSlot} · {cls.sport_name || 'General'}</p>
+                    </div>
+                    {alreadyDone ? (
+                      <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+                        ✓ Done — {coaches.find(c => c.id === checkedInForClass[0]?.coach_id)?.name}
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-amber-600 border-amber-300">Pending</Badge>
+                    )}
+                  </div>
+
+                  {!alreadyDone && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Who taught this session?</p>
+                      {/* Main coach first */}
+                      {mainCoach && (
+                        <button
+                          key={mainCoach.id}
+                          onClick={() => submitTodayClassCheckIn(cls.id, mainCoach.id, mainCoach.id)}
+                          className="w-full flex items-center justify-between p-2.5 rounded-lg border-2 border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors"
+                          disabled={coachCheckInMutation.isPending}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+                              <span className="text-xs font-bold text-primary">{mainCoach.name.charAt(0)}</span>
+                            </div>
+                            <span className="text-sm font-medium">{mainCoach.name}</span>
+                            <Badge className="text-xs bg-primary/10 text-primary border-primary/20">Main Coach</Badge>
+                          </div>
+                          <span className="text-xs text-primary font-medium">✓ Check In</span>
+                        </button>
+                      )}
+                      {/* Other coaches as substitutes */}
+                      {coaches.filter(c => c.id !== cls.coach_id).map(sub => (
+                        <button
+                          key={sub.id}
+                          onClick={() => submitTodayClassCheckIn(cls.id, sub.id, cls.coach_id || sub.id)}
+                          className="w-full flex items-center justify-between p-2.5 rounded-lg border border-input bg-card hover:bg-accent transition-colors"
+                          disabled={coachCheckInMutation.isPending}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center">
+                              <span className="text-xs font-bold text-muted-foreground">{sub.name.charAt(0)}</span>
+                            </div>
+                            <span className="text-sm">{sub.name}</span>
+                            <span className="text-xs text-muted-foreground">(Substitute)</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

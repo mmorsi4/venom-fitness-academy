@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from "@/components/ui/dialog";
@@ -15,9 +15,10 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/SearchableSelect";
-import { useLeads, useCreateLead, useUpdateLead, useMembers, useUpdateMember, useDeleteLead, useSports } from "@/hooks/use-data";
+import { useLeads, useCreateLead, useUpdateLead, useMembers, useUpdateMember, useDeleteLead, useSports, useEmployees } from "@/hooks/use-data";
 import { MultiSelect } from "@/components/MultiSelect";
 import type { Lead } from "@/lib/types";
+import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -37,11 +38,14 @@ export default function Leads() {
   const { data: leads = [] } = useLeads();
   const { data: members = [] } = useMembers();
   const { data: sports = [] } = useSports();
+  const { data: employees = [] } = useEmployees();
   const createLead = useCreateLead();
   const updateLead = useUpdateLead();
   const updateMember = useUpdateMember();
   const deleteLead = useDeleteLead();
+  const { currentUser } = useAuth();
 
+  const [mainTab, setMainTab] = useState("leads");
   const [tab, setTab] = useState("all");
   const [showAdd, setShowAdd] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
@@ -89,6 +93,8 @@ export default function Leads() {
       }
     }
 
+    const linkedEmployee = employees.find(e => e.user_id === currentUser?.id);
+
     createLead.mutate({
       name: form.name.trim(),
       phone: form.phone.trim(),
@@ -97,9 +103,10 @@ export default function Leads() {
       notes: [],
       calls_made: 0,
       follow_up_date: new Date(Date.now() + 86400000).toISOString(),
-      assigned_to: null,
+      assigned_to: linkedEmployee?.id || null,
       interest: form.interest || null,
       inviting_member_id: form.source === "Invitation" ? form.invitingMemberId : null,
+      took_invitation: false,
     }, {
       onSuccess: () => {
         if (form.source === "Invitation" && form.invitingMemberId) {
@@ -216,18 +223,40 @@ export default function Leads() {
     });
   };
 
+  const handleUpdateTookInvitation = (lead: Lead, took: boolean) => {
+    updateLead.mutate({
+      id: lead.id,
+      updates: { took_invitation: took }
+    }, {
+      onSuccess: () => {
+        if (selectedLead?.id === lead.id) {
+          setSelectedLead(prev => prev ? { ...prev, took_invitation: took } : null);
+        }
+        toast.success(took ? "Invitation session marked as taken" : "Invitation session marked as not taken");
+      },
+      onError: (err) => toast.error(`Error updating invitation status: ${err.message}`)
+    });
+  };
+
   return (
-    <div className="p-6 space-y-5">
+    <Tabs value={mainTab} onValueChange={setMainTab} className="p-6 space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Leads</h1>
           <p className="text-sm text-muted-foreground">{leads.length} total leads</p>
         </div>
-        <Button data-testid="btn-add-lead" onClick={() => setShowAdd(true)} className="gap-2">
-          <Plus className="w-4 h-4" /> New Lead
-        </Button>
+        <div className="flex items-center gap-4">
+          <TabsList className="hidden sm:inline-flex">
+            <TabsTrigger value="leads">Leads</TabsTrigger>
+            <TabsTrigger value="performance">Employee Performance</TabsTrigger>
+          </TabsList>
+          <Button data-testid="btn-add-lead" onClick={() => setShowAdd(true)} className="gap-2">
+            <Plus className="w-4 h-4" /> New Lead
+          </Button>
+        </div>
       </div>
 
+      <TabsContent value="leads" className="space-y-5 mt-0">
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="p-3 rounded-xl border bg-card text-center">
@@ -391,6 +420,51 @@ export default function Leads() {
           </Table>
         </div>
       )}
+      </TabsContent>
+
+      <TabsContent value="performance" className="space-y-5 mt-0">
+        <div className="rounded-md border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Employee Name</TableHead>
+                <TableHead>Leads Brought In</TableHead>
+                <TableHead>Calls Made</TableHead>
+                <TableHead>Converted to Member</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {employees.map(emp => {
+                const empLeads = leads.filter(l => l.assigned_to === emp.id);
+                const leadsCount = empLeads.length;
+                const callsCount = empLeads.reduce((s, l) => s + l.calls_made, 0);
+                const convertedCount = empLeads.filter(l => l.status === 'Converted').length;
+                
+                if (leadsCount === 0 && callsCount === 0) return null;
+                
+                return (
+                  <TableRow key={emp.id}>
+                    <TableCell className="font-medium">{emp.name}</TableCell>
+                    <TableCell>{leadsCount}</TableCell>
+                    <TableCell>{callsCount}</TableCell>
+                    <TableCell className="text-emerald-600 font-bold">{convertedCount}</TableCell>
+                  </TableRow>
+                );
+              })}
+              {employees.length === 0 || employees.every(emp => {
+                const empLeads = leads.filter(l => l.assigned_to === emp.id);
+                return empLeads.length === 0 && empLeads.reduce((s, l) => s + l.calls_made, 0) === 0;
+              }) ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                    No performance data available.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
+        </div>
+      </TabsContent>
 
       {/* Add Lead Dialog */}
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
@@ -477,6 +551,22 @@ export default function Leads() {
                   />
                 </div>
               </div>
+              {selectedLead.source === "Invitation" && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 border">
+                    <input 
+                      type="checkbox" 
+                      id="took_invitation"
+                      className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                      checked={selectedLead.took_invitation}
+                      onChange={(e) => handleUpdateTookInvitation(selectedLead, e.target.checked)}
+                    />
+                    <Label htmlFor="took_invitation" className="text-sm cursor-pointer">
+                      Took Invitation Session
+                    </Label>
+                  </div>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label className="text-xs">Update Status</Label>
                 <div className="flex flex-wrap gap-1.5">
@@ -573,6 +663,6 @@ export default function Leads() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </Tabs>
   );
 }

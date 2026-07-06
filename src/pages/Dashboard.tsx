@@ -3,16 +3,28 @@ import { Users, LogIn, AlertTriangle, DollarSign, UserPlus, Clock, TrendingUp } 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useMembers, useInvoices, useLeads, useClasses } from "@/hooks/use-data";
+import { useMembers, useInvoices, useLeads, useClasses, useCoaches, useTodayCheckIns, useCheckInCoach, useCoachCheckInsToday, useEmployees, useEmployeeCheckInsToday, useClockInEmployee, useClockOutEmployee } from "@/hooks/use-data";
 import StatusBadge from "@/components/StatusBadge";
 import { format } from "date-fns";
+import { useAuth } from "@/lib/auth";
+import { toast } from "sonner";
 
 export default function Dashboard() {
+  const { currentUser } = useAuth();
   const [, setLocation] = useLocation();
   const { data: members = [] } = useMembers();
   const { data: invoices = [] } = useInvoices();
   const { data: leads = [] } = useLeads();
   const { data: classes = [] } = useClasses();
+  const { data: coaches = [] } = useCoaches();
+  const { data: checkIns = [] } = useCoachCheckInsToday();
+  const checkInMutation = useCheckInCoach();
+
+  const { data: employees = [] } = useEmployees();
+  const { data: employeeCheckIns = [] } = useEmployeeCheckInsToday();
+  const { data: memberCheckInsToday = [] } = useTodayCheckIns();
+  const clockInMutation = useClockInEmployee();
+  const clockOutMutation = useClockOutEmployee();
 
   const activeMembers = members.filter(m => m.status === 'active').length;
   const expiringSoon = members.filter(m => m.status === 'expiring_soon');
@@ -22,6 +34,26 @@ export default function Dashboard() {
   const outstandingAmount = invoices
     .filter(i => i.status === 'partial' || i.status === 'unpaid')
     .reduce((sum, i) => sum + (i.total_amount - i.paid_amount), 0);
+
+  const todayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][new Date().getDay()];
+  const linkedCoach = coaches.find(c => c.user_id === currentUser?.id || c.name.toLowerCase() === currentUser?.name?.toLowerCase());
+  const myClassesToday = linkedCoach 
+    ? classes.filter(c => c.coach_id === linkedCoach.id && c.schedules?.some(s => s.day === todayName))
+    : [];
+
+  const linkedEmployee = employees.find(e => e.name.toLowerCase() === currentUser?.name?.toLowerCase());
+  const myShiftToday = linkedEmployee
+    ? employeeCheckIns.find(ci => ci.employee_id === linkedEmployee.id)
+    : null;
+
+  const myLeads = linkedEmployee ? leads.filter(l => l.assigned_to === linkedEmployee.id) : [];
+  const myLeadsCount = myLeads.length;
+  const myCallsMade = myLeads.reduce((s, l) => s + l.calls_made, 0);
+  const myConvertedLeads = myLeads.filter(l => l.status === 'Converted').length;
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const myCheckInsToday = linkedEmployee ? memberCheckInsToday.filter(ci => ci.checked_in_by === linkedEmployee.name && ci.created_at.startsWith(todayStr)) : [];
+  const myCheckInsCount = myCheckInsToday.length;
 
   const todayClasses = classes.slice(0, 4);
 
@@ -72,6 +104,81 @@ export default function Dashboard() {
         ))}
       </div>
 
+
+      {linkedEmployee && (
+        <Card className="border-blue-600 bg-blue-50/50">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg text-blue-700">
+              <Clock className="w-5 h-5" />
+              My Shift ({linkedEmployee.name})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between p-4 rounded-lg bg-card border">
+              <div>
+                <p className="font-semibold text-foreground">
+                  {myShiftToday 
+                    ? (myShiftToday.check_out_time ? "Shift Completed" : "Clocked In")
+                    : "Not Clocked In"}
+                </p>
+                {myShiftToday && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Clock In: {format(new Date(myShiftToday.check_in_time || ""), "hh:mm a")}
+                    {myShiftToday.check_out_time && ` • Clock Out: ${format(new Date(myShiftToday.check_out_time || ""), "hh:mm a")}`}
+                  </p>
+                )}
+              </div>
+              <div>
+                {!myShiftToday ? (
+                  <Button 
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                    disabled={clockInMutation.isPending}
+                    onClick={() => clockInMutation.mutate(linkedEmployee.id, {
+                      onSuccess: () => toast.success("Clocked in successfully")
+                    })}
+                  >
+                    Clock In
+                  </Button>
+                ) : !myShiftToday.check_out_time ? (
+                  <Button 
+                    variant="outline"
+                    className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                    disabled={clockOutMutation.isPending}
+                    onClick={() => clockOutMutation.mutate(myShiftToday.id, {
+                      onSuccess: () => toast.success("Clocked out successfully")
+                    })}
+                  >
+                    Clock Out
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            
+            <div className="mt-6 pt-4 border-t border-blue-100">
+              <h4 className="text-sm font-semibold text-blue-900 mb-3">My Performance Today</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="bg-white rounded-md p-3 border border-blue-50 text-center">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Check-ins Processed</p>
+                  <p className="text-xl font-bold text-blue-700 mt-1">{myCheckInsCount}</p>
+                </div>
+                <div className="bg-white rounded-md p-3 border border-blue-50 text-center">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Leads Assigned</p>
+                  <p className="text-xl font-bold text-blue-700 mt-1">{myLeadsCount}</p>
+                </div>
+                <div className="bg-white rounded-md p-3 border border-blue-50 text-center">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Calls Made</p>
+                  <p className="text-xl font-bold text-blue-700 mt-1">{myCallsMade}</p>
+                </div>
+                <div className="bg-white rounded-md p-3 border border-blue-50 text-center">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Converted</p>
+                  <p className="text-xl font-bold text-emerald-600 mt-1">{myConvertedLeads}</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Today's Classes */}
         <Card>
@@ -107,10 +214,10 @@ export default function Dashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 pt-0">
-            {[...expiringSoon, ...expired].slice(0, 5).length === 0 ? (
+            {expiringSoon.slice(0, 5).length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">No expiring memberships</p>
             ) : (
-              [...expiringSoon, ...expired].slice(0, 5).map(m => (
+              expiringSoon.slice(0, 5).map(m => (
                 <div key={m.uuid} data-testid={`expiring-${m.uuid}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{m.name}</p>
