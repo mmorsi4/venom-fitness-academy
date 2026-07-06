@@ -190,9 +190,16 @@ export default function Finance() {
   });
   const breakdownTotalIncome = breakdownInvoices.reduce((s, i) => s + i.paid_amount, 0) + totalStartingIncome;
 
-  const breakdownCashIncome = calculateIncomeByMethod(breakdownInvoices, 'Cash') + startingCashIncome;
-  const breakdownVisaIncome = calculateIncomeByMethod(breakdownInvoices, 'Visa') + startingVisaIncome;
-  const breakdownInstapayIncome = calculateIncomeByMethod(breakdownInvoices, 'InstaPay') + startingInstapayIncome;
+  const calculateMonthlyTransferNet = (method: 'Cash'|'Visa'|'InstaPay') => {
+    if (clinicOnly) return 0; // Transfers only affect global gym accounts
+    const transfersIn = filteredTransfers.filter(t => t.to_account === method).reduce((s, t) => s + t.amount, 0);
+    const transfersOut = filteredTransfers.filter(t => t.from_account === method).reduce((s, t) => s + t.amount, 0);
+    return transfersIn - transfersOut;
+  };
+
+  const breakdownCashIncome = calculateIncomeByMethod(breakdownInvoices, 'Cash') + startingCashIncome + calculateMonthlyTransferNet('Cash');
+  const breakdownVisaIncome = calculateIncomeByMethod(breakdownInvoices, 'Visa') + startingVisaIncome + calculateMonthlyTransferNet('Visa');
+  const breakdownInstapayIncome = calculateIncomeByMethod(breakdownInvoices, 'InstaPay') + startingInstapayIncome + calculateMonthlyTransferNet('InstaPay');
 
   const breakdownPaymentMethods = [
     { name: "Cash", amount: breakdownCashIncome },
