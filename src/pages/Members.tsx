@@ -602,7 +602,7 @@ export default function Members() {
                           if (activeInvoices.length > 0) {
                             return activeInvoices.map(inv => (
                               <div key={inv.uuid} className="text-sm font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded w-max mb-1">
-                                {inv.package_name} ({inv.sessions_remaining === null ? '∞' : inv.sessions_remaining} left)
+                                {inv.package_name} {inv.sessions_remaining === 999 ? '(∞ left)' : inv.sessions_remaining !== null ? `(${inv.sessions_remaining} left)` : ''}
                               </div>
                             ));
                           }

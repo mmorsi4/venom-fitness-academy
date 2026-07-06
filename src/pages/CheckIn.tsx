@@ -412,7 +412,7 @@ export default function CheckIn() {
                       <SelectContent>
                         {activeInvoices.map(inv => (
                           <SelectItem key={inv.uuid} value={inv.uuid}>
-                            {inv.package_name} ({inv.sessions_remaining === null ? '∞' : inv.sessions_remaining} sessions left)
+                            {inv.package_name} {inv.sessions_remaining === 999 ? '(∞ sessions left)' : inv.sessions_remaining !== null ? `(${inv.sessions_remaining} sessions left)` : ''}
                           </SelectItem>
                         ))}
                       </SelectContent>
