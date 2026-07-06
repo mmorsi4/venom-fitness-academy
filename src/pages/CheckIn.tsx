@@ -105,12 +105,15 @@ export default function CheckIn() {
     }
   };
 
+  const selectedInvoice = invoices.find(i => i.uuid === selectedInvoiceId);
+  const activePackageId = selectedInvoice ? selectedInvoice.package_id : selectedMember?.package_id;
+
   const isClinic = selectedMember 
-    ? (selectedMember.id === -1 || (packages.find(p => p.id === selectedMember.package_id)?.is_clinic || false))
+    ? (selectedMember.id === -1 || (packages.find(p => p.id === activePackageId)?.is_clinic || false))
     : false;
 
   const isPT = selectedMember 
-    ? (packages.find(p => p.id === selectedMember.package_id)?.is_pt || false)
+    ? (packages.find(p => p.id === activePackageId)?.is_pt || false)
     : false;
 
   const handleCheckInClick = () => {

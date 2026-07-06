@@ -126,6 +126,10 @@ export default function Coaches() {
         toast.success("Adjustment added");
         setDeductionAmount("");
         setDeductionReason("");
+      },
+      onError: (err) => {
+        console.error("Adjustment error", err);
+        toast.error(`Error adding adjustment: ${err.message}`);
       }
     });
   };
