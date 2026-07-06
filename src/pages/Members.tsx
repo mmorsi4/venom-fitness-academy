@@ -128,7 +128,7 @@ export default function Members() {
     const q = query.toLowerCase();
     let matchSearch = false;
 
-    const isNumeric = /^\\d+$/.test(query.trim());
+    const isNumeric = /^\d+$/.test(query.trim());
     if (searchField === "all") {
       matchSearch = m.name.toLowerCase().includes(q) || m.phone.includes(query);
       if (m.id !== -1 && isNumeric) {
@@ -592,8 +592,25 @@ export default function Members() {
                     </TableCell>
                     <TableCell>
                       <div className="space-y-1">
-                        <p className="text-sm font-medium">{m.package_name || 'None'}</p>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        {(() => {
+                          const activeInvoices = invoices.filter(i => 
+                            i.member_id === m.uuid && 
+                            (i.status === 'paid' || i.status === 'partial') && 
+                            (i.sessions_remaining === null || i.sessions_remaining > 0)
+                          );
+                          
+                          if (activeInvoices.length > 0) {
+                            return activeInvoices.map(inv => (
+                              <div key={inv.uuid} className="text-sm font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded w-max mb-1">
+                                {inv.package_name} ({inv.sessions_remaining === null ? '∞' : inv.sessions_remaining} left)
+                              </div>
+                            ));
+                          }
+                          
+                          return <p className="text-sm font-medium">{m.package_name || 'None'}</p>;
+                        })()}
+                        
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
                           Last Subscription: {m.last_subscription_date ? format(new Date(m.last_subscription_date), "dd/MM/yyyy") : 'Never'}
                         </div>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
