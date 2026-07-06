@@ -335,9 +335,9 @@ export default function Finance() {
     const note = transferForm.note ? ` (${transferForm.note})` : "";
     const transferDate = transferForm.date ? new Date(transferForm.date).toISOString() : new Date().toISOString();
     
-    // Create Expense on source
+    // Create Expense on source (Transfer Out)
     createExpense.mutate({
-      description: `Internal Transfer to ${transferForm.toAccount}${note}`,
+      description: `Transfer Out to ${transferForm.toAccount}${note}`,
       amount: amt,
       date: transferDate,
       category: 'CUSTOM',
@@ -346,30 +346,25 @@ export default function Finance() {
       coach_id: null,
     }, {
       onSuccess: () => {
-        // Create Income on destination
-        createInvoice.mutate({
-          member_name: "Internal Transfer",
-          package_id: null,
-          package_name: `From ${transferForm.fromAccount}${note}`,
-          paid_amount: amt,
+        // Create Negative Expense on destination (Transfer In)
+        createExpense.mutate({
+          description: `Transfer In from ${transferForm.fromAccount}${note}`,
+          amount: -amt,
+          date: transferDate,
+          category: 'CUSTOM',
           payment_method: transferForm.toAccount,
-          total_amount: amt,
-          status: "paid",
-          discount_amount: 0,
-          discount_id: null,
-          discount_description: null,
-          class_id: null,
-          member_id: "00000000-0000-0000-0000-000000000000",
-          activation_date: transferDate,
-          created_at: transferDate
+          liability_id: null,
+          coach_id: null,
         }, {
           onSuccess: () => {
             toast.success(`Transferred ${amt} EGP from ${transferForm.fromAccount} to ${transferForm.toAccount}`);
             setShowTransferDialog(false);
             setTransferForm(p => ({ ...p, amount: '', note: '', date: '' }));
-          }
+          },
+          onError: (err: any) => toast.error(`Destination transfer failed: ${err.message}`)
         });
-      }
+      },
+      onError: (err: any) => toast.error(`Source transfer failed: ${err.message}`)
     });
   };
 

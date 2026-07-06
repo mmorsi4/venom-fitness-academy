@@ -129,7 +129,7 @@ export function useInvoices() {
 export function useCreateInvoice() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (inv: Omit<Invoice, 'uuid' | 'created_at' | 'id' | 'is_applied'>) => q.createInvoice(inv),
+    mutationFn: (inv: Omit<Invoice, 'uuid' | 'id' | 'is_applied' | 'created_at'> & { created_at?: string }) => q.createInvoice(inv),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.invoices });
       qc.invalidateQueries({ queryKey: queryKeys.members });
