@@ -17,7 +17,8 @@ import {
 import { 
   useInvoices, useExpenses, useLiabilities,
   useCoaches, useMembers, useCoachCheckInsForMonth, useClasses, usePackages,
-  useFinanceBaseBalances, useUpsertFinanceBaseBalance, useCreateInvoice, useCreateExpense, useCoachDeductions
+  useFinanceBaseBalances, useUpsertFinanceBaseBalance, useCreateInvoice, useCreateExpense, useCoachDeductions,
+  useGlobalSettings, useUpsertGlobalSettings
 } from "@/hooks/use-data";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -54,6 +55,15 @@ export default function Finance() {
   const [adjustMethod, setAdjustMethod] = useState<'Cash'|'Visa'|'InstaPay'>('Cash');
   const [actualBalance, setActualBalance] = useState<string>('');
 
+  const upsertGlobalSettings = useUpsertGlobalSettings();
+  const [showStartBalanceDialog, setShowStartBalanceDialog] = useState(false);
+  const [startBalancesForm, setStartBalancesForm] = useState({
+    date: '',
+    cash: '',
+    visa: '',
+    instapay: ''
+  });
+
   const uniqueExistingCategories = [...new Set(expenses.map(e => e.category))];
   const dynamicCategories = [...new Set([...BASE_CATEGORIES, ...uniqueExistingCategories])].filter(c => c !== LIABILITY_CATEGORY);
   const allCategories = [...dynamicCategories, LIABILITY_CATEGORY, "CUSTOM"];
@@ -80,10 +90,18 @@ export default function Finance() {
     };
   });
 
-  // Global Account Balances (All Time)
-  const globalCashBalance = calculateIncomeByMethod(invoices, 'Cash') - calculateExpenseByMethod(expenses, 'Cash');
-  const globalVisaBalance = calculateIncomeByMethod(invoices, 'Visa') - calculateExpenseByMethod(expenses, 'Visa');
-  const globalInstapayBalance = calculateIncomeByMethod(invoices, 'InstaPay') - calculateExpenseByMethod(expenses, 'InstaPay');
+  const { data: globalSettings } = useGlobalSettings();
+
+  // Filter out data before start_date for Global Account Balances
+  const financeStartDate = globalSettings?.finance_start_date ? new Date(globalSettings.finance_start_date) : new Date(0);
+  
+  const applicableInvoices = invoices.filter(i => new Date(i.created_at) >= financeStartDate);
+  const applicableExpenses = expenses.filter(e => new Date(e.date) >= financeStartDate);
+
+  // Global Account Balances (All Time starting from Start Date)
+  const globalCashBalance = (globalSettings?.finance_start_cash || 0) + calculateIncomeByMethod(applicableInvoices, 'Cash') - calculateExpenseByMethod(applicableExpenses, 'Cash');
+  const globalVisaBalance = (globalSettings?.finance_start_visa || 0) + calculateIncomeByMethod(applicableInvoices, 'Visa') - calculateExpenseByMethod(applicableExpenses, 'Visa');
+  const globalInstapayBalance = (globalSettings?.finance_start_instapay || 0) + calculateIncomeByMethod(applicableInvoices, 'InstaPay') - calculateExpenseByMethod(applicableExpenses, 'InstaPay');
 
   // Filter invoices and expenses by selected month/year
   const filteredInvoices = invoices.filter(i => {
@@ -208,6 +226,23 @@ export default function Finance() {
     const currentBal = method === 'Cash' ? globalCashBalance : method === 'Visa' ? globalVisaBalance : globalInstapayBalance;
     setActualBalance(currentBal.toString());
     setShowAdjustDialog(true);
+  };
+
+  const handleSetStartBalance = () => {
+    upsertGlobalSettings.mutate({
+      finance_start_date: startBalancesForm.date || null,
+      finance_start_cash: Number(startBalancesForm.cash) || 0,
+      finance_start_visa: Number(startBalancesForm.visa) || 0,
+      finance_start_instapay: Number(startBalancesForm.instapay) || 0
+    }, {
+      onSuccess: () => {
+        toast.success("Starting balances updated");
+        setShowStartBalanceDialog(false);
+      },
+      onError: (err: any) => {
+        toast.error(`Error saving settings: ${err.message}`);
+      }
+    });
   };
 
   const handleAdjustBalances = () => {
@@ -389,6 +424,17 @@ export default function Finance() {
           <p className="text-sm text-muted-foreground">Income, expenses, and reports</p>
         </div>
         <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={() => {
+            setStartBalancesForm({
+              date: globalSettings?.finance_start_date ? globalSettings.finance_start_date.split('T')[0] : '',
+              cash: globalSettings?.finance_start_cash.toString() || '0',
+              visa: globalSettings?.finance_start_visa.toString() || '0',
+              instapay: globalSettings?.finance_start_instapay.toString() || '0'
+            });
+            setShowStartBalanceDialog(true);
+          }} className="gap-2">
+            Set Starting Balances
+          </Button>
           <Button variant="outline" onClick={() => setShowAdjustDialog(true)} className="gap-2">
             Adjust Balances
           </Button>
@@ -851,6 +897,53 @@ export default function Finance() {
             <Button variant="outline" onClick={() => setShowAdjustDialog(false)}>Cancel</Button>
             <Button onClick={handleAdjustBalances} disabled={createInvoice.isPending || createExpense.isPending}>
               {createInvoice.isPending || createExpense.isPending ? "Applying..." : "Apply Adjustment"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showStartBalanceDialog} onOpenChange={setShowStartBalanceDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Set Starting Balances</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Start Date</Label>
+              <Input 
+                type="date" 
+                value={startBalancesForm.date} 
+                onChange={e => setStartBalancesForm(prev => ({ ...prev, date: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">Transactions before this date will be ignored in the global balance.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Starting Cash</Label>
+              <Input 
+                type="number" 
+                value={startBalancesForm.cash} 
+                onChange={e => setStartBalancesForm(prev => ({ ...prev, cash: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Starting Visa</Label>
+              <Input 
+                type="number" 
+                value={startBalancesForm.visa} 
+                onChange={e => setStartBalancesForm(prev => ({ ...prev, visa: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Starting InstaPay</Label>
+              <Input 
+                type="number" 
+                value={startBalancesForm.instapay} 
+                onChange={e => setStartBalancesForm(prev => ({ ...prev, instapay: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowStartBalanceDialog(false)}>Cancel</Button>
+            <Button onClick={handleSetStartBalance} disabled={upsertGlobalSettings.isPending}>
+              {upsertGlobalSettings.isPending ? "Saving..." : "Save Settings"}
             </Button>
           </DialogFooter>
         </DialogContent>

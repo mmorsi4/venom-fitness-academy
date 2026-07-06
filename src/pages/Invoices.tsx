@@ -22,6 +22,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { ExpensesView } from "@/components/ExpensesView";
 import { useInvoices, usePackages, useMembers, useDiscounts, useCreateInvoice, useUpdateInvoice, useDeleteInvoice, useCreateAuditLog, useClasses, useCreateJointInvoiceGroup } from "@/hooks/use-data";
@@ -52,6 +53,7 @@ const emptyForm = {
   activationDate: "",
   customId: "",
   splitPayments: [] as { method: string, amount: string }[],
+  isFreeMembership: false,
   jointMembersData: [] as {
     memberId: string, classId: string, invoiceDate: string, activationDate: string,
     packageId: string, paidAmount: string, paymentMethod: string, splitPayments: { method: string, amount: string }[]
@@ -126,10 +128,15 @@ export default function Invoices() {
     activationDate: "",
     invoiceDate: "",
     customId: "",
+    isFreeMembership: false,
   });
 
   // Delete invoice state
   const [confirmDelete, setConfirmDelete] = useState<Invoice | null>(null);
+
+  // Overpay confirmation state
+  const [overpayConfirmAction, setOverpayConfirmAction] = useState<(() => void) | null>(null);
+  const [overpayDetails, setOverpayDetails] = useState<{ paid: number, total: number } | null>(null);
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -336,7 +343,7 @@ export default function Invoices() {
     else submitEdit();
   };
 
-  const submitCreate = async () => {
+  const submitCreate = async (skipOverpayCheck = false) => {
     const jointCount = selectedGroup?.is_joint ? selectedGroup.joint_count : 1;
 
     const allMembersData = [{
@@ -359,6 +366,28 @@ export default function Invoices() {
       return;
     }
 
+    if (!form.isFreeMembership && !skipOverpayCheck) {
+      let totalP = 0;
+      let totalT = 0;
+      for (let i = 0; i < allMembersData.length; i++) {
+        const data = allMembersData[i] as any;
+        const isMain = i === 0;
+        const memPkg = isMain ? selectedPackage : packages.find(p => p.id === (data.packageId || form.packageId));
+        const memDiscount = isMain ? discountAmount : computeDiscountAmount(memPkg);
+        const memTotal = memPkg ? Math.max(0, memPkg.price - memDiscount) : 0;
+        const memPaid = isMain ? paid : (data.paymentMethod === 'Split'
+          ? (data.splitPayments || []).reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0)
+          : (data.paidAmount !== undefined && data.paidAmount !== "" ? Number(data.paidAmount) : memTotal));
+        totalP += memPaid;
+        totalT += memTotal;
+      }
+      if (totalP > totalT) {
+        setOverpayConfirmAction(() => () => submitCreate(true));
+        setOverpayDetails({ paid: totalP, total: totalT });
+        return;
+      }
+    }
+
     let jointGroupId: string | null = null;
     if (jointCount > 1) {
       try {
@@ -379,16 +408,35 @@ export default function Invoices() {
         const isMain = i === 0;
 
         const memPkg = isMain ? selectedPackage : packages.find(p => p.id === (data.packageId || form.packageId));
-        const memDiscount = isMain ? discountAmount : computeDiscountAmount(memPkg);
-        const memTotal = memPkg ? Math.max(0, memPkg.price - memDiscount) : 0;
+        let memDiscount = isMain ? discountAmount : computeDiscountAmount(memPkg);
+        let memTotal = memPkg ? Math.max(0, memPkg.price - memDiscount) : 0;
 
-        const memPaid = isMain ? paid : (data.paymentMethod === 'Split'
+        let memPaid = isMain ? paid : (data.paymentMethod === 'Split'
           ? (data.splitPayments || []).reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0)
           : (data.paidAmount !== undefined && data.paidAmount !== "" ? Number(data.paidAmount) : memTotal));
 
-        const memInvStatus = memPaid >= memTotal ? 'paid' : memPaid > 0 ? 'partial' : 'unpaid';
-        const memPaymentMethod = isMain ? form.paymentMethod : (data.paymentMethod || form.paymentMethod);
-        const memSplitPayments = isMain ? form.splitPayments : (data.splitPayments || []);
+        if (memPaid > memTotal) {
+          memTotal = memPaid;
+        }
+
+        let memInvStatus = memPaid >= memTotal ? 'paid' : memPaid > 0 ? 'partial' : 'unpaid';
+        let memPaymentMethod = isMain ? form.paymentMethod : (data.paymentMethod || form.paymentMethod);
+        let memSplitPayments = isMain ? form.splitPayments : (data.splitPayments || []);
+
+        let customIdToUse = isMain ? form.customId.trim() : "";
+
+        if (form.isFreeMembership) {
+          memDiscount = memPkg ? memPkg.price : 0;
+          memTotal = 0;
+          memPaid = 0;
+          memInvStatus = 'paid';
+          memPaymentMethod = 'Cash';
+          memSplitPayments = [];
+          
+          const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+          const cleanName = m.name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase();
+          customIdToUse = `FREE-${cleanName}-${randomStr}`;
+        }
 
         await createInvoice.mutateAsync({
           member_id: data.memberId,
@@ -409,7 +457,7 @@ export default function Invoices() {
           created_at: data.invoiceDate ? new Date(data.invoiceDate).toISOString() : new Date().toISOString(),
           activation_date: data.activationDate ? new Date(data.activationDate).toISOString() : (data.invoiceDate ? new Date(data.invoiceDate).toISOString() : new Date().toISOString()),
           joint_invoice_group_id: jointGroupId,
-          ...(isMain && form.customId.trim() ? { id: form.customId.trim() } : {}),
+          ...(customIdToUse ? { id: customIdToUse } : {}),
         } as any);
       }
 
@@ -536,7 +584,7 @@ export default function Invoices() {
     submitEdit();
   };
 
-  const submitEdit = () => {
+  const submitEdit = (skipOverpayCheck = false) => {
     if (!editInvoice) return;
 
     let newPaid = Number(editForm.paidAmount) || 0;
@@ -549,8 +597,19 @@ export default function Invoices() {
       newPaid = splitTotal;
     }
 
+    if (!editForm.isFreeMembership && !skipOverpayCheck && newPaid > editTotal) {
+      setOverpayConfirmAction(() => () => submitEdit(true));
+      setOverpayDetails({ paid: newPaid, total: editTotal });
+      return;
+    }
+
+    let finalEditTotal = editTotal;
+    if (newPaid > finalEditTotal) {
+      finalEditTotal = newPaid;
+    }
+
     const newStatus: 'paid' | 'partial' | 'unpaid' =
-      newPaid >= editTotal ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
+      newPaid >= finalEditTotal ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
 
     const selectedEditMember = members.find(m => m.uuid === editForm.memberId);
 
@@ -567,7 +626,7 @@ export default function Invoices() {
           ? editForm.customDiscountDescription.trim()
           : (selectedEditGroup?.name ?? null),
         discount_amount: editDiscountAmount,
-        total_amount: editTotal,
+        total_amount: finalEditTotal,
         paid_amount: newPaid,
         payment_method: editForm.paymentMethod as any,
         split_payments: editForm.paymentMethod === 'Split' ? editForm.splitPayments.map((sp: any) => ({ method: sp.method as any, amount: Number(sp.amount) || 0 })) : null,
@@ -596,23 +655,30 @@ export default function Invoices() {
   };
 
   const handleDeleteInvoice = (inv: Invoice) => {
-    deleteInvoice.mutate(inv.uuid, {
-      onSuccess: () => {
-        createAuditLog.mutate({
-          action: 'Delete Invoice',
-          action_type: 'other',
-          performed_by: currentUser?.id ?? null,
-          performer_name: currentUser?.name ?? 'System',
-          member_id: null,
-          member_name: inv.member_name,
-          timestamp: new Date().toISOString(),
-          details: `Hard deleted invoice ${inv.id} for ${inv.member_name}, amount: ${inv.total_amount} EGP`,
-        });
-        toast.success(`Invoice ${inv.id} deleted`);
-        setConfirmDelete(null);
-      },
-      onError: (err) => toast.error(`Error deleting invoice: ${err.message}`),
+    const invoicesToDelete = inv.joint_invoice_group_id 
+      ? invoices.filter(i => i.joint_invoice_group_id === inv.joint_invoice_group_id)
+      : [inv];
+
+    invoicesToDelete.forEach(i => {
+      deleteInvoice.mutate(i.uuid, {
+        onSuccess: () => {
+          createAuditLog.mutate({
+            action: 'Delete Invoice',
+            action_type: 'other',
+            performed_by: currentUser?.id ?? null,
+            performer_name: currentUser?.name ?? 'System',
+            member_id: null,
+            member_name: i.member_name,
+            timestamp: new Date().toISOString(),
+            details: `Hard deleted invoice ${i.id} for ${i.member_name}, amount: ${i.total_amount} EGP`,
+          });
+        },
+        onError: (err) => toast.error(`Error deleting invoice: ${err.message}`),
+      });
     });
+
+    toast.success(`${invoicesToDelete.length} invoice(s) deleted`);
+    setConfirmDelete(null);
   };
 
   const counts = {
@@ -779,6 +845,13 @@ export default function Invoices() {
                         <TableCell className="text-sm font-medium text-muted-foreground">{shortId === -1 ? 'Clinic Visitor' : (shortId ?? '?')}</TableCell>
                         <TableCell className="font-medium text-sm">
                           {inv.member_name}
+                          {inv.id.startsWith("FREE-") && (
+                            <div className="mt-1">
+                              <span className="text-[10px] text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-md inline-block max-w-fit font-bold">
+                                Free Membership
+                              </span>
+                            </div>
+                          )}
                           {jointRelated.length > 0 && (
                             <div className="mt-1 flex flex-col gap-0.5">
                               {jointRelated.map(j => (
@@ -1043,7 +1116,9 @@ export default function Invoices() {
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    {!form.isFreeMembership && (
+                      <>
+                        <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label>Payment Method</Label>
                         <Select value={form.paymentMethod} onValueChange={v => {
@@ -1122,9 +1197,24 @@ export default function Invoices() {
                           </div>
                         ))}
                       </div>
+                        )}
+                      </>
                     )}
 
+                    {/* Free Membership Toggle */}
+                    <div className="flex items-center justify-between p-3 border rounded-md bg-emerald-50 border-emerald-100">
+                      <div>
+                        <Label className="text-emerald-800 font-bold">Free Membership</Label>
+                        <p className="text-xs text-emerald-600">Marks invoice as fully paid with 0 EGP</p>
+                      </div>
+                      <Switch 
+                        checked={form.isFreeMembership} 
+                        onCheckedChange={c => setForm(p => ({ ...p, isFreeMembership: c }))} 
+                      />
+                    </div>
+
                     {/* Custom Invoice ID */}
+                    {!form.isFreeMembership && (
                     <div className="space-y-1.5">
                       <Label>Custom Invoice ID</Label>
                       <Input
@@ -1133,6 +1223,7 @@ export default function Invoices() {
                         onChange={e => setForm(p => ({ ...p, customId: e.target.value }))}
                       />
                     </div>
+                    )}
 
                     {/* Invoice Date & Activation Date */}
                     <div className="grid grid-cols-2 gap-3">
@@ -1731,13 +1822,49 @@ export default function Invoices() {
             </DialogContent>
           </Dialog>
 
+          {/* Overpay Confirmation Dialog */}
+          <AlertDialog open={!!overpayConfirmAction} onOpenChange={o => !o && setOverpayConfirmAction(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirm Overpayment</AlertDialogTitle>
+                <AlertDialogDescription>
+                  <span className="block mb-2 font-bold text-amber-600">You are about to overpay for this package!</span>
+                  The entered paid amount is <strong>{overpayDetails?.paid.toLocaleString()} EGP</strong>, but the package total is only <strong>{overpayDetails?.total.toLocaleString()} EGP</strong>.
+                  <span className="block mt-2 text-sm text-muted-foreground">
+                    If you proceed, the system will automatically override the total amount to match your paid amount ({overpayDetails?.paid.toLocaleString()} EGP).
+                  </span>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setOverpayConfirmAction(null)}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    const action = overpayConfirmAction;
+                    setOverpayConfirmAction(null);
+                    if (action) action();
+                  }}
+                  className="bg-amber-600 text-white hover:bg-amber-700"
+                >
+                  Confirm Overpayment
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
           {/* Delete Invoice Confirmation */}
           <AlertDialog open={!!confirmDelete} onOpenChange={o => !o && setConfirmDelete(null)}>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete Invoice</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Permanently delete invoice <strong>{confirmDelete?.id}</strong> for {confirmDelete?.member_name}?
+                  {confirmDelete?.joint_invoice_group_id ? (
+                    <>
+                      <span className="block mb-2 font-bold text-red-600">WARNING: This is a Joint Invoice.</span>
+                      Deleting this will permanently delete ALL invoices in this joint group.
+                    </>
+                  ) : (
+                    <>Permanently delete invoice <strong>{confirmDelete?.id}</strong> for {confirmDelete?.member_name}?</>
+                  )}
                   <span className="block mt-1 text-sm">Amount: {confirmDelete?.total_amount.toLocaleString()} EGP</span>
                   <span className="block mt-2 text-red-600 font-medium">This action cannot be undone.</span>
                 </AlertDialogDescription>

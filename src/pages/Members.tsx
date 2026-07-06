@@ -54,6 +54,7 @@ interface MemberForm {
   freeze_days_remaining: string;
   invitations_remaining: string;
   inbody_sessions_remaining: string;
+  status: string;
 }
 
 const emptyForm: MemberForm = {
@@ -61,7 +62,8 @@ const emptyForm: MemberForm = {
   gender: "", classId: "", id: 0, customId: "", isClinicVisitor: false,
   sessions_remaining: "0",
   freeze_days_remaining: "0",
-  invitations_remaining: "0", inbody_sessions_remaining: "0"
+  invitations_remaining: "0", inbody_sessions_remaining: "0",
+  status: "active"
 };
 
 function memberToForm(m: Member): MemberForm {
@@ -76,6 +78,7 @@ function memberToForm(m: Member): MemberForm {
     freeze_days_remaining: String(m.freeze_days_remaining ?? 0),
     invitations_remaining: String(m.invitations_remaining ?? 0),
     inbody_sessions_remaining: String(m.inbody_sessions_remaining ?? 0),
+    status: m.status ?? "active",
   };
 }
 
@@ -199,6 +202,7 @@ export default function Members() {
         freeze_days_remaining: Number(form.freeze_days_remaining) || 0,
         invitations_remaining: Number(form.invitations_remaining) || 0,
         inbody_sessions_remaining: Number(form.inbody_sessions_remaining) || 0,
+        status: form.status as any,
       };
 
       if (!form.isClinicVisitor && editMember.id === -1) {
@@ -891,6 +895,24 @@ export default function Members() {
                     <Label>InBody Sessions</Label>
                     <Input type="number" value={form.inbody_sessions_remaining} onChange={e => setForm(p => ({ ...p, inbody_sessions_remaining: e.target.value }))} />
                   </div>
+                </div>
+              </div>
+            )}
+
+            {editMember && (
+              <div className="pt-4 mt-4 border-t space-y-4">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Status</h4>
+                <div className="space-y-1.5">
+                  <Select value={form.status} onValueChange={(val) => setForm({ ...form, status: val })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="frozen">Frozen</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             )}

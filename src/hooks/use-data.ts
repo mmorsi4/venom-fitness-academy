@@ -495,6 +495,20 @@ export function useUpsertFinanceBaseBalance() {
   });
 }
 
+// -- Global Settings --
+
+export function useGlobalSettings() {
+  return useQuery({ queryKey: ['globalSettings'], queryFn: q.getGlobalSettings });
+}
+
+export function useUpsertGlobalSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: Parameters<typeof q.upsertGlobalSettings>[0]) => q.upsertGlobalSettings(settings),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['globalSettings'] }),
+  });
+}
+
 // -- Coach Deductions --
 
 export function useCoachDeductions() {

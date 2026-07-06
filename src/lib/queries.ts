@@ -750,6 +750,20 @@ export async function upsertFinanceBaseBalance(balance: Omit<FinanceBaseBalance,
   return data as FinanceBaseBalance;
 }
 
+// ── Global Settings ────────────────────────────────────────
+
+export async function getGlobalSettings() {
+  const { data, error } = await supabase.from('global_settings').select('*').eq('id', 1).single();
+  if (error && error.code !== 'PGRST116') throw error;
+  return data as import('./types').GlobalSettings | null;
+}
+
+export async function upsertGlobalSettings(settings: Partial<import('./types').GlobalSettings>) {
+  const { data, error } = await supabase.from('global_settings').upsert({ id: 1, ...settings }).select().single();
+  if (error) throw error;
+  return data as import('./types').GlobalSettings;
+}
+
 // ── Coach Deductions ─────────────────────────────────────────
 
 export async function getCoachDeductions() {

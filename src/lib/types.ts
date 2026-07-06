@@ -294,6 +294,14 @@ export interface FinanceBaseBalance {
   created_at: string;
 }
 
+export interface GlobalSettings {
+  id: number;
+  finance_start_date: string | null;
+  finance_start_cash: number;
+  finance_start_visa: number;
+  finance_start_instapay: number;
+}
+
 export interface CoachDeduction {
   id: string;
   coach_id: string;
