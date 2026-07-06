@@ -18,7 +18,8 @@ import {
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { useExpenses, useLiabilities, useCoaches, useClasses, useCoachCheckInsForMonth, useMembers, useCreateExpense, useUpdateExpense, useDeleteExpense, useMarkCoachSessionsPaid, useDeleteExpenseWithRollback, useEmployees, useEmployeeCheckIns, useEmployeeDeductions, useCreateEmployeeDeduction } from "@/hooks/use-data";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useExpenses, useLiabilities, useCoaches, useClasses, useCoachCheckInsForMonth, useMembers, useCreateExpense, useUpdateExpense, useDeleteExpense, useMarkCoachSessionsPaid, useDeleteExpenseWithRollback, useEmployees, useEmployeeCheckIns, useEmployeeDeductions, useCreateEmployeeDeduction, useCoachDeductions, useDeleteCoachDeduction } from "@/hooks/use-data";
 import { calculateCoachPayroll } from "@/lib/utils";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -43,6 +44,7 @@ const emptyForm = {
   coachUnpaidIds: [] as string[],
   employeeId: "",
   employeeBonus: 0,
+  includeCoachAdjustments: false
 };
 
 export function ExpensesView() {
@@ -50,6 +52,7 @@ export function ExpensesView() {
   const { data: liabilities = [] } = useLiabilities();
   const createExpense = useCreateExpense();
   const markSessionsPaid = useMarkCoachSessionsPaid();
+  const deleteCoachDeduction = useDeleteCoachDeduction();
   const { data: coaches = [] } = useCoaches();
   const { data: classes = [] } = useClasses();
   const { data: coachCheckIns = [] } = useCoachCheckInsForMonth(new Date().getMonth(), new Date().getFullYear());
@@ -57,13 +60,20 @@ export function ExpensesView() {
   const { data: employees = [] } = useEmployees();
   const { data: employeeCheckIns = [] } = useEmployeeCheckIns(new Date().getMonth(), new Date().getFullYear());
   const { data: employeeDeductionsAll = [] } = useEmployeeDeductions();
+  const { data: coachDeductions = [] } = useCoachDeductions();
   const createEmployeeDeduction = useCreateEmployeeDeduction();
   const updateExpense = useUpdateExpense();
   const deleteExpense = useDeleteExpense();
   const deleteExpenseWithRollback = useDeleteExpenseWithRollback();
 
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ ...emptyForm, salaryTarget: 'coach' as 'coach' | 'employee' });
+  const [form, setForm] = useState({ 
+    ...emptyForm, 
+    salaryTarget: 'coach' as 'coach' | 'employee',
+    ptPayCount: 0,
+    groupMainPayCount: 0,
+    groupSubPayCount: 0
+  });
 
   // Edit/Delete
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
@@ -120,7 +130,7 @@ export function ExpensesView() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const resetForm = () => setForm(emptyForm);
+  const resetForm = () => setForm({ ...emptyForm, salaryTarget: 'coach', ptPayCount: 0, groupMainPayCount: 0, groupSubPayCount: 0 });
 
   const handleCategoryChange = (cat: string) => {
     setForm(p => ({
@@ -171,15 +181,21 @@ export function ExpensesView() {
     if (form.customId.trim()) payload.id = form.customId.trim();
 
     createExpense.mutate(payload, {
-      onSuccess: () => {
-        if (form.category === 'Salaries' && form.coachUnpaidIds?.length > 0) {
-          markSessionsPaid.mutate(form.coachUnpaidIds);
+      onSuccess: (createdExpense) => {
+        if (form.category === 'Salaries' && form.salaryTarget === 'coach' && form.coachUnpaidIds?.length > 0) {
+          markSessionsPaid.mutate({ ids: form.coachUnpaidIds, expenseId: createdExpense.uuid });
+        }
+        if (form.category === 'Salaries' && form.salaryTarget === 'coach' && form.includeCoachAdjustments && form.coachId) {
+          const now = new Date();
+          const monthDeductions = coachDeductions.filter(d => d.coach_id === form.coachId && new Date(d.date).getMonth() === now.getMonth() && new Date(d.date).getFullYear() === now.getFullYear());
+          monthDeductions.forEach(d => {
+            deleteCoachDeduction.mutate(d.id);
+          });
         }
         if (form.category === 'Salaries' && form.salaryTarget === 'employee' && form.employeeId && form.employeeBonus > 0) {
           createEmployeeDeduction.mutate({
             employee_id: form.employeeId,
             amount: form.employeeBonus,
-            date: new Date().toISOString(),
             reason: "Salary Manual Bonus"
           });
         }
@@ -199,6 +215,74 @@ export function ExpensesView() {
       },
       onError: (err) => toast.error(`Error recording expense: ${err.message}`)
     });
+  };
+
+  const handleCoachSelectionChange = (coachId: string, ptCount: number, mainCount: number, subCount: number, isInitial = false, includeAdjustments = false) => {
+    const coach = coaches.find(c => c.id === coachId);
+    if (!coach) return;
+    const now = new Date();
+    const checkInsThisMonth = coachCheckIns.filter(ci => new Date(ci.check_in_date).getMonth() === now.getMonth() && new Date(ci.check_in_date).getFullYear() === now.getFullYear());
+
+    const ptUnpaid = checkInsThisMonth.filter(ci => ci.coach_id === coachId && ci.session_type === 'pt' && !ci.is_paid).sort((a,b) => a.check_in_date.localeCompare(b.check_in_date));
+    const mainUnpaid = checkInsThisMonth.filter(ci => ci.coach_id === coachId && ci.session_type === 'group' && !ci.is_substitute && !ci.is_paid).sort((a,b) => a.check_in_date.localeCompare(b.check_in_date));
+    const subUnpaid = checkInsThisMonth.filter(ci => ci.coach_id === coachId && ci.session_type === 'group' && ci.is_substitute && !ci.is_paid).sort((a,b) => a.check_in_date.localeCompare(b.check_in_date));
+
+    const targetPtCount = isInitial ? ptUnpaid.length : ptCount;
+    const targetMainCount = isInitial ? mainUnpaid.length : mainCount;
+    const targetSubCount = isInitial ? subUnpaid.length : subCount;
+
+    const finalPtCount = Math.min(Math.max(0, targetPtCount), ptUnpaid.length);
+    const finalMainCount = Math.min(Math.max(0, targetMainCount), mainUnpaid.length);
+    const finalSubCount = Math.min(Math.max(0, targetSubCount), subUnpaid.length);
+
+    const selectedPt = ptUnpaid.slice(0, finalPtCount);
+    const selectedMain = mainUnpaid.slice(0, finalMainCount);
+    const selectedSub = subUnpaid.slice(0, finalSubCount);
+
+    let owed = 0;
+    const ptPct = coach.pt_percentage ?? 100;
+    const actualPtRate = (coach.pt_rate || 250) * (ptPct / 100);
+    if (coach.payment_type === 'per_session') {
+      owed = (finalMainCount + finalSubCount) * coach.rate + (finalPtCount * actualPtRate);
+    } else {
+      const stats = calculateCoachPayroll(coach, now.getMonth(), now.getFullYear(), classes, checkInsThisMonth, 0, 0, coachDeductions);
+      const originalScheduled = stats.scheduledSlotsInMonth + checkInsThisMonth.filter(ci => ci.coach_id === coachId && ci.session_type === 'group' && !ci.is_substitute && ci.is_paid).length;
+      const perSessionRate = originalScheduled > 0 ? (coach.rate / originalScheduled) : 0;
+      owed = (finalSubCount * perSessionRate) + (finalPtCount * actualPtRate);
+    }
+
+    const monthDeductions = coachDeductions.filter(d => d.coach_id === coachId && new Date(d.date).getMonth() === now.getMonth() && new Date(d.date).getFullYear() === now.getFullYear());
+    const netAdjustment = monthDeductions.reduce((s, d) => s + d.amount, 0);
+
+    const autoInclude = isInitial && finalPtCount === ptUnpaid.length && finalMainCount === mainUnpaid.length && finalSubCount === subUnpaid.length;
+    const finalIncludeAdjustments = isInitial ? autoInclude : includeAdjustments;
+
+    if (finalIncludeAdjustments && netAdjustment !== 0) {
+      owed += netAdjustment;
+    }
+
+    const ids = [...selectedPt, ...selectedMain, ...selectedSub].map(ci => ci.id);
+    const parts = [];
+    if (finalMainCount > 0) parts.push(`${finalMainCount} Group`);
+    if (finalSubCount > 0) parts.push(`${finalSubCount} Sub`);
+    if (finalPtCount > 0) parts.push(`${finalPtCount} PT`);
+    
+    let partsStr = parts.join(', ');
+    if (finalIncludeAdjustments && netAdjustment !== 0) {
+      partsStr += ` + ${netAdjustment > 0 ? 'Bonus' : 'Deduction'} (${netAdjustment} EGP)`;
+    }
+
+    setForm(p => ({
+      ...p,
+      coachId,
+      amount: String(Math.max(0, owed)),
+      coachUnpaidIds: ids,
+      ptPayCount: finalPtCount,
+      groupMainPayCount: finalMainCount,
+      groupSubPayCount: finalSubCount,
+      includeCoachAdjustments: finalIncludeAdjustments,
+      description: `Salary payment for ${coach.name} ${partsStr ? `(${partsStr})` : ''}`
+    }));
   };
 
   const handleSaveEdit = () => {
@@ -444,61 +528,60 @@ export function ExpensesView() {
                 </div>
 
                 {form.salaryTarget === 'coach' ? (
-                  <>
-                    <div className="space-y-1.5">
-                      <Label>Select Coach</Label>
-                      <Select value={form.coachId} onValueChange={(id) => {
-                        const coach = coaches.find(c => c.id === id);
-                        if (!coach) return;
-                        // Calculate payroll for current month
-                        const now = new Date();
-                        const checkInsThisMonth = coachCheckIns.filter(ci => new Date(ci.check_in_date).getMonth() === now.getMonth() && new Date(ci.check_in_date).getFullYear() === now.getFullYear());
-                        const monthlyRevenue = 0; // approximate, not used for standard coaches usually
-                        const newMembersThisMonth = 0;
-                        
-                        const stats = calculateCoachPayroll(coach, now.getMonth(), now.getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth);
-                        
-                        // Count unpaid sessions explicitly
-                        const ptUnpaid = checkInsThisMonth.filter(ci => ci.coach_id === id && ci.session_type === 'pt' && !ci.is_paid).length;
-                        const groupMainUnpaid = checkInsThisMonth.filter(ci => ci.coach_id === id && ci.session_type === 'group' && !ci.is_substitute && !ci.is_paid).length;
-                        const groupSubUnpaid = checkInsThisMonth.filter(ci => ci.coach_id === id && ci.session_type === 'group' && ci.is_substitute && !ci.is_paid).length;
-                        const totalUnpaid = ptUnpaid + groupMainUnpaid + groupSubUnpaid;
-                        
-                        // Calculate amount owed
-                        let owed = 0;
-                        if (coach.payment_type === 'per_session') {
-                          owed = (groupMainUnpaid + groupSubUnpaid) * coach.rate + (ptUnpaid * (coach.pt_rate || 250));
-                        } else {
-                          const originalScheduled = stats.scheduledSlotsInMonth + checkInsThisMonth.filter(ci => ci.coach_id === id && ci.session_type === 'group' && !ci.is_substitute && ci.is_paid).length;
-                          const perSessionRate = originalScheduled > 0 ? (coach.rate / originalScheduled) : 0;
-                          owed = (groupSubUnpaid * perSessionRate) + (ptUnpaid * (coach.pt_rate || 250));
-                        }
-
-                        // Add net adjustment
-                        owed += stats.netAdjustment || 0;
-
-                        setForm(p => ({ 
-                          ...p, 
-                          coachId: id, 
-                          amount: String(Math.max(0, owed)),
-                          description: `Salary payment for ${coach.name} (${totalUnpaid} sessions)`,
-                          coachUnpaidIds: stats.unpaidCheckInIds || []
-                        }));
-                      }}>
-                        <SelectTrigger><SelectValue placeholder="Select a coach..." /></SelectTrigger>
-                        <SelectContent>
-                          {coaches.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {form.coachId && (
-                      <div className="flex gap-4 mt-3">
-                        <div className="space-y-1.5 flex-1">
-                          <Label>Unpaid Sessions</Label>
-                          <Input readOnly value={form.coachUnpaidIds?.length || 0} className="bg-muted" />
-                        </div>
+                  <>                      <div className="space-y-1.5">
+                        <Label>Select Coach</Label>
+                        <Select value={form.coachId} onValueChange={(id) => handleCoachSelectionChange(id, 0, 0, 0, true)}>
+                          <SelectTrigger><SelectValue placeholder="Select a coach..." /></SelectTrigger>
+                          <SelectContent>
+                            {coaches.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
                       </div>
-                    )}
+                      {form.coachId && (() => {
+                        const monthDeductions = coachDeductions.filter(d => d.coach_id === form.coachId && new Date(d.date).getMonth() === new Date().getMonth() && new Date(d.date).getFullYear() === new Date().getFullYear());
+                        const netAdjustment = monthDeductions.reduce((s, d) => s + d.amount, 0);
+                        return (
+                        <div className="flex flex-col gap-3 mt-3 bg-muted/30 p-3 rounded-lg border">
+                          <p className="text-sm font-semibold mb-1">Select Sessions to Pay</p>
+                          <div className="flex items-center gap-4">
+                            <div className="space-y-1.5 flex-1">
+                              <Label>PT</Label>
+                              <div className="flex items-center gap-2">
+                                <Input type="number" min="0" value={form.ptPayCount} onChange={(e) => handleCoachSelectionChange(form.coachId, parseInt(e.target.value) || 0, form.groupMainPayCount, form.groupSubPayCount, false, form.includeCoachAdjustments)} />
+                                <span className="text-sm text-muted-foreground whitespace-nowrap">/ {coachCheckIns.filter(ci => ci.coach_id === form.coachId && ci.session_type === 'pt' && !ci.is_paid).length}</span>
+                              </div>
+                            </div>
+                            <div className="space-y-1.5 flex-1">
+                              <Label>Group</Label>
+                              <div className="flex items-center gap-2">
+                                <Input type="number" min="0" value={form.groupMainPayCount} onChange={(e) => handleCoachSelectionChange(form.coachId, form.ptPayCount, parseInt(e.target.value) || 0, form.groupSubPayCount, false, form.includeCoachAdjustments)} />
+                                <span className="text-sm text-muted-foreground whitespace-nowrap">/ {coachCheckIns.filter(ci => ci.coach_id === form.coachId && ci.session_type === 'group' && !ci.is_substitute && !ci.is_paid).length}</span>
+                              </div>
+                            </div>
+                            <div className="space-y-1.5 flex-1">
+                              <Label>Substitute</Label>
+                              <div className="flex items-center gap-2">
+                                <Input type="number" min="0" value={form.groupSubPayCount} onChange={(e) => handleCoachSelectionChange(form.coachId, form.ptPayCount, form.groupMainPayCount, parseInt(e.target.value) || 0, false, form.includeCoachAdjustments)} />
+                                <span className="text-sm text-muted-foreground whitespace-nowrap">/ {coachCheckIns.filter(ci => ci.coach_id === form.coachId && ci.session_type === 'group' && ci.is_substitute && !ci.is_paid).length}</span>
+                              </div>
+                            </div>
+                          </div>
+                          {monthDeductions.length > 0 && (
+                            <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+                              <Checkbox 
+                                checked={form.includeCoachAdjustments}
+                                onCheckedChange={(c) => {
+                                  const isChecked = !!c;
+                                  handleCoachSelectionChange(form.coachId, form.ptPayCount, form.groupMainPayCount, form.groupSubPayCount, false, isChecked);
+                                }}
+                              />
+                              <Label className="text-sm cursor-pointer" onClick={() => handleCoachSelectionChange(form.coachId, form.ptPayCount, form.groupMainPayCount, form.groupSubPayCount, false, !form.includeCoachAdjustments)}>
+                                Include Month's Adjustments ({netAdjustment > 0 ? '+' : ''}{netAdjustment} EGP)
+                              </Label>
+                            </div>
+                          )}
+                        </div>
+                      )})()}
                   </>
                 ) : (
                   <>

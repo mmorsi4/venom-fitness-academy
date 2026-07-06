@@ -24,7 +24,11 @@ export function calculateCoachPayroll(
   const allDays = eachDayOfInterval({ start, end });
   const today = startOfDay(new Date());
 
-  const coachDeductions = deductions.filter(d => d.coach_id === coach.id);
+  const coachDeductions = deductions.filter(d => {
+    if (d.coach_id !== coach.id) return false;
+    const dDate = new Date(d.date);
+    return dDate.getMonth() === month && dDate.getFullYear() === year;
+  });
   const netAdjustment = coachDeductions.reduce((s, d) => s + d.amount, 0);
   const totalForgivenSessions = coachDeductions.reduce((s, d) => s + d.forgiven_sessions, 0);
 
@@ -77,7 +81,10 @@ export function calculateCoachPayroll(
   let deduction = 0;
   let finalAmount = 0;
   
-  const ptAmount = unpaidPtCheckIns.length * (coach.pt_rate || 250);
+  const ptPct = coach.pt_percentage ?? 100;
+  const actualPtRate = (coach.pt_rate || 250) * (ptPct / 100);
+
+  const ptAmount = unpaidPtCheckIns.length * actualPtRate;
 
   missedSessions = Math.max(0, missedSessions - totalForgivenSessions);
 
@@ -93,10 +100,10 @@ export function calculateCoachPayroll(
     
     finalAmount = Math.max(0, baseAmount - deduction) + subExtraPay + ptAmount;
 
-    expectedAmount = coach.rate + (groupCheckInsAsSub.length * perSessionRate) + (ptCheckIns.length * (coach.pt_rate || 250));
+    expectedAmount = coach.rate + (groupCheckInsAsSub.length * perSessionRate) + (ptCheckIns.length * actualPtRate);
     // Paid amount for salary coaches is hard to derive just from checkins because base salary is paid as a lump sum.
     // For now, we calculate paid based on the value of paid checkins plus any advances.
-    const paidPt = ptCheckIns.filter(ci => ci.is_paid).length * (coach.pt_rate || 250);
+    const paidPt = ptCheckIns.filter(ci => ci.is_paid).length * actualPtRate;
     const paidSub = groupCheckInsAsSub.filter(ci => ci.is_paid).length * perSessionRate;
     // Net adjustment (bonuses - deductions) is effectively an adjustment to what they are owed.
     // So if they had a deduction (negative), it lowers what they are owed.
@@ -108,8 +115,8 @@ export function calculateCoachPayroll(
     deduction = 0;
     finalAmount = baseAmount + ptAmount; 
 
-    expectedAmount = (groupCheckInsAsMain.length + groupCheckInsAsSub.length) * coach.rate + (ptCheckIns.length * (coach.pt_rate || 250));
-    paidAmount = (paidGroupMain.length + groupCheckInsAsSub.filter(ci => ci.is_paid).length) * coach.rate + (ptCheckIns.filter(ci => ci.is_paid).length * (coach.pt_rate || 250)) - netAdjustment;
+    expectedAmount = (groupCheckInsAsMain.length + groupCheckInsAsSub.length) * coach.rate + (ptCheckIns.length * actualPtRate);
+    paidAmount = (paidGroupMain.length + groupCheckInsAsSub.filter(ci => ci.is_paid).length) * coach.rate + (ptCheckIns.filter(ci => ci.is_paid).length * actualPtRate) - netAdjustment;
   }
   finalAmount = Math.max(0, finalAmount + netAdjustment);
   
@@ -124,8 +131,8 @@ export function calculateCoachPayroll(
     calculatedAmount: Math.round(finalAmount),
     expectedAmount: Math.round(expectedAmount),
     paidAmount: Math.round(paidAmount),
-    ptCheckIns: ptCheckIns.length,
-    subCheckIns: groupCheckInsAsSub.length,
+    ptCheckIns: unpaidPtCheckIns.length,
+    subCheckIns: unpaidGroupSub.length,
     unpaidCheckInIds: [...unpaidGroupMain, ...unpaidGroupSub, ...unpaidPtCheckIns].map(ci => ci.id)
   };
 }

@@ -353,6 +353,13 @@ export async function updateCoach(id: string, updates: Partial<Coach>) {
   return data as Coach;
 }
 
+export async function deleteCoach(id: string, name: string) {
+  // Delete any salary expenses associated with this coach
+  await supabase.from('expenses').delete().ilike('description', `Salary payment for ${name}%`);
+  const { error } = await supabase.from('coaches').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function getCoachCheckInsToday() {
   const today = new Date().toISOString().split('T')[0];
   const { data, error } = await supabase
@@ -786,33 +793,20 @@ export async function deleteCoachDeduction(id: string) {
 }
 
 
-export async function markCoachSessionsPaid(checkInIds: string[]) {
+export async function markCoachSessionsPaid(checkInIds: string[], expenseId?: string) {
   if (!checkInIds.length) return;
   const { error } = await supabase.from('coach_check_ins')
-    .update({ is_paid: true })
+    .update({ is_paid: true, expense_uuid: expenseId || null })
     .in('id', checkInIds);
   if (error) throw error;
 }
 
 export async function unmarkCoachSessionsPaidForExpense(expenseId: string, coachId: string) {
-  // When deleting a salary expense for a coach, find the check-ins paid around that time
-  // and reset them to unpaid. We unmark the most recent paid check-ins for this coach.
-  const { data: expense } = await supabase.from('expenses').select('*').eq('uuid', expenseId).single();
-  if (!expense) return;
-  
-  // Get paid check-ins for this coach that are not tied to other expenses
-  const { data: checkIns } = await supabase
-    .from('coach_check_ins')
-    .select('id')
-    .eq('coach_id', coachId)
-    .eq('is_paid', true);
-    
-  if (!checkIns || !checkIns.length) return;
-  
-  // Reset all paid sessions for this coach to unpaid (rollback)
-  const ids = checkIns.map((ci: any) => ci.id);
+  // Reset sessions paid specifically by this expense to unpaid
   const { error } = await supabase.from('coach_check_ins')
-    .update({ is_paid: false })
-    .in('id', ids);
+    .update({ is_paid: false, expense_uuid: null })
+    .eq('expense_uuid', expenseId)
+    .eq('coach_id', coachId);
+  
   if (error) throw error;
 }

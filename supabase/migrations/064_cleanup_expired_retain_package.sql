@@ -1,4 +1,4 @@
--- 1. Update the cron cleanup function to also catch members who reached 0 sessions
+-- Update the cron cleanup function to retain package_id and package_name so they remain visible for reference
 CREATE OR REPLACE FUNCTION public.cleanup_expired_subscriptions()
 RETURNS void AS $$
 BEGIN
@@ -16,5 +16,5 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 2. Run the cleanup immediately to fix any currently stuck members (like Amr Ibrahim)
+-- Run it immediately to apply the fix
 SELECT public.cleanup_expired_subscriptions();

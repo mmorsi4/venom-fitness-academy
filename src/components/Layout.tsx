@@ -33,7 +33,7 @@ const ALL_NAV_ITEMS = [
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const { currentUser, logout } = useAuth();
   const { data: liabilities = [] } = useLiabilities();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -48,6 +48,18 @@ export default function Layout({ children }: { children: ReactNode }) {
   const allowedHrefs = Array.from(new Set(currentUser.roles.flatMap(r => r.tabs)));
   const navItems = ALL_NAV_ITEMS.filter(item => allowedHrefs.includes(item.href));
   
+  // Route protection
+  useEffect(() => {
+    if (location === '/' && !allowedHrefs.includes('/')) {
+      if (allowedHrefs.length > 0) {
+        setLocation(allowedHrefs[0]);
+      }
+    }
+  }, [location, allowedHrefs, setLocation]);
+
+  const isKnownRoute = ALL_NAV_ITEMS.some(item => item.href === location);
+  const isAllowed = !isKnownRoute || allowedHrefs.includes(location);
+
   const canViewLiabilities = allowedHrefs.includes('/finance') || allowedHrefs.includes('/liabilities');
 
   const dueLiabilities = liabilities.filter(l => {
@@ -195,7 +207,25 @@ export default function Layout({ children }: { children: ReactNode }) {
         })}
 
         <div className="flex-1">
-          {children}
+          {isAllowed ? children : (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center p-8 bg-white border border-gray-200 rounded-xl shadow-sm max-w-md">
+                <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                <h2 className="text-xl font-bold text-gray-900 mb-2">Access Denied</h2>
+                <p className="text-gray-500 mb-6">
+                  You do not have permission to view this page. If you believe this is an error, please contact your administrator.
+                </p>
+                {allowedHrefs.length > 0 && (
+                  <button
+                    onClick={() => setLocation(allowedHrefs[0])}
+                    className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 transition-colors"
+                  >
+                    Go to {ALL_NAV_ITEMS.find(i => i.href === allowedHrefs[0])?.label || 'Homepage'}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>

@@ -102,6 +102,7 @@ export interface Invoice {
   paid_amount: number;
   status: InvoiceStatus;
   payment_method: PaymentMethod;
+  notes?: string | null;
   split_payments?: { method: PaymentMethod; amount: number }[] | null;
   created_at: string;
   activation_date: string;
@@ -131,6 +132,7 @@ export interface Coach {
   rate: number;
   pt_sessions_done: number;
   pt_rate: number;
+  pt_percentage?: number;
   user_id?: string | null;
   created_at: string;
 }
@@ -211,6 +213,7 @@ export interface CoachCheckIn {
   session_type: 'group' | 'pt';
   member_uuid?: string | null;
   is_paid: boolean;
+  expense_uuid?: string | null;
   created_at: string;
 }
 

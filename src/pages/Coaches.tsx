@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckCircle2, Clock, Dumbbell, DollarSign, Plus, Pencil } from "lucide-react";
+import { CheckCircle2, Clock, Dumbbell, DollarSign, Plus, Pencil, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,8 +13,8 @@ import {
 } from "@/components/ui/select";
 import { 
   useCoaches, useInvoices, useMembers, 
-  useCreateCoach, useUpdateCoach, 
-  useCoachCheckInsToday, useCheckInCoach, useCheckInCoachWithDetails,
+  useCreateCoach, useUpdateCoach, useDeleteCoach, 
+  useCoachCheckInsToday,
   useCoachCheckInsForMonth, useCoachHistory, useClasses,
   useCoachDeductions, useCreateCoachDeduction, useDeleteCoachDeduction
 } from "@/hooks/use-data";
@@ -37,9 +37,11 @@ interface CoachForm {
   phone: string;
   paymentType: "salary" | "per_session";
   rate: string;
+  ptPercentage: string;
+  ptRate: string;
 }
 
-const emptyForm: CoachForm = { name: "", phone: "", paymentType: "salary", rate: "" };
+const emptyForm: CoachForm = { name: "", phone: "", paymentType: "per_session", rate: "", ptPercentage: "100", ptRate: "250" };
 export default function Coaches() {
   const { isAdmin, users } = useAuth();
   const { data: coaches = [] } = useCoaches();
@@ -52,14 +54,13 @@ export default function Coaches() {
 
   const createCoach = useCreateCoach();
   const updateCoach = useUpdateCoach();
-  const checkInMutation = useCheckInCoach();
-  const checkInWithDetails = useCheckInCoachWithDetails();
+  const deleteCoach = useDeleteCoach();
   const createDeduction = useCreateCoachDeduction();
   const deleteDeduction = useDeleteCoachDeduction();
 
-  const [checkInModal, setCheckInModal] = useState(false);
   const [showCoachDialog, setShowCoachDialog] = useState(false);
   const [editCoach, setEditCoach] = useState<Coach | null>(null);
+  const [deleteCoachData, setDeleteCoachData] = useState<Coach | null>(null);
   const [form, setForm] = useState<CoachForm>(emptyForm);
 
   // Deductions State
@@ -72,11 +73,6 @@ export default function Coaches() {
   const { data: history = [] } = useCoachHistory(historyCoach?.id);
   const [coachSearch, setCoachSearch] = useState("");
   const [mainCoachSearch, setMainCoachSearch] = useState("");
-
-  const [selectedClass, setSelectedClass] = useState<string | null>(null);
-  const [selectedCoachId, setSelectedCoachId] = useState<string | null>(null); // who actually did the session
-  const [classCheckInCoach, setClassCheckInCoach] = useState<Coach | null>(null);
-  const [selectedClassId, setSelectedClassId] = useState<string>("none");
 
   const todayName = DAYS[new Date().getDay()];
   const todaysClasses = classes
@@ -102,14 +98,6 @@ export default function Coaches() {
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   }).length;
 
-  const handleManualCheckIn = () => {
-    if (!selectedClass || !selectedCoachId) { toast.error("Select class and coach"); return; }
-    checkInWithDetails.mutate({ coachId: selectedCoachId, classId: selectedClass }, {
-      onSuccess: () => { toast.success("Checked in successfully"); setCheckInModal(false); },
-      onError: (err) => toast.error(`Error: ${err.message}`)
-    });
-  };
-
   const handleAddDeduction = () => {
     if (!deductionsModalCoach || !deductionAmount) return;
     const amt = Number(deductionAmount);
@@ -134,63 +122,10 @@ export default function Coaches() {
     });
   };
 
-  const openClassCheckIn = (coach: Coach) => {
-    setClassCheckInCoach(coach);
-    setSelectedClassId("none");
-  };
-
-  // New: submit check-in for today's class, with optional substitute selection
-  const submitTodayClassCheckIn = (classId: string, coachId: string, mainCoachId: string) => {
-    const isSubstitute = coachId !== mainCoachId;
-    checkInWithDetails.mutate({
-      coachId,
-      classId,
-      isSubstitute,
-      originalCoachId: isSubstitute ? mainCoachId : undefined,
-      sessionType: 'group',
-    }, {
-      onSuccess: () => {
-        const coach = coaches.find(c => c.id === coachId);
-        toast.success(isSubstitute
-          ? `Substitute check-in: ${coach?.name} covered the class`
-          : `${coach?.name} checked in for their class`);
-        setSelectedClass(null); setSelectedCoachId(null);
-      },
-      onError: (err) => toast.error(`Failed: ${err.message}`)
-    });
-  };
-
-  const submitClassCheckIn = () => {
-    if (!classCheckInCoach) return;
-    if (selectedClassId === "none") {
-      checkInMutation.mutate({ coachId: classCheckInCoach.id, classId: undefined }, {
-        onSuccess: () => { toast.success(`${classCheckInCoach.name} checked in (General)`); setClassCheckInCoach(null); },
-        onError: (err) => toast.error(`Failed to check in: ${err.message}`)
-      });
-      return;
-    }
-    const classData = classes.find(c => c.id === selectedClassId);
-    if (!classData) return;
-    const scheduledSlotsForToday = classData.schedules.filter(s => s.day === todayName).length;
-    if (scheduledSlotsForToday === 0) {
-      toast.error(`This class is not scheduled for today (${todayName}).`);
-      return;
-    }
-    const checkInsForThisClassToday = checkIns.filter(ci => ci.coach_id === classCheckInCoach.id && ci.class_id === selectedClassId).length;
-    if (checkInsForThisClassToday >= scheduledSlotsForToday) {
-      toast.error(`Coach has already checked in ${checkInsForThisClassToday} time(s) for this class today.`);
-      return;
-    }
-    checkInMutation.mutate({ coachId: classCheckInCoach.id, classId: selectedClassId }, {
-      onSuccess: () => { toast.success(`${classCheckInCoach.name} checked in`); setClassCheckInCoach(null); },
-      onError: (err) => toast.error(`Failed to check in: ${err.message}`)
-    });
-  };
-
   const openAdd = () => { setForm(emptyForm); setEditCoach(null); setShowCoachDialog(true); };
   const openEdit = (c: Coach) => {
     setEditCoach(c);
-    setForm({ name: c.name, phone: c.phone || "", paymentType: c.payment_type as "salary" | "per_session", rate: String(c.rate) });
+    setForm({ name: c.name, phone: c.phone || "", paymentType: c.payment_type as "salary" | "per_session", rate: String(c.rate), ptPercentage: String(c.pt_percentage ?? 100), ptRate: String(c.pt_rate ?? 250) });
     setShowCoachDialog(true);
   };
   const closeDialog = () => { setShowCoachDialog(false); setEditCoach(null); };
@@ -207,6 +142,8 @@ export default function Coaches() {
           phone: form.phone.trim(),
           payment_type: form.paymentType,
           rate: Number(form.rate),
+          pt_percentage: Number(form.ptPercentage),
+          pt_rate: Number(form.ptRate) || 250,
         }
       }, {
         onSuccess: () => {
@@ -222,7 +159,8 @@ export default function Coaches() {
         payment_type: form.paymentType,
         rate: Number(form.rate),
         pt_sessions_done: 0,
-        pt_rate: 250,
+        pt_rate: Number(form.ptRate) || 250,
+        pt_percentage: Number(form.ptPercentage),
       }, {
         onSuccess: () => {
           toast.success(`Coach added: ${form.name}`);
@@ -231,6 +169,17 @@ export default function Coaches() {
         onError: (err) => toast.error(`Error adding: ${err.message}`)
       });
     }
+  };
+
+  const handleDelete = () => {
+    if (!deleteCoachData) return;
+    deleteCoach.mutate({ id: deleteCoachData.id, name: deleteCoachData.name }, {
+      onSuccess: () => {
+        toast.success(`Coach deleted: ${deleteCoachData.name}`);
+        setDeleteCoachData(null);
+      },
+      onError: (err) => toast.error(`Error deleting coach: ${err.message}`)
+    });
   };
 
   return (
@@ -252,9 +201,6 @@ export default function Coaches() {
               <Plus className="w-4 h-4" /> Add
             </Button>
           )}
-          <Button data-testid="btn-coach-checkin-modal" onClick={() => setCheckInModal(true)} className="gap-2">
-            <CheckCircle2 className="w-4 h-4" /> Check-In
-          </Button>
         </div>
       </div>
 
@@ -301,6 +247,9 @@ export default function Coaches() {
                       <button onClick={() => openEdit(coach)} className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground">
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
+                      <button onClick={() => setDeleteCoachData(coach)} className="p-1 rounded hover:bg-red-50 hover:text-red-600 transition-colors text-muted-foreground">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -329,26 +278,28 @@ export default function Coaches() {
                     <span className="text-base font-bold">{stats.calculatedAmount.toLocaleString()} EGP</span>
                   </div>
                   {stats.missedSessions > 0 && coach.payment_type === 'salary' && stats.deduction > 0 && (
-                    <div className="text-xs text-red-500 font-semibold mt-1">
-                      Deducted {Math.round(stats.deduction).toLocaleString()} EGP for {stats.missedSessions} missed session(s)
-                    </div>
-                  )}
-                  {stats.totalAdvances > 0 && (
-                    <div className="text-xs text-orange-500 font-semibold mt-1">
-                      Deducted {Math.round(stats.totalAdvances).toLocaleString()} EGP for advances
-                    </div>
-                  )}
-                  {coach.payment_type === 'per_session' && stats.missedSessions === 0 && <p className="text-xs text-muted-foreground mt-1">{sessions} sessions × {coach.rate} EGP</p>}
-                </div>
-                <div className="grid grid-cols-3 gap-2">
+                      <div className="text-xs text-red-500 font-semibold mt-1">
+                        Deducted {Math.round(stats.deduction).toLocaleString()} EGP for {stats.missedSessions} missed session(s)
+                      </div>
+                    )}
+                    {stats.netAdjustment < 0 && (
+                      <div className="text-xs text-orange-500 font-semibold mt-1">
+                        Deducted {Math.round(Math.abs(stats.netAdjustment)).toLocaleString()} EGP for adjustments
+                      </div>
+                    )}
+                    {stats.netAdjustment > 0 && (
+                      <div className="text-xs text-emerald-500 font-semibold mt-1">
+                        Added {Math.round(stats.netAdjustment).toLocaleString()} EGP for adjustments
+                      </div>
+                    )}
+                    {coach.payment_type === 'per_session' && stats.missedSessions === 0 && <p className="text-xs text-muted-foreground mt-1">{sessions} sessions — {coach.rate} EGP/session</p>}
+                  </div>
+                <div className="grid grid-cols-2 gap-2">
                   <Button data-testid={`btn-deductions-coach-${coach.id}`} variant="outline" size="sm" className="w-full gap-2 text-xs px-1" onClick={() => setDeductionsModalCoach(coach)}>
                     <DollarSign className="w-3.5 h-3.5" /> Adjust
                   </Button>
                   <Button variant="outline" size="sm" className="w-full gap-2 text-xs px-1" onClick={() => setHistoryCoach(coach)}>
                     <Clock className="w-3.5 h-3.5" /> History
-                  </Button>
-                  <Button data-testid={`btn-checkin-coach-${coach.id}`} variant="outline" size="sm" className="w-full gap-2 text-xs px-1" onClick={() => openClassCheckIn(coach)}>
-                    <Dumbbell className="w-3.5 h-3.5" /> Check In
                   </Button>
                 </div>
               </CardContent>
@@ -412,136 +363,26 @@ export default function Coaches() {
         </CardContent>
       </Card>
 
-      <Dialog open={checkInModal} onOpenChange={setCheckInModal}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Coach Check-In — {todayName}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2 max-h-[70vh] overflow-y-auto pr-1">
-            {todaysClasses.length === 0 ? (
-              <p className="text-center text-muted-foreground py-6">No classes scheduled for today.</p>
-            ) : todaysClasses.map(cls => {
-              const mainCoach = coaches.find(c => c.id === cls.coach_id);
-              const timeSlot = (cls.schedules || []).find(s => s.day === todayName)?.time;
-              const checkedInForClass = checkIns.filter(ci => ci.class_id === cls.id);
-              const alreadyDone = checkedInForClass.length > 0;
-
-              return (
-                <div key={cls.id} className={`rounded-xl border p-4 space-y-3 ${alreadyDone ? 'bg-emerald-50 border-emerald-200' : 'bg-card'}`}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-foreground">{cls.name}</p>
-                      <p className="text-xs text-muted-foreground">{timeSlot} · {cls.sport_name || 'General'}</p>
-                    </div>
-                    {alreadyDone ? (
-                      <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
-                        ✓ Done — {coaches.find(c => c.id === checkedInForClass[0]?.coach_id)?.name}
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-amber-600 border-amber-300">Pending</Badge>
-                    )}
-                  </div>
-
-                  {!alreadyDone && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Who taught this session?</p>
-                      {/* Main coach first */}
-                      {mainCoach && (
-                        <button
-                          key={mainCoach.id}
-                          onClick={() => submitTodayClassCheckIn(cls.id, mainCoach.id, mainCoach.id)}
-                          className="w-full flex items-center justify-between p-2.5 rounded-lg border-2 border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors"
-                          disabled={checkInWithDetails.isPending}
-                        >
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
-                              <span className="text-xs font-bold text-primary">{mainCoach.name.charAt(0)}</span>
-                            </div>
-                            <span className="text-sm font-medium">{mainCoach.name}</span>
-                            <Badge className="text-xs bg-primary/10 text-primary border-primary/20">Main Coach</Badge>
-                          </div>
-                          <span className="text-xs text-primary font-medium">✓ Check In</span>
-                        </button>
-                      )}
-                      {/* Other coaches as substitutes */}
-                      {coaches.filter(c => c.id !== cls.coach_id).map(sub => (
-                        <button
-                          key={sub.id}
-                          onClick={() => submitTodayClassCheckIn(cls.id, sub.id, cls.coach_id || sub.id)}
-                          className="w-full flex items-center justify-between p-2.5 rounded-lg border border-input bg-card hover:bg-accent transition-colors"
-                          disabled={checkInWithDetails.isPending}
-                        >
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center">
-                              <span className="text-xs font-bold text-muted-foreground">{sub.name.charAt(0)}</span>
-                            </div>
-                            <span className="text-sm">{sub.name}</span>
-                            <span className="text-xs text-muted-foreground">(Substitute)</span>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCheckInModal(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!classCheckInCoach} onOpenChange={(o) => !o && setClassCheckInCoach(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Check In: {classCheckInCoach?.name}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Select Class</Label>
-              <Select value={selectedClassId} onValueChange={setSelectedClassId}>
-                <SelectTrigger><SelectValue placeholder="Select a class" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">General Check-In (No specific class)</SelectItem>
-                  {classCheckInCoach && classes.filter(c => c.coach_id === classCheckInCoach.id).map(cls => (
-                    <SelectItem key={cls.id} value={cls.id}>
-                      {cls.name} ({cls.sport_name})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setClassCheckInCoach(null)}>Cancel</Button>
-            <Button onClick={submitClassCheckIn} disabled={checkInMutation.isPending}>Submit Check-In</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-
       <Dialog open={showCoachDialog} onOpenChange={o => !o && closeDialog()}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>{editCoach ? `Edit: ${editCoach.name}` : 'Add Coach'}</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5"><Label>Name</Label><Input placeholder="Coach name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
-            <div className="space-y-1.5"><Label>Phone</Label><Input placeholder="01XXXXXXXXX" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></div>
-            <div className="space-y-1.5">
-              <Label>Payment Type</Label>
-              <Select value={form.paymentType} onValueChange={(v: "salary" | "per_session") => setForm(p => ({ ...p, paymentType: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="salary">Monthly Salary</SelectItem>
-                  <SelectItem value="per_session">Per Session</SelectItem>
-                </SelectContent>
-              </Select>
+          <div className="space-y-4 py-2">              <div className="space-y-1.5"><Label>Name</Label><Input placeholder="Coach name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Phone</Label><Input placeholder="01XXXXXXXXX" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>Group Session Rate (EGP)</Label>
+                  <Input type="number" placeholder="0" value={form.rate} onChange={e => setForm(p => ({ ...p, rate: e.target.value }))} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Base PT Rate (EGP)</Label>
+                  <Input type="number" placeholder="250" value={form.ptRate} onChange={e => setForm(p => ({ ...p, ptRate: e.target.value }))} />
+                </div>
+                <div className="space-y-1.5 col-span-2">
+                  <Label>PT Percentage (%)</Label>
+                  <Input type="number" min="0" max="100" placeholder="100" value={form.ptPercentage} onChange={e => setForm(p => ({ ...p, ptPercentage: e.target.value }))} />
+                </div>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>{form.paymentType === 'salary' ? 'Monthly Rate (EGP)' : 'Rate per Session (EGP)'}</Label>
-              <Input type="number" placeholder="0" value={form.rate} onChange={e => setForm(p => ({ ...p, rate: e.target.value }))} />
-            </div>
-          </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>Cancel</Button>
             <Button onClick={handleSave} disabled={createCoach.isPending || updateCoach.isPending}>
@@ -681,6 +522,34 @@ export default function Coaches() {
               );
             })}
           </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!deleteCoachData} onOpenChange={(open) => !open && setDeleteCoachData(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Coach</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to delete <strong>{deleteCoachData?.name}</strong>?
+            </p>
+            <div className="bg-red-50 text-red-700 p-3 rounded-md text-sm">
+              <p className="font-semibold mb-1">Warning: Cascade Deletion</p>
+              <p>This will also permanently delete:</p>
+              <ul className="list-disc list-inside mt-1">
+                <li>All their check-ins (sessions)</li>
+                <li>All recorded salary expenses for them</li>
+                <li>All manual adjustments (bonuses/deductions)</li>
+              </ul>
+              <p className="mt-2">This action cannot be undone.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteCoachData(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleteCoach.isPending}>
+              {deleteCoach.isPending ? "Deleting..." : "Delete Coach"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -25,7 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { ExpensesView } from "@/components/ExpensesView";
-import { useInvoices, usePackages, useMembers, useDiscounts, useCreateInvoice, useUpdateInvoice, useDeleteInvoice, useCreateAuditLog, useClasses, useCreateJointInvoiceGroup } from "@/hooks/use-data";
+import { useInvoices, usePackages, useMembers, useDiscounts, useCreateInvoice, useUpdateInvoice, useDeleteInvoice, useCreateAuditLog, useClasses, useCreateJointInvoiceGroup, useUpdateMember } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
 import type { Invoice } from "@/lib/types";
 import { toast } from "sonner";
@@ -52,6 +52,7 @@ const emptyForm = {
   invoiceDate: "",
   activationDate: "",
   customId: "",
+  notes: "",
   splitPayments: [] as { method: string, amount: string }[],
   isFreeMembership: false,
   jointMembersData: [] as {
@@ -69,6 +70,7 @@ export default function Invoices() {
   const createInvoice = useCreateInvoice();
   const updateInvoice = useUpdateInvoice();
   const deleteInvoice = useDeleteInvoice();
+  const updateMember = useUpdateMember();
   const createAuditLog = useCreateAuditLog();
   const createJointGroup = useCreateJointInvoiceGroup();
   const { currentUser } = useAuth();
@@ -129,6 +131,7 @@ export default function Invoices() {
     activationDate: "",
     invoiceDate: "",
     customId: "",
+    notes: "",
     isFreeMembership: false,
   });
 
@@ -465,6 +468,7 @@ export default function Invoices() {
           paid_amount: memPaid,
           status: memInvStatus,
           payment_method: memPaymentMethod as any,
+          notes: form.notes.trim() || null,
           split_payments: memPaymentMethod === 'Split' ? memSplitPayments.map((sp: any) => ({ method: sp.method as any, amount: Number(sp.amount) || 0 })) : null,
           created_at: data.invoiceDate ? new Date(data.invoiceDate).toISOString() : new Date().toISOString(),
           activation_date: data.activationDate ? new Date(data.activationDate).toISOString() : (data.invoiceDate ? new Date(data.invoiceDate).toISOString() : new Date().toISOString()),
@@ -517,6 +521,8 @@ export default function Invoices() {
       activationDate: inv.activation_date ? inv.activation_date.split('T')[0] : "",
       invoiceDate: inv.created_at ? inv.created_at.split('T')[0] : "",
       customId: inv.id,
+      notes: inv.notes || "",
+      isFreeMembership: false,
     });
   };
 
@@ -530,7 +536,8 @@ export default function Invoices() {
       toast.error("Enter a valid payment amount");
       return;
     }
-    const remaining = paymentModalInvoice.total_amount - paymentModalInvoice.paid_amount;
+    const actualPaid = paymentModalInvoice ? getActualPaidAmount(paymentModalInvoice) : 0;
+    const remaining = paymentModalInvoice.total_amount - actualPaid;
     if (payment > remaining) {
       // Allow small overrides but warn
       toast.info(`Note: Payment is ${(payment - remaining).toLocaleString()} EGP over the remaining balance. Proceeding as override.`);
@@ -540,7 +547,7 @@ export default function Invoices() {
       member_id: paymentModalInvoice.member_id,
       member_name: paymentModalInvoice.member_name,
       package_id: null,
-      package_name: `Payment Completion: ${paymentModalInvoice.package_name || 'Invoice'}`,
+      package_name: `Payment Completion: ${paymentModalInvoice.id}`,
       class_id: paymentModalInvoice.class_id,
       paid_amount: payment,
       total_amount: payment,
@@ -555,12 +562,12 @@ export default function Invoices() {
     } as any, {
       onSuccess: () => {
         // Now update the original invoice's paid amount
-        const newPaidAmount = paymentModalInvoice.paid_amount + payment;
+        const actualPaidSoFar = getActualPaidAmount(paymentModalInvoice);
+        const newPaidAmount = actualPaidSoFar + payment;
         const newStatus = newPaidAmount >= paymentModalInvoice.total_amount ? 'paid' : 'partial';
         updateInvoice.mutate({
           uuid: paymentModalInvoice.uuid,
           updates: {
-            paid_amount: newPaidAmount,
             status: newStatus
           }
         }, {
@@ -644,6 +651,7 @@ export default function Invoices() {
         paid_amount: newPaid,
         payment_method: editForm.paymentMethod as any,
         split_payments: editForm.paymentMethod === 'Split' ? editForm.splitPayments.map((sp: any) => ({ method: sp.method as any, amount: Number(sp.amount) || 0 })) : null,
+        notes: editForm.notes.trim() || null,
         status: newStatus,
         activation_date: editForm.activationDate ? new Date(editForm.activationDate).toISOString() : editInvoice.activation_date,
         created_at: editForm.invoiceDate ? new Date(editForm.invoiceDate).toISOString() : editInvoice.created_at,
@@ -668,6 +676,13 @@ export default function Invoices() {
     });
   };
 
+  const getActualPaidAmount = (inv: Invoice) => {
+    const childrenPaid = invoices
+      .filter(i => i.package_name && i.package_name.startsWith(`Payment Completion: ${inv.id}`))
+      .reduce((sum, i) => sum + i.paid_amount, 0);
+    return inv.paid_amount + childrenPaid;
+  };
+
   const handleDeleteInvoice = (inv: Invoice) => {
     const invoicesToDelete = inv.joint_invoice_group_id 
       ? invoices.filter(i => i.joint_invoice_group_id === inv.joint_invoice_group_id)
@@ -681,11 +696,57 @@ export default function Invoices() {
             action_type: 'other',
             performed_by: currentUser?.id ?? null,
             performer_name: currentUser?.name ?? 'System',
-            member_id: null,
+            member_id: i.member_id || null,
             member_name: i.member_name,
             timestamp: new Date().toISOString(),
             details: `Hard deleted invoice ${i.id} for ${i.member_name}, amount: ${i.total_amount} EGP`,
           });
+
+          // Sync parent invoice if this was a payment completion
+          if (i.package_name && i.package_name.startsWith('Payment Completion: ')) {
+            const parentIdStr = i.package_name.replace('Payment Completion: ', '').trim();
+            const parentInvoice = invoices.find(inv => inv.id.toString() === parentIdStr);
+            if (parentInvoice) {
+              const newPaidAmount = getActualPaidAmount(parentInvoice) - i.paid_amount;
+              const newStatus = newPaidAmount <= 0 ? 'unpaid' : (newPaidAmount < parentInvoice.total_amount ? 'partial' : 'paid');
+              updateInvoice.mutate({
+                uuid: parentInvoice.uuid,
+                updates: { status: newStatus }
+              });
+            }
+          }
+
+          // Sync member status if this was a package invoice
+          if (i.member_id && (!i.package_name || !i.package_name.startsWith('Payment Completion'))) {
+            const memberInvoices = invoices
+              .filter(inv => inv.member_id === i.member_id && inv.uuid !== i.uuid && inv.status !== 'unpaid' && (!inv.package_name || !inv.package_name.startsWith('Payment Completion')))
+              .sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+            
+            if (memberInvoices.length > 0) {
+              const latest = memberInvoices[0];
+              updateMember.mutate({
+                id: i.member_id,
+                updates: {
+                  package_id: latest.package_id,
+                  package_name: latest.package_name,
+                  sessions_remaining: latest.sessions_remaining || 0,
+                  freeze_days_remaining: latest.freeze_days_remaining || 0,
+                  status: 'active'
+                }
+              });
+            } else {
+              updateMember.mutate({
+                id: i.member_id,
+                updates: {
+                  package_id: null,
+                  package_name: 'None',
+                  sessions_remaining: 0,
+                  freeze_days_remaining: 0,
+                  status: 'expired'
+                }
+              });
+            }
+          }
         },
         onError: (err) => toast.error(`Error deleting invoice: ${err.message}`),
       });
@@ -876,7 +937,14 @@ export default function Invoices() {
                             </div>
                           )}
                         </TableCell>
-                        <TableCell className="text-sm">{inv.package_name}</TableCell>
+                        <TableCell className="text-sm">
+                          {inv.package_name}
+                          {inv.notes && (
+                            <div className="mt-1 text-[10px] text-muted-foreground italic border-l-2 border-primary/20 pl-1.5 py-0.5">
+                              {inv.notes}
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell className="text-sm">{format(new Date(inv.created_at), "dd/MM/yyyy")}</TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-1 items-start">
@@ -898,7 +966,7 @@ export default function Invoices() {
                             </div>
                             {inv.status === 'partial' && (
                               <div className="space-y-1">
-                                <p className="text-[10px] text-muted-foreground">Paid: {inv.paid_amount} / {inv.total_amount}</p>
+                                <p className="text-[10px] text-muted-foreground">Paid: {getActualPaidAmount(inv)} / {inv.total_amount}</p>
                                 <Button
                                   size="sm"
                                   variant="secondary"
@@ -915,7 +983,7 @@ export default function Invoices() {
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
-                          <p className="text-sm font-bold">{inv.total_amount.toLocaleString()} EGP</p>
+                          <p className="text-sm font-bold">{getActualPaidAmount(inv).toLocaleString()} EGP</p>
                           {inv.discount_amount > 0 && (
                             <div className="flex items-center gap-1 justify-end text-muted-foreground mt-0.5">
                               <Tag className="w-3 h-3" />
@@ -1028,7 +1096,7 @@ export default function Invoices() {
                         </Tabs>
                       </div>
                       <SearchableSelect
-                        options={createAvailablePackages.map(p => ({ value: p.id, label: `${p.name} — ${p.price} EGP`, searchTerms: p.category }))}
+                        options={createAvailablePackages.map(p => ({ value: p.id, label: `(${p.sessions} Sessions) ${p.name} — ${p.price} EGP`, searchTerms: p.category }))}
                         value={form.packageId}
                         onValueChange={v => setForm(p => ({ ...p, packageId: v }))}
                         placeholder="Select package..."
@@ -1038,15 +1106,16 @@ export default function Invoices() {
                     </div>
                     <div className="space-y-1.5">
                       <Label>Class (Optional)</Label>
-                      <Select value={form.classId} onValueChange={v => setForm(p => ({ ...p, classId: v }))}>
-                        <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {classes.map(c => (
-                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <SearchableSelect
+                        options={[
+                          { value: "none", label: "None", searchTerms: "none" },
+                          ...classes.map(c => ({ value: c.id, label: c.name, searchTerms: c.name }))
+                        ]}
+                        value={form.classId}
+                        onValueChange={v => setForm(p => ({ ...p, classId: v }))}
+                        placeholder="Select class..."
+                        searchPlaceholder="Search classes..."
+                      />
                     </div>
 
                     {/* Discount */}
@@ -1239,6 +1308,16 @@ export default function Invoices() {
                     </div>
                     )}
 
+                    {/* Notes */}
+                    <div className="space-y-1.5">
+                      <Label>Notes</Label>
+                      <Input
+                        placeholder="Optional notes about this invoice..."
+                        value={form.notes}
+                        onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+                      />
+                    </div>
+
                     {/* Invoice Date & Activation Date */}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
@@ -1309,7 +1388,11 @@ export default function Invoices() {
                     </div>
                     <div className="space-y-1.5">
                       <Label>Class (Optional)</Label>
-                      <Select
+                      <SearchableSelect
+                        options={[
+                          { value: "none", label: "None", searchTerms: "none" },
+                          ...classes.map(c => ({ value: c.id, label: c.name, searchTerms: c.name }))
+                        ]}
                         value={form.jointMembersData[jointStep - 2]?.classId || ""}
                         onValueChange={v => {
                           const newData = [...form.jointMembersData];
@@ -1317,15 +1400,9 @@ export default function Invoices() {
                           else newData[jointStep - 2].classId = v;
                           setForm(p => ({ ...p, jointMembersData: newData }));
                         }}
-                      >
-                        <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {classes.map(c => (
-                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Select class..."
+                        searchPlaceholder="Search classes..."
+                      />
                     </div>
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
@@ -1543,15 +1620,16 @@ export default function Invoices() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Class (Optional)</Label>
-                  <Select value={editForm.classId} onValueChange={v => setEditForm(p => ({ ...p, classId: v }))}>
-                    <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {classes.map(c => (
-                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    options={[
+                      { value: "none", label: "None", searchTerms: "none" },
+                      ...classes.map(c => ({ value: c.id, label: c.name, searchTerms: c.name }))
+                    ]}
+                    value={editForm.classId}
+                    onValueChange={v => setEditForm(p => ({ ...p, classId: v }))}
+                    placeholder="Select class..."
+                    searchPlaceholder="Search classes..."
+                  />
                 </div>
 
                 {/* Discount */}
@@ -1733,6 +1811,15 @@ export default function Invoices() {
                   />
                 </div>
 
+                <div className="space-y-1.5 pt-2">
+                  <Label>Notes</Label>
+                  <Input
+                    placeholder="Optional notes about this invoice..."
+                    value={editForm.notes}
+                    onChange={e => setEditForm(p => ({ ...p, notes: e.target.value }))}
+                  />
+                </div>
+
                 <div className="grid grid-cols-2 gap-3 pt-2">
                   <div className="space-y-1.5">
                     <Label>Creation Date</Label>
@@ -1769,8 +1856,8 @@ export default function Invoices() {
                 <div className="bg-muted p-3 rounded-md space-y-1 text-sm">
                   <p className="font-medium">Invoice: {paymentModalInvoice?.id}</p>
                   <p>Total: {paymentModalInvoice?.total_amount} EGP</p>
-                  <p>Paid: {paymentModalInvoice?.paid_amount} EGP</p>
-                  <p className="font-bold text-destructive">Remaining: {(paymentModalInvoice?.total_amount || 0) - (paymentModalInvoice?.paid_amount || 0)} EGP</p>
+                  <p>Paid: {paymentModalInvoice ? getActualPaidAmount(paymentModalInvoice) : 0} EGP</p>
+                  <p className="font-bold text-destructive">Remaining: {(paymentModalInvoice?.total_amount || 0) - (paymentModalInvoice ? getActualPaidAmount(paymentModalInvoice) : 0)} EGP</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -1779,7 +1866,7 @@ export default function Invoices() {
                     <Input
                       type="number"
                       min="0"
-                      max={(paymentModalInvoice?.total_amount || 0) - (paymentModalInvoice?.paid_amount || 0)}
+                      max={(paymentModalInvoice?.total_amount || 0) - (paymentModalInvoice ? getActualPaidAmount(paymentModalInvoice) : 0)}
                       value={paymentAmount}
                       onChange={(e) => setPaymentAmount(e.target.value)}
                     />

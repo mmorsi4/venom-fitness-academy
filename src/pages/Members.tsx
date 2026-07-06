@@ -18,6 +18,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { SearchableSelect } from "@/components/SearchableSelect";
 import {
   Table,
   TableBody,
@@ -115,6 +116,12 @@ export default function Members() {
   const [freezeDaysInput, setFreezeDaysInput] = useState("");
   const [upgradeMemberState, setUpgradeMemberState] = useState<Member | null>(null);
   const [upgradePackageId, setUpgradePackageId] = useState("");
+  const [upgradePaymentMethod, setUpgradePaymentMethod] = useState("Cash");
+  const [upgradeInvoiceId, setUpgradeInvoiceId] = useState("");
+  const [upgradePaymentDate, setUpgradePaymentDate] = useState("");
+  const [upgradeDiscount, setUpgradeDiscount] = useState("");
+  const [upgradePaidAmount, setUpgradePaidAmount] = useState("");
+  const [upgradePackageCategoryFilter, setUpgradePackageCategoryFilter] = useState<string>("All");
   const [historyMember, setHistoryMember] = useState<Member | null>(null);
 
   const { data: checkInHistory = [] } = useMemberCheckIns(historyMember?.uuid || "");
@@ -227,15 +234,14 @@ export default function Members() {
         onSuccess: () => {
           // Sync with invoice if sessions changed
           if (updates.sessions_remaining !== undefined && editMember.sessions_remaining !== updates.sessions_remaining) {
-            const activeInvoices = invoices.filter(i => 
+            const latestInvoice = invoices.filter(i => 
               i.member_id === editMember.uuid && 
-              (i.status === 'paid' || i.status === 'partial') && 
-              (i.sessions_remaining === null || i.sessions_remaining > 0)
+              (i.status === 'paid' || i.status === 'partial')
             ).sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
             
-            if (activeInvoices.length > 0) {
+            if (latestInvoice.length > 0) {
               updateInvoice.mutate({
-                uuid: activeInvoices[0].uuid,
+                uuid: latestInvoice[0].uuid,
                 updates: { sessions_remaining: updates.sessions_remaining }
               });
             }
@@ -381,9 +387,30 @@ export default function Members() {
       return;
     }
 
+    const activeInvoice = invoices.filter(i => i.member_id === upgradeMemberState.uuid && i.package_name === upgradeMemberState.package_name).sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+    
+    let usedSessions = 0;
+    if (currentPkg.sessions !== 999 && upgradeMemberState.sessions_remaining !== 999) {
+      usedSessions = Math.max(0, currentPkg.sessions - upgradeMemberState.sessions_remaining);
+    }
+    
+    const newSessions = newPkg.sessions === 999 ? 999 : Math.max(0, newPkg.sessions - usedSessions);
+    
+    const activationDateStr = activeInvoice?.activation_date || activeInvoice?.created_at || new Date().toISOString();
+    const actDate = new Date(activationDateStr);
+    const newExpiresAt = new Date(actDate.getTime() + newPkg.validity_days * 86400000).toISOString();
+
     const priceDiff = Math.max(0, newPkg.price - currentPkg.price);
-    const newSessions = newPkg.sessions === 999 ? 999 : newPkg.sessions;
-    const newExpiresAt = new Date(Date.now() + newPkg.validity_days * 86400000).toISOString();
+    const discountAmt = Number(upgradeDiscount) || 0;
+    const finalExpected = Math.max(0, priceDiff - discountAmt);
+    const actualPaid = upgradePaidAmount !== "" ? Number(upgradePaidAmount) : finalExpected;
+
+    if (activeInvoice) {
+      updateInvoice.mutate({
+        uuid: activeInvoice.uuid,
+        updates: { sessions_remaining: 0 }
+      });
+    }
 
     createInvoice.mutate({
       member_id: upgradeMemberState.uuid,
@@ -391,14 +418,16 @@ export default function Members() {
       class_id: upgradeMemberState.class_id || null,
       package_id: newPkg.id,
       package_name: newPkg.name,
-      total_amount: priceDiff,
-      paid_amount: priceDiff,
-      status: 'paid',
+      total_amount: newPkg.price,
+      paid_amount: actualPaid,
+      status: actualPaid >= finalExpected ? 'paid' : (actualPaid > 0 ? 'partial' : 'unpaid'),
       discount_id: null,
-      discount_description: null,
-      discount_amount: 0,
-      payment_method: 'Cash',
-      activation_date: new Date().toISOString()
+      discount_description: discountAmt > 0 ? 'Upgrade Discount' : null,
+      discount_amount: discountAmt,
+      payment_method: upgradePaymentMethod as any,
+      activation_date: activationDateStr,
+      ...(upgradePaymentDate ? { created_at: new Date(upgradePaymentDate).toISOString() } : {}),
+      ...(upgradeInvoiceId.trim() ? { id: upgradeInvoiceId.trim() } : {})
     }, {
       onSuccess: () => {
         updateMember.mutate({
@@ -425,6 +454,12 @@ export default function Members() {
             toast.success("Package upgraded successfully");
             setUpgradeMemberState(null);
             setUpgradePackageId("");
+            setUpgradePaymentMethod("Cash");
+            setUpgradeInvoiceId("");
+            setUpgradePaymentDate("");
+            setUpgradeDiscount("");
+            setUpgradePaidAmount("");
+            setUpgradePackageCategoryFilter("All");
           }
         });
       },
@@ -624,18 +659,26 @@ export default function Members() {
                           const activeInvoices = invoices.filter(i => 
                             i.member_id === m.uuid && 
                             (i.status === 'paid' || i.status === 'partial') && 
-                            (i.sessions_remaining === null || i.sessions_remaining > 0)
+                            (i.sessions_remaining === undefined || i.sessions_remaining === null || i.sessions_remaining > 0)
                           );
                           
                           if (activeInvoices.length > 0) {
                             return activeInvoices.map(inv => (
                               <div key={inv.uuid} className="text-sm font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded w-max mb-1">
-                                {inv.package_name} {inv.sessions_remaining === 999 ? '(∞ left)' : inv.sessions_remaining !== null ? `(${inv.sessions_remaining} left)` : ''}
+                                {inv.package_name || inv.class_id} {inv.sessions_remaining === 999 ? '(∞ left)' : inv.sessions_remaining !== null ? `(${inv.sessions_remaining} left)` : ''}
                               </div>
                             ));
                           }
                           
-                          return <p className="text-sm font-medium">{m.package_name || 'None'}</p>;
+                          if (m.package_name && m.package_name !== 'None') {
+                            return (
+                              <div className="text-sm font-medium text-gray-500 bg-gray-50 px-2 py-1 rounded w-max mb-1 flex items-center gap-1">
+                                {m.package_name} <span className="text-xs font-normal">(Expired/Empty)</span>
+                              </div>
+                            );
+                          }
+                          
+                          return <p className="text-sm font-medium text-muted-foreground">None</p>;
                         })()}
                         
                         <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
@@ -1139,7 +1182,7 @@ export default function Members() {
       </Dialog>
 
       {/* Upgrade Member Dialog */}
-      <Dialog open={!!upgradeMemberState} onOpenChange={o => { if (!o) { setUpgradeMemberState(null); setUpgradePackageId(""); } }}>
+      <Dialog open={!!upgradeMemberState} onOpenChange={o => { if (!o) { setUpgradeMemberState(null); setUpgradePackageId(""); setUpgradePaymentMethod("Cash"); setUpgradeInvoiceId(""); setUpgradePaymentDate(""); setUpgradeDiscount(""); setUpgradePaidAmount(""); setUpgradePackageCategoryFilter("All"); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Upgrade Package</DialogTitle>
@@ -1150,30 +1193,80 @@ export default function Members() {
               <div className="flex justify-between"><span className="text-muted-foreground">Current Package</span><span className="font-bold">{upgradeMemberState?.package_name}</span></div>
             </div>
             <div className="space-y-1.5">
-              <Label>Select New Package</Label>
-              <Select value={upgradePackageId} onValueChange={setUpgradePackageId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select package" />
-                </SelectTrigger>
-                <SelectContent>
-                  {packages.filter(p => p.name !== upgradeMemberState?.package_name).map((p) => {
-                    return <SelectItem key={p.id} value={p.id.toString()}>{p.name} - {p.price} EGP</SelectItem>
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-            {upgradePackageId && upgradeMemberState?.package_name && (
-              <div className="px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100 text-sm space-y-1">
-                <div className="flex justify-between"><span className="text-muted-foreground">Difference to Pay</span>
-                  <span className="font-bold text-emerald-600">
-                    {Math.max(0, (packages.find(p => p.id.toString() === upgradePackageId)?.price || 0) - (packages.find(p => p.name === upgradeMemberState.package_name)?.price || 0))} EGP
-                  </span>
+                <div className="flex items-center justify-between">
+                  <Label>Select New Package</Label>
+                  <Tabs value={upgradePackageCategoryFilter} onValueChange={(v: any) => setUpgradePackageCategoryFilter(v)} className="w-[150px]">
+                    <TabsList className="grid w-full grid-cols-3 h-7 text-[10px]">
+                      <TabsTrigger value="All" className="text-[10px]">All</TabsTrigger>
+                      <TabsTrigger value="Normal" className="text-[10px]">Gym</TabsTrigger>
+                      <TabsTrigger value="PT" className="text-[10px]">PT</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
                 </div>
+                <SearchableSelect
+                  options={packages.filter(p => p.name !== upgradeMemberState?.package_name && p.category !== 'Clinic' && (upgradePackageCategoryFilter === "All" || p.category === upgradePackageCategoryFilter)).map(p => ({
+                    value: p.id.toString(),
+                    label: `${p.name} - ${p.price} EGP`,
+                    searchTerms: p.category
+                  }))}
+                  value={upgradePackageId}
+                  onValueChange={setUpgradePackageId}
+                  placeholder="Select package..."
+                  searchPlaceholder="Search packages..."
+                />
               </div>
+            {upgradePackageId && upgradeMemberState?.package_name && (
+              <>
+                <div className="grid grid-cols-2 gap-3 mt-4">
+                  <div className="space-y-1.5">
+                    <Label>Payment Method</Label>
+                    <Select value={upgradePaymentMethod} onValueChange={setUpgradePaymentMethod}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Cash">Cash</SelectItem>
+                        <SelectItem value="Visa">Visa</SelectItem>
+                        <SelectItem value="InstaPay">InstaPay</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Custom Invoice ID <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                    <Input placeholder="e.g. INV-123" value={upgradeInvoiceId} onChange={e => setUpgradeInvoiceId(e.target.value)} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Payment Date</Label>
+                    <Input type="date" value={upgradePaymentDate} onChange={e => setUpgradePaymentDate(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Discount <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                    <Input type="number" min="0" placeholder="0 EGP" value={upgradeDiscount} onChange={e => setUpgradeDiscount(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Paid Amount (EGP)</Label>
+                    <Input type="number" min="0" placeholder={`Full Amount (${Math.max(0, (packages.find(p => p.id.toString() === upgradePackageId)?.price || 0) - (packages.find(p => p.name === upgradeMemberState.package_name)?.price || 0) - Number(upgradeDiscount))} EGP)`} value={upgradePaidAmount} onChange={e => setUpgradePaidAmount(e.target.value)} />
+                  </div>
+                </div>
+                <div className="px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100 text-sm space-y-1 mt-2">
+                  <div className="flex justify-between"><span className="text-muted-foreground">Difference to Pay</span>
+                    <span className="font-bold text-emerald-600">
+                      {Math.max(0, (packages.find(p => p.id.toString() === upgradePackageId)?.price || 0) - (packages.find(p => p.name === upgradeMemberState.package_name)?.price || 0))} EGP
+                    </span>
+                  </div>
+                  {(Number(upgradeDiscount) > 0) && (
+                    <div className="flex justify-between"><span className="text-muted-foreground">After Discount</span>
+                      <span className="font-bold text-emerald-600">
+                        {Math.max(0, (packages.find(p => p.id.toString() === upgradePackageId)?.price || 0) - (packages.find(p => p.name === upgradeMemberState.package_name)?.price || 0) - Number(upgradeDiscount))} EGP
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setUpgradeMemberState(null); setUpgradePackageId(""); }}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setUpgradeMemberState(null); setUpgradePackageId(""); setUpgradePaymentMethod("Cash"); setUpgradeInvoiceId(""); setUpgradePaymentDate(""); setUpgradeDiscount(""); setUpgradePaidAmount(""); setUpgradePackageCategoryFilter("All"); }}>Cancel</Button>
             <Button onClick={handleUpgrade} disabled={createInvoice.isPending || updateMember.isPending}>
               {createInvoice.isPending || updateMember.isPending ? "Upgrading..." : "Upgrade Now"}
             </Button>

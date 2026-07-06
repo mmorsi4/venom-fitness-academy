@@ -96,7 +96,7 @@ export default function CheckIn() {
     const memberActiveInvoices = invoices.filter(i => 
       i.member_id === member.uuid && 
       (i.status === 'paid' || i.status === 'partial') && 
-      (i.sessions_remaining === null || i.sessions_remaining > 0) &&
+      (i.sessions_remaining === undefined || i.sessions_remaining === null || i.sessions_remaining > 0) &&
       (!member.expires_at || new Date(member.expires_at) >= new Date(new Date().setHours(0,0,0,0)))
     );
     if (memberActiveInvoices.length > 0) {
@@ -400,7 +400,7 @@ export default function CheckIn() {
               const activeInvoices = invoices.filter(i => 
                 i.member_id === selectedMember.uuid && 
                 (i.status === 'paid' || i.status === 'partial') && 
-                (i.sessions_remaining === null || i.sessions_remaining > 0) &&
+                (i.sessions_remaining === undefined || i.sessions_remaining === null || i.sessions_remaining > 0) &&
                 (!selectedMember.expires_at || new Date(selectedMember.expires_at) >= new Date(new Date().setHours(0,0,0,0)))
               );
               
@@ -429,14 +429,14 @@ export default function CheckIn() {
                 <Button
                   data-testid="btn-checkin-confirm"
                   onClick={handleCheckInClick}
-                  disabled={checkedInToday.includes(selectedMember.uuid) || checkInMutation.isPending}
+                  disabled={checkInMutation.isPending}
                   className={`flex-1 h-11 text-base font-semibold gap-2 ${(selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date()) || selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999) ? 'bg-orange-500 hover:bg-orange-600 text-white' : ''}`}
                 >
                   <CheckCircle2 className="w-5 h-5" />
                   {checkInMutation.isPending
                     ? 'Checking In...'
                     : checkedInToday.includes(selectedMember.uuid) 
-                      ? 'Already Checked In' 
+                      ? 'Check In Again' 
                       : (selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date()) 
                           ? 'Override & Unfreeze' 
                           : (selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999))
