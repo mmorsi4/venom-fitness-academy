@@ -80,6 +80,7 @@ export default function Invoices() {
   const [verificationAction, setVerificationAction] = useState<'create' | 'edit'>('create');
   const [verificationPassword, setVerificationPassword] = useState("");
   const [packageCategoryFilter, setPackageCategoryFilter] = useState<'All' | 'Normal' | 'PT' | 'Clinic'>('All');
+  const [editPackageCategoryFilter, setEditPackageCategoryFilter] = useState<'All' | 'Normal' | 'PT' | 'Clinic'>('All');
   const [form, setForm] = useState(emptyForm);
   const [jointStep, setJointStep] = useState(1);
   const [paymentModalInvoice, setPaymentModalInvoice] = useState<Invoice | null>(null);
@@ -269,6 +270,17 @@ export default function Invoices() {
     : (jointData.paidAmount !== undefined && jointData.paidAmount !== "" ? Number(jointData.paidAmount) : jointTotal);
 
   // Edit form derived state
+  const selectedEditMember = members.find(m => m.uuid === editForm.memberId);
+  const editAvailablePackages = packages.filter(p => {
+    if (selectedEditMember?.id === -1 && !p.is_clinic && p.category !== 'Clinic') return false;
+    if (editPackageCategoryFilter !== 'All') {
+      if (editPackageCategoryFilter === 'PT' && !p.is_pt && p.category !== 'PT') return false;
+      if (editPackageCategoryFilter === 'Clinic' && !p.is_clinic && p.category !== 'Clinic') return false;
+      if (editPackageCategoryFilter === 'Normal' && (p.is_pt || p.is_clinic || (p.category && p.category !== 'Normal'))) return false;
+    }
+    return true;
+  });
+
   const selectedEditPackage = packages.find(p => p.id === editForm.packageId);
   const selectedEditGroup = activeDiscounts.find(d => d.id === editForm.discountGroupId);
 
@@ -1508,9 +1520,19 @@ export default function Invoices() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Package</Label>
+                  <div className="flex items-center justify-between">
+                    <Label>Package</Label>
+                    <Tabs value={editPackageCategoryFilter} onValueChange={(v: any) => setEditPackageCategoryFilter(v)} className="w-[200px]">
+                      <TabsList className="grid w-full grid-cols-4 h-7 text-[10px]">
+                        <TabsTrigger value="All" className="text-[10px]">All</TabsTrigger>
+                        <TabsTrigger value="Normal" className="text-[10px]">Gym</TabsTrigger>
+                        <TabsTrigger value="PT" className="text-[10px]">PT</TabsTrigger>
+                        <TabsTrigger value="Clinic" className="text-[10px]">Clinic</TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                  </div>
                   <SearchableSelect
-                    options={packages.map(p => ({ value: p.id, label: `${p.name} — ${p.price} EGP`, searchTerms: p.category }))}
+                    options={editAvailablePackages.map(p => ({ value: p.id, label: `${p.name} — ${p.price} EGP`, searchTerms: p.category }))}
                     value={editForm.packageId}
                     onValueChange={v => setEditForm(p => ({ ...p, packageId: v }))}
                     placeholder="Select package..."
