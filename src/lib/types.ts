@@ -131,6 +131,7 @@ export interface Coach {
   rate: number;
   pt_sessions_done: number;
   pt_rate: number;
+  pt_percentage?: number;
   user_id?: string | null;
   created_at: string;
 }

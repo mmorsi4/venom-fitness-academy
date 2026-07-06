@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckCircle2, Clock, Dumbbell, DollarSign, Plus, Pencil } from "lucide-react";
+import { CheckCircle2, Clock, Dumbbell, DollarSign, Plus, Pencil, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { 
   useCoaches, useInvoices, useMembers, 
-  useCreateCoach, useUpdateCoach, 
+  useCreateCoach, useUpdateCoach, useDeleteCoach, 
   useCoachCheckInsToday,
   useCoachCheckInsForMonth, useCoachHistory, useClasses,
   useCoachDeductions, useCreateCoachDeduction, useDeleteCoachDeduction
@@ -37,9 +37,10 @@ interface CoachForm {
   phone: string;
   paymentType: "salary" | "per_session";
   rate: string;
+  ptPercentage: string;
 }
 
-const emptyForm: CoachForm = { name: "", phone: "", paymentType: "salary", rate: "" };
+const emptyForm: CoachForm = { name: "", phone: "", paymentType: "per_session", rate: "", ptPercentage: "100" };
 export default function Coaches() {
   const { isAdmin, users } = useAuth();
   const { data: coaches = [] } = useCoaches();
@@ -52,11 +53,13 @@ export default function Coaches() {
 
   const createCoach = useCreateCoach();
   const updateCoach = useUpdateCoach();
+  const deleteCoach = useDeleteCoach();
   const createDeduction = useCreateCoachDeduction();
   const deleteDeduction = useDeleteCoachDeduction();
 
   const [showCoachDialog, setShowCoachDialog] = useState(false);
   const [editCoach, setEditCoach] = useState<Coach | null>(null);
+  const [deleteCoachData, setDeleteCoachData] = useState<Coach | null>(null);
   const [form, setForm] = useState<CoachForm>(emptyForm);
 
   // Deductions State
@@ -121,7 +124,7 @@ export default function Coaches() {
   const openAdd = () => { setForm(emptyForm); setEditCoach(null); setShowCoachDialog(true); };
   const openEdit = (c: Coach) => {
     setEditCoach(c);
-    setForm({ name: c.name, phone: c.phone || "", paymentType: c.payment_type as "salary" | "per_session", rate: String(c.rate) });
+    setForm({ name: c.name, phone: c.phone || "", paymentType: c.payment_type as "salary" | "per_session", rate: String(c.rate), ptPercentage: String(c.pt_percentage ?? 100) });
     setShowCoachDialog(true);
   };
   const closeDialog = () => { setShowCoachDialog(false); setEditCoach(null); };
@@ -138,6 +141,7 @@ export default function Coaches() {
           phone: form.phone.trim(),
           payment_type: form.paymentType,
           rate: Number(form.rate),
+          pt_percentage: Number(form.ptPercentage),
         }
       }, {
         onSuccess: () => {
@@ -154,6 +158,7 @@ export default function Coaches() {
         rate: Number(form.rate),
         pt_sessions_done: 0,
         pt_rate: 250,
+        pt_percentage: Number(form.ptPercentage),
       }, {
         onSuccess: () => {
           toast.success(`Coach added: ${form.name}`);
@@ -162,6 +167,17 @@ export default function Coaches() {
         onError: (err) => toast.error(`Error adding: ${err.message}`)
       });
     }
+  };
+
+  const handleDelete = () => {
+    if (!deleteCoachData) return;
+    deleteCoach.mutate({ id: deleteCoachData.id, name: deleteCoachData.name }, {
+      onSuccess: () => {
+        toast.success(`Coach deleted: ${deleteCoachData.name}`);
+        setDeleteCoachData(null);
+      },
+      onError: (err) => toast.error(`Error deleting coach: ${err.message}`)
+    });
   };
 
   return (
@@ -229,6 +245,9 @@ export default function Coaches() {
                       <button onClick={() => openEdit(coach)} className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground">
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
+                      <button onClick={() => setDeleteCoachData(coach)} className="p-1 rounded hover:bg-red-50 hover:text-red-600 transition-colors text-muted-foreground">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -257,17 +276,17 @@ export default function Coaches() {
                     <span className="text-base font-bold">{stats.calculatedAmount.toLocaleString()} EGP</span>
                   </div>
                   {stats.missedSessions > 0 && coach.payment_type === 'salary' && stats.deduction > 0 && (
-                    <div className="text-xs text-red-500 font-semibold mt-1">
-                      Deducted {Math.round(stats.deduction).toLocaleString()} EGP for {stats.missedSessions} missed session(s)
-                    </div>
-                  )}
-                  {stats.totalAdvances > 0 && (
-                    <div className="text-xs text-orange-500 font-semibold mt-1">
-                      Deducted {Math.round(stats.totalAdvances).toLocaleString()} EGP for advances
-                    </div>
-                  )}
-                  {coach.payment_type === 'per_session' && stats.missedSessions === 0 && <p className="text-xs text-muted-foreground mt-1">{sessions} sessions × {coach.rate} EGP</p>}
-                </div>
+                      <div className="text-xs text-red-500 font-semibold mt-1">
+                        Deducted {Math.round(stats.deduction).toLocaleString()} EGP for {stats.missedSessions} missed session(s)
+                      </div>
+                    )}
+                    {stats.totalAdvances > 0 && (
+                      <div className="text-xs text-orange-500 font-semibold mt-1">
+                        Deducted {Math.round(stats.totalAdvances).toLocaleString()} EGP for advances
+                      </div>
+                    )}
+                    {coach.payment_type === 'per_session' && stats.missedSessions === 0 && <p className="text-xs text-muted-foreground mt-1">{sessions} sessions — {coach.rate} EGP/session</p>}
+                  </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Button data-testid={`btn-deductions-coach-${coach.id}`} variant="outline" size="sm" className="w-full gap-2 text-xs px-1" onClick={() => setDeductionsModalCoach(coach)}>
                     <DollarSign className="w-3.5 h-3.5" /> Adjust
@@ -340,24 +359,19 @@ export default function Coaches() {
       <Dialog open={showCoachDialog} onOpenChange={o => !o && closeDialog()}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>{editCoach ? `Edit: ${editCoach.name}` : 'Add Coach'}</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5"><Label>Name</Label><Input placeholder="Coach name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
-            <div className="space-y-1.5"><Label>Phone</Label><Input placeholder="01XXXXXXXXX" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></div>
-            <div className="space-y-1.5">
-              <Label>Payment Type</Label>
-              <Select value={form.paymentType} onValueChange={(v: "salary" | "per_session") => setForm(p => ({ ...p, paymentType: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="salary">Monthly Salary</SelectItem>
-                  <SelectItem value="per_session">Per Session</SelectItem>
-                </SelectContent>
-              </Select>
+          <div className="space-y-4 py-2">              <div className="space-y-1.5"><Label>Name</Label><Input placeholder="Coach name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Phone</Label><Input placeholder="01XXXXXXXXX" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>Group Session Rate (EGP)</Label>
+                  <Input type="number" placeholder="0" value={form.rate} onChange={e => setForm(p => ({ ...p, rate: e.target.value }))} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>PT Percentage (%)</Label>
+                  <Input type="number" min="0" max="100" placeholder="100" value={form.ptPercentage} onChange={e => setForm(p => ({ ...p, ptPercentage: e.target.value }))} />
+                </div>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>{form.paymentType === 'salary' ? 'Monthly Rate (EGP)' : 'Rate per Session (EGP)'}</Label>
-              <Input type="number" placeholder="0" value={form.rate} onChange={e => setForm(p => ({ ...p, rate: e.target.value }))} />
-            </div>
-          </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>Cancel</Button>
             <Button onClick={handleSave} disabled={createCoach.isPending || updateCoach.isPending}>
@@ -497,6 +511,34 @@ export default function Coaches() {
               );
             })}
           </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!deleteCoachData} onOpenChange={(open) => !open && setDeleteCoachData(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Coach</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to delete <strong>{deleteCoachData?.name}</strong>?
+            </p>
+            <div className="bg-red-50 text-red-700 p-3 rounded-md text-sm">
+              <p className="font-semibold mb-1">Warning: Cascade Deletion</p>
+              <p>This will also permanently delete:</p>
+              <ul className="list-disc list-inside mt-1">
+                <li>All their check-ins (sessions)</li>
+                <li>All recorded salary expenses for them</li>
+                <li>All manual adjustments (bonuses/deductions)</li>
+              </ul>
+              <p className="mt-2">This action cannot be undone.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteCoachData(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleteCoach.isPending}>
+              {deleteCoach.isPending ? "Deleting..." : "Delete Coach"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

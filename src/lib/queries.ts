@@ -353,6 +353,13 @@ export async function updateCoach(id: string, updates: Partial<Coach>) {
   return data as Coach;
 }
 
+export async function deleteCoach(id: string, name: string) {
+  // Delete any salary expenses associated with this coach
+  await supabase.from('expenses').delete().ilike('description', `Salary payment for ${name}%`);
+  const { error } = await supabase.from('coaches').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function getCoachCheckInsToday() {
   const today = new Date().toISOString().split('T')[0];
   const { data, error } = await supabase

@@ -227,15 +227,14 @@ export default function Members() {
         onSuccess: () => {
           // Sync with invoice if sessions changed
           if (updates.sessions_remaining !== undefined && editMember.sessions_remaining !== updates.sessions_remaining) {
-            const activeInvoices = invoices.filter(i => 
+            const latestInvoice = invoices.filter(i => 
               i.member_id === editMember.uuid && 
-              (i.status === 'paid' || i.status === 'partial') && 
-              (i.sessions_remaining === null || i.sessions_remaining > 0)
+              (i.status === 'paid' || i.status === 'partial')
             ).sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
             
-            if (activeInvoices.length > 0) {
+            if (latestInvoice.length > 0) {
               updateInvoice.mutate({
-                uuid: activeInvoices[0].uuid,
+                uuid: latestInvoice[0].uuid,
                 updates: { sessions_remaining: updates.sessions_remaining }
               });
             }
@@ -630,12 +629,20 @@ export default function Members() {
                           if (activeInvoices.length > 0) {
                             return activeInvoices.map(inv => (
                               <div key={inv.uuid} className="text-sm font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded w-max mb-1">
-                                {inv.package_name} {inv.sessions_remaining === 999 ? '(∞ left)' : inv.sessions_remaining !== null ? `(${inv.sessions_remaining} left)` : ''}
+                                {inv.package_name || inv.class_id} {inv.sessions_remaining === 999 ? '(∞ left)' : inv.sessions_remaining !== null ? `(${inv.sessions_remaining} left)` : ''}
                               </div>
                             ));
                           }
                           
-                          return <p className="text-sm font-medium">{m.package_name || 'None'}</p>;
+                          if (m.package_name && m.package_name !== 'None') {
+                            return (
+                              <div className="text-sm font-medium text-gray-500 bg-gray-50 px-2 py-1 rounded w-max mb-1 flex items-center gap-1">
+                                {m.package_name} <span className="text-xs font-normal">(Expired/Empty)</span>
+                              </div>
+                            );
+                          }
+                          
+                          return <p className="text-sm font-medium text-muted-foreground">None</p>;
                         })()}
                         
                         <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">

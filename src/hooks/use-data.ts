@@ -220,6 +220,18 @@ export function useUpdateCoach() {
   });
 }
 
+export function useDeleteCoach() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      q.deleteCoach(id, name),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.coaches });
+      qc.invalidateQueries({ queryKey: ['expenses'] });
+    }
+  });
+}
+
 export function useCheckInCoach() {
   const qc = useQueryClient();
   return useMutation({

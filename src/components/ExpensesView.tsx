@@ -241,13 +241,15 @@ export function ExpensesView() {
     const selectedSub = subUnpaid.slice(0, finalSubCount);
 
     let owed = 0;
+    const ptPct = coach.pt_percentage ?? 100;
+    const actualPtRate = (coach.pt_rate || 250) * (ptPct / 100);
     if (coach.payment_type === 'per_session') {
-      owed = (finalMainCount + finalSubCount) * coach.rate + (finalPtCount * (coach.pt_rate || 250));
+      owed = (finalMainCount + finalSubCount) * coach.rate + (finalPtCount * actualPtRate);
     } else {
       const stats = calculateCoachPayroll(coach, now.getMonth(), now.getFullYear(), classes, checkInsThisMonth, 0, 0, coachDeductions);
       const originalScheduled = stats.scheduledSlotsInMonth + checkInsThisMonth.filter(ci => ci.coach_id === coachId && ci.session_type === 'group' && !ci.is_substitute && ci.is_paid).length;
       const perSessionRate = originalScheduled > 0 ? (coach.rate / originalScheduled) : 0;
-      owed = (finalSubCount * perSessionRate) + (finalPtCount * (coach.pt_rate || 250));
+      owed = (finalSubCount * perSessionRate) + (finalPtCount * actualPtRate);
     }
 
     const monthDeductions = coachDeductions.filter(d => d.coach_id === coachId && new Date(d.date).getMonth() === now.getMonth() && new Date(d.date).getFullYear() === now.getFullYear());
