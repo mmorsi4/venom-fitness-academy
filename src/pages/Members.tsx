@@ -18,6 +18,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { SearchableSelect } from "@/components/SearchableSelect";
 import {
   Table,
   TableBody,
@@ -1157,18 +1158,19 @@ export default function Members() {
               <div className="flex justify-between"><span className="text-muted-foreground">Current Package</span><span className="font-bold">{upgradeMemberState?.package_name}</span></div>
             </div>
             <div className="space-y-1.5">
-              <Label>Select New Package</Label>
-              <Select value={upgradePackageId} onValueChange={setUpgradePackageId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select package" />
-                </SelectTrigger>
-                <SelectContent>
-                  {packages.filter(p => p.name !== upgradeMemberState?.package_name).map((p) => {
-                    return <SelectItem key={p.id} value={p.id.toString()}>{p.name} - {p.price} EGP</SelectItem>
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
+                <Label>Select New Package</Label>
+                <SearchableSelect
+                  options={packages.filter(p => p.name !== upgradeMemberState?.package_name).map(p => ({
+                    value: p.id.toString(),
+                    label: `${p.name} - ${p.price} EGP`,
+                    searchTerms: p.category
+                  }))}
+                  value={upgradePackageId}
+                  onValueChange={setUpgradePackageId}
+                  placeholder="Select package..."
+                  searchPlaceholder="Search packages..."
+                />
+              </div>
             {upgradePackageId && upgradeMemberState?.package_name && (
               <div className="px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100 text-sm space-y-1">
                 <div className="flex justify-between"><span className="text-muted-foreground">Difference to Pay</span>
