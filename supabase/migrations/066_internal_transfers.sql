@@ -8,7 +8,7 @@ CREATE TABLE public.internal_transfers (
   created_at timestamptz not null default now()
 );
 
-ALTER TABLE public.internal_transfers ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Enable all access for authenticated users" ON public.internal_transfers FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- Disable RLS to match the rest of the application
+ALTER TABLE public.internal_transfers DISABLE ROW LEVEL SECURITY;
 
 GRANT ALL ON TABLE public.internal_transfers TO anon, authenticated, service_role;
