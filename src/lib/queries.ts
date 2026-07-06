@@ -285,7 +285,7 @@ export async function getInvoices() {
   return data as Invoice[];
 }
 
-export async function createInvoice(inv: Omit<Invoice, 'uuid' | 'created_at' | 'id' | 'is_applied'>) {
+export async function createInvoice(inv: Omit<Invoice, 'uuid' | 'id' | 'is_applied'> & { created_at?: string }) {
   const { data, error } = await supabase.from('invoices').insert(inv).select().single();
   if (error) throw error;
   return data as Invoice;

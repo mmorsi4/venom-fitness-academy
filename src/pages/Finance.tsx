@@ -69,7 +69,8 @@ export default function Finance() {
     fromAccount: 'Cash' as 'Cash'|'Visa'|'InstaPay',
     toAccount: 'Visa' as 'Cash'|'Visa'|'InstaPay',
     amount: '',
-    note: ''
+    note: '',
+    date: ''
   });
 
   const uniqueExistingCategories = [...new Set(expenses.map(e => e.category))];
@@ -126,7 +127,13 @@ export default function Finance() {
   const regularExpenses = filteredExpenses.filter(e => e.category !== LIABILITY_CATEGORY);
   const totalLiabilityPayments = liabilityPayments.reduce((s, e) => s + e.amount, 0);
 
-  const totalIncome = filteredInvoices.reduce((s, i) => s + i.paid_amount, 0);
+  const isStartingMonth = globalSettings?.finance_start_date && new Date(globalSettings.finance_start_date).getMonth() === filterMonth && new Date(globalSettings.finance_start_date).getFullYear() === filterYear;
+  const startingCashIncome = isStartingMonth && !clinicOnly ? (globalSettings?.finance_start_cash || 0) : 0;
+  const startingVisaIncome = isStartingMonth && !clinicOnly ? (globalSettings?.finance_start_visa || 0) : 0;
+  const startingInstapayIncome = isStartingMonth && !clinicOnly ? (globalSettings?.finance_start_instapay || 0) : 0;
+  const totalStartingIncome = startingCashIncome + startingVisaIncome + startingInstapayIncome;
+
+  const totalIncome = filteredInvoices.reduce((s, i) => s + i.paid_amount, 0) + totalStartingIncome;
 
   const clinicIncome = filteredInvoices.filter(i => {
     const pkg = packages.find(p => p.id === i.package_id);
@@ -166,11 +173,11 @@ export default function Finance() {
     const pkg = packages.find(p => p.id === i.package_id);
     return pkg?.is_clinic;
   });
-  const breakdownTotalIncome = breakdownInvoices.reduce((s, i) => s + i.paid_amount, 0);
+  const breakdownTotalIncome = breakdownInvoices.reduce((s, i) => s + i.paid_amount, 0) + totalStartingIncome;
 
-  const breakdownCashIncome = calculateIncomeByMethod(breakdownInvoices, 'Cash');
-  const breakdownVisaIncome = calculateIncomeByMethod(breakdownInvoices, 'Visa');
-  const breakdownInstapayIncome = calculateIncomeByMethod(breakdownInvoices, 'InstaPay');
+  const breakdownCashIncome = calculateIncomeByMethod(breakdownInvoices, 'Cash') + startingCashIncome;
+  const breakdownVisaIncome = calculateIncomeByMethod(breakdownInvoices, 'Visa') + startingVisaIncome;
+  const breakdownInstapayIncome = calculateIncomeByMethod(breakdownInvoices, 'InstaPay') + startingInstapayIncome;
 
   const breakdownPaymentMethods = [
     { name: "Cash", amount: breakdownCashIncome },
@@ -209,6 +216,16 @@ export default function Finance() {
       };
     })
     .sort((a, b) => b.amount - a.amount);
+
+  if (totalStartingIncome > 0) {
+    revenueByPackage.push({
+      package: "Starting Balance",
+      amount: totalStartingIncome,
+      count: 1,
+      percentage: breakdownTotalIncome > 0 ? (totalStartingIncome / breakdownTotalIncome) * 100 : 0
+    });
+    revenueByPackage.sort((a, b) => b.amount - a.amount);
+  }
 
 
   const prevMonth = () => {
@@ -316,12 +333,13 @@ export default function Finance() {
     }
 
     const note = transferForm.note ? ` (${transferForm.note})` : "";
+    const transferDate = transferForm.date ? new Date(transferForm.date).toISOString() : new Date().toISOString();
     
     // Create Expense on source
     createExpense.mutate({
       description: `Internal Transfer to ${transferForm.toAccount}${note}`,
       amount: amt,
-      date: new Date().toISOString(),
+      date: transferDate,
       category: 'CUSTOM',
       payment_method: transferForm.fromAccount,
       liability_id: null,
@@ -342,12 +360,13 @@ export default function Finance() {
           discount_description: null,
           class_id: null,
           member_id: "00000000-0000-0000-0000-000000000000",
-          activation_date: new Date().toISOString()
+          activation_date: transferDate,
+          created_at: transferDate
         }, {
           onSuccess: () => {
             toast.success(`Transferred ${amt} EGP from ${transferForm.fromAccount} to ${transferForm.toAccount}`);
             setShowTransferDialog(false);
-            setTransferForm(p => ({ ...p, amount: '', note: '' }));
+            setTransferForm(p => ({ ...p, amount: '', note: '', date: '' }));
           }
         });
       }
@@ -1035,6 +1054,14 @@ export default function Finance() {
                   <SelectItem value="InstaPay">InstaPay</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Date</Label>
+              <Input 
+                type="datetime-local" 
+                value={transferForm.date} 
+                onChange={e => setTransferForm(prev => ({ ...prev, date: e.target.value }))}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Amount (EGP)</Label>
