@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog, useFreezeMember, useUnfreezeMember, usePackages, useCreateInvoice, useAuditLogs, useMemberCheckIns, useInvoices } from "@/hooks/use-data";
+import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog, useFreezeMember, useUnfreezeMember, usePackages, useCreateInvoice, useAuditLogs, useMemberCheckIns, useInvoices, useUpdateInvoice } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
 import type { Member, Gender } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
@@ -90,6 +90,7 @@ function calcAge(birthDate?: string | null) {
 export default function Members() {
   const { data: members = [] } = useMembers();
   const { data: invoices = [] } = useInvoices();
+  const updateInvoice = useUpdateInvoice();
   const { data: coaches = [] } = useCoaches();
   const { data: classes = [] } = useClasses();
   const createMember = useCreateMember();
@@ -213,6 +214,22 @@ export default function Members() {
 
       updateMember.mutate({ id: editMember.uuid, updates }, {
         onSuccess: () => {
+          // Sync with invoice if sessions changed
+          if (updates.sessions_remaining !== undefined && editMember.sessions_remaining !== updates.sessions_remaining) {
+            const activeInvoices = invoices.filter(i => 
+              i.member_id === editMember.uuid && 
+              (i.status === 'paid' || i.status === 'partial') && 
+              (i.sessions_remaining === null || i.sessions_remaining > 0)
+            ).sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+            
+            if (activeInvoices.length > 0) {
+              updateInvoice.mutate({
+                uuid: activeInvoices[0].uuid,
+                updates: { sessions_remaining: updates.sessions_remaining }
+              });
+            }
+          }
+
           toast.success(`${form.name} updated`);
           closeDialogs();
         },
