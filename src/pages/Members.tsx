@@ -212,6 +212,17 @@ export default function Members() {
         updates.id = Number(form.customId);
       }
 
+      // Automatically update status based on sessions remaining
+      if (updates.sessions_remaining !== undefined && editMember.sessions_remaining !== updates.sessions_remaining) {
+         if (updates.sessions_remaining <= 0 && updates.sessions_remaining !== 999) {
+            updates.status = 'expired';
+         } else if (updates.sessions_remaining <= 2 && updates.sessions_remaining > 0 && updates.sessions_remaining !== 999) {
+            updates.status = 'expiring_soon';
+         } else if (updates.status === 'expired' && updates.sessions_remaining > 0) {
+            updates.status = 'active';
+         }
+      }
+
       updateMember.mutate({ id: editMember.uuid, updates }, {
         onSuccess: () => {
           // Sync with invoice if sessions changed

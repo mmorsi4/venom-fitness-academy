@@ -35,7 +35,8 @@ export default function CheckIn() {
   
   const [tab, setTab] = useState("members");
   const [query, setQuery] = useState("");
-  const [selectedMember, setSelectedMember] = useState<Member | null>(null);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const selectedMember = selectedMemberId ? members.find(m => m.uuid === selectedMemberId) || null : null;
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>("");
   
   const [ptCoachId, setPtCoachId] = useState<string>("");
@@ -69,7 +70,7 @@ export default function CheckIn() {
     }
     setCheckedInToday(prev => [...prev, member.uuid]);
     setSuccessMember(member);
-    setSelectedMember(null);
+    setSelectedMemberId(null);
     setPtCoachId("");
     setQuery("");
     toast.success(msg, { description: desc });
@@ -90,7 +91,7 @@ export default function CheckIn() {
   };
 
   const handleSelect = (member: Member) => {
-    setSelectedMember(member);
+    setSelectedMemberId(member.uuid);
     setSuccessMember(null);
     const memberActiveInvoices = invoices.filter(i => 
       i.member_id === member.uuid && 
@@ -264,7 +265,7 @@ export default function CheckIn() {
           type="search"
           placeholder="Search member..."
           value={query}
-          onChange={e => { setQuery(e.target.value); setSelectedMember(null); setSuccessMember(null); }}
+          onChange={e => { setQuery(e.target.value); setSelectedMemberId(null); setSuccessMember(null); }}
           className="pl-10 h-12 text-base"
           autoFocus
         />
@@ -318,7 +319,7 @@ export default function CheckIn() {
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">{selectedMember.id === -1 ? 'Clinic Visitor' : selectedMember.id} · {selectedMember.phone}</p>
               </div>
-              <button onClick={() => setSelectedMember(null)} className="text-muted-foreground hover:text-foreground">✕</button>
+              <button onClick={() => setSelectedMemberId(null)} className="text-muted-foreground hover:text-foreground">✕</button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -443,7 +444,7 @@ export default function CheckIn() {
                               : 'Check In'}
                 </Button>
               )}
-              <Button data-testid="btn-checkin-cancel" variant="outline" onClick={() => setSelectedMember(null)} className={(!(selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999) && !(isClinic && selectedMember.sessions_remaining <= 0)) ? "" : "flex-1"}>Cancel</Button>
+              <Button data-testid="btn-checkin-cancel" variant="outline" onClick={() => setSelectedMemberId(null)} className={(!(selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999) && !(isClinic && selectedMember.sessions_remaining <= 0)) ? "" : "flex-1"}>Cancel</Button>
             </div>
           </CardContent>
         </Card>

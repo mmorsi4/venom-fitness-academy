@@ -67,6 +67,7 @@ export function useCheckInMember() {
       qc.invalidateQueries({ queryKey: queryKeys.members });
       qc.invalidateQueries({ queryKey: queryKeys.auditLogs });
       qc.invalidateQueries({ queryKey: queryKeys.todayCheckIns });
+      qc.invalidateQueries({ queryKey: queryKeys.invoices });
     },
   });
 }
