@@ -457,6 +457,11 @@ export default function Finance() {
                             Net Adjustment: {coach.netAdjustment > 0 ? '+' : ''}{Math.round(coach.netAdjustment).toLocaleString()} EGP
                           </p>
                         )}
+                        {coach.advance_balance > 0 && (
+                          <p className="text-xs font-semibold text-amber-600 mt-0.5">
+                            Active Advance Debt: {coach.advance_balance.toLocaleString()} EGP
+                          </p>
+                        )}
                       </div>
                       <span className="font-bold text-foreground">{coach.calculatedAmount.toLocaleString()} EGP</span>
                     </div>
@@ -884,6 +889,11 @@ export default function Finance() {
                             {coach.netAdjustment !== 0 && (
                               <p className={`text-[10px] font-semibold mt-0.5 ${coach.netAdjustment > 0 ? 'text-emerald-500' : 'text-orange-500'}`}>
                                 Net Adjustment: {coach.netAdjustment > 0 ? '+' : ''}{Math.round(coach.netAdjustment).toLocaleString()} EGP
+                              </p>
+                            )}
+                            {coach.advance_balance > 0 && (
+                              <p className="text-[10px] font-semibold text-amber-600 mt-0.5">
+                                Active Advance Debt: {coach.advance_balance.toLocaleString()} EGP
                               </p>
                             )}
                           </div>

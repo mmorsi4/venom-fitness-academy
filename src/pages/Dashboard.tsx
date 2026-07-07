@@ -213,14 +213,14 @@ export default function Dashboard() {
               Expiring Memberships
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 pt-0">
-            {expiringSoon.slice(0, 5).length === 0 ? (
+          <CardContent className="space-y-2 pt-0 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+            {expiringSoon.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">No expiring memberships</p>
             ) : (
-              expiringSoon.slice(0, 5).map(m => (
+              expiringSoon.map(m => (
                 <div key={m.uuid} data-testid={`expiring-${m.uuid}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{m.name}</p>
+                    <p className="text-sm font-medium text-foreground truncate">#{m.id} - {m.name}</p>
                     <p className="text-xs text-muted-foreground">{m.sessions_remaining} sessions left</p>
                   </div>
                   <StatusBadge status={m.status} />

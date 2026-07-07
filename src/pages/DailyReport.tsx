@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { useAuditLogs, useInvoices, useExpenses, useClasses, useInvoicePayments, useCheckInsByDate, useMembers } from "@/hooks/use-data";
+import { useAuditLogs, useInvoices, useExpenses, useClasses, useInvoicePayments, useCheckInsByDate, useMembers, useClassScheduleOverrides } from "@/hooks/use-data";
 import { format, isSameDay, subDays, addDays, parseISO } from "date-fns";
 
 function isoToDate(s: string) {
@@ -24,15 +24,31 @@ export default function DailyReport() {
   const { data: classes = [] } = useClasses();
   const { data: invoicePayments = [] } = useInvoicePayments();
   const { data: members = [] } = useMembers();
+  const { data: scheduleOverrides = [] } = useClassScheduleOverrides();
 
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const dateString = format(selectedDate, "yyyy-MM-dd");
   const { data: checkInsData = [] } = useCheckInsByDate(selectedDate);
 
+  // Memoized values for the selected day
   const dayOfWeek = DAYS_OF_WEEK[selectedDate.getDay()];
   const isToday = isSameDay(selectedDate, new Date());
 
-  const classesForDay = classes.filter(c => c.schedules?.some(s => s.day === dayOfWeek));
+  const classesForDay = classes.filter(cls => {
+    const regularSchedule = (cls.schedules || []).find(s => s.day === dayOfWeek);
+    const overrideForDay = scheduleOverrides.find(o => o.class_id === cls.id && o.original_date === dateString);
+    const postponedToDay = scheduleOverrides.find(o => o.class_id === cls.id && o.status === 'postponed' && o.new_date === dateString);
+
+    let isScheduledToday = !!regularSchedule;
+    
+    if (overrideForDay && (overrideForDay.status === 'postponed' || overrideForDay.status === 'cancelled')) {
+      isScheduledToday = false;
+    }
+    if (postponedToDay) {
+      isScheduledToday = true;
+    }
+    return isScheduledToday;
+  });
 
   // Check-ins from check_ins table for selected date
   const checkIns = checkInsData;

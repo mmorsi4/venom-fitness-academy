@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { eachDayOfInterval, startOfMonth, endOfMonth, isBefore, startOfDay, format } from "date-fns"
-import type { Coach, Class, CoachCheckIn, Invoice, PaymentMethod, CoachDeduction, Expense } from "./types"
+import type { Coach, Class, CoachCheckIn, Invoice, PaymentMethod, CoachDeduction, Expense, ClassScheduleOverride } from "./types"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -17,7 +17,8 @@ export function calculateCoachPayroll(
   checkInsThisMonth: CoachCheckIn[],
   revenue: number,
   newMembersCount: number,
-  deductions: CoachDeduction[] = []
+  deductions: CoachDeduction[] = [],
+  scheduleOverrides: ClassScheduleOverride[] = []
 ) {
   const start = startOfMonth(new Date(year, month));
   const end = endOfMonth(start);
@@ -57,9 +58,18 @@ export function calculateCoachPayroll(
 
   allDays.forEach(day => {
     const dayName = DAYS[day.getDay()];
+    const dateString = format(day, 'yyyy-MM-dd');
     let slotsForDay = 0;
+    
     coachClasses.forEach(c => {
-      slotsForDay += c.schedules.filter(s => s.day === dayName).length;
+      let classSlots = c.schedules.filter(s => s.day === dayName).length;
+      
+      const overrides = scheduleOverrides.filter(o => o.class_id === c.id);
+      const cancelledOrPostponedToday = overrides.filter(o => o.original_date === dateString && (o.status === 'cancelled' || o.status === 'postponed')).length;
+      const postponedToToday = overrides.filter(o => o.status === 'postponed' && o.new_date === dateString).length;
+
+      classSlots = classSlots - cancelledOrPostponedToday + postponedToToday;
+      slotsForDay += Math.max(0, classSlots);
     });
     
     scheduledSlotsInMonth += slotsForDay;
@@ -101,12 +111,8 @@ export function calculateCoachPayroll(
     finalAmount = Math.max(0, baseAmount - deduction) + subExtraPay + ptAmount;
 
     expectedAmount = coach.rate + (groupCheckInsAsSub.length * perSessionRate) + (ptCheckIns.length * actualPtRate);
-    // Paid amount for salary coaches is hard to derive just from checkins because base salary is paid as a lump sum.
-    // For now, we calculate paid based on the value of paid checkins plus any advances.
     const paidPt = ptCheckIns.filter(ci => ci.is_paid).length * actualPtRate;
     const paidSub = groupCheckInsAsSub.filter(ci => ci.is_paid).length * perSessionRate;
-    // Net adjustment (bonuses - deductions) is effectively an adjustment to what they are owed.
-    // So if they had a deduction (negative), it lowers what they are owed.
     paidAmount = paidPt + paidSub - netAdjustment;
 
   } else if (coach.payment_type === 'per_session') {
@@ -120,6 +126,10 @@ export function calculateCoachPayroll(
   }
   finalAmount = Math.max(0, finalAmount + netAdjustment);
   
+  const advanceBalance = coach.advance_balance || 0;
+  const originalFinalAmount = finalAmount;
+  finalAmount = Math.max(0, finalAmount - advanceBalance);
+
   return {
     ...coach,
     scheduledSlotsInMonth,
@@ -128,12 +138,14 @@ export function calculateCoachPayroll(
     baseAmount,
     deduction,
     netAdjustment,
+    ptAmount,
     calculatedAmount: Math.round(finalAmount),
     expectedAmount: Math.round(expectedAmount),
     paidAmount: Math.round(paidAmount),
     ptCheckIns: unpaidPtCheckIns.length,
     subCheckIns: unpaidGroupSub.length,
-    unpaidCheckInIds: [...unpaidGroupMain, ...unpaidGroupSub, ...unpaidPtCheckIns].map(ci => ci.id)
+    unpaidCheckInIds: [...unpaidGroupMain, ...unpaidGroupSub, ...unpaidPtCheckIns].map(ci => ci.id),
+    advanceBalanceOffset: originalFinalAmount - finalAmount
   };
 }
 

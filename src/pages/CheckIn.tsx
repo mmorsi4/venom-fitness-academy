@@ -13,7 +13,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { useMembers, useCheckInMember, usePackages, useCoaches, useCheckInCoachWithDetails, useClasses, useCoachCheckInsToday, useCheckInCoach, useInvoices } from "@/hooks/use-data";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
+} from "@/components/ui/dialog";
+import { useMembers, useCheckInMember, usePackages, useCoaches, useCheckInCoachWithDetails, useClasses, useCoachCheckInsToday, useCheckInCoach, useInvoices, useClassScheduleOverrides, useCreateClassScheduleOverride, useDeleteClassScheduleOverride } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
 import type { Member, SubscriptionPackage, Coach } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
@@ -31,6 +34,12 @@ export default function CheckIn() {
   const checkInMutation = useCheckInMember();
   const coachCheckInMutation = useCheckInCoachWithDetails();
   const checkInCoachStandard = useCheckInCoach();
+  const { data: scheduleOverrides = [] } = useClassScheduleOverrides();
+  const createOverrideMutation = useCreateClassScheduleOverride();
+  const deleteOverrideMutation = useDeleteClassScheduleOverride();
+  const [postponeClassId, setPostponeClassId] = useState<string | null>(null);
+  const [postponeDate, setPostponeDate] = useState("");
+  const [postponeTime, setPostponeTime] = useState("");
   const { currentUser } = useAuth();
   
   const [tab, setTab] = useState("members");
@@ -195,7 +204,63 @@ export default function CheckIn() {
   };
 
   const todayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][new Date().getDay()];
-  const todaysClasses = classes.filter(cls => (cls.schedules || []).some(s => s.day === todayName));
+  const todayDateString = format(new Date(), 'yyyy-MM-dd');
+
+  function formatTo12Hour(time24: string) {
+    if (!time24) return '';
+    const [h, m] = time24.split(':');
+    let hours = parseInt(h, 10);
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${hours}:${m} ${ampm}`;
+  }
+
+  const todaysClasses = classes.map(cls => {
+    const regularSchedule = (cls.schedules || []).find(s => s.day === todayName);
+    const overrideToday = scheduleOverrides.find(o => o.class_id === cls.id && o.original_date === todayDateString);
+    const postponedToToday = scheduleOverrides.find(o => o.class_id === cls.id && o.status === 'postponed' && o.new_date === todayDateString);
+
+    let isScheduledToday = !!regularSchedule;
+    let displayTime = regularSchedule?.time;
+    let status = 'pending';
+
+    if (overrideToday) {
+       status = overrideToday.status;
+       if (status === 'postponed' || status === 'cancelled') {
+         isScheduledToday = false;
+       }
+    }
+    if (postponedToToday) {
+       isScheduledToday = true;
+       displayTime = postponedToToday.new_time || displayTime;
+       status = 'pending';
+    }
+
+    return {
+       ...cls,
+       isScheduledToday,
+       displayTime,
+       statusOverride: overrideToday?.status || (postponedToToday ? 'postponed_to_today' : null),
+       overrideId: overrideToday?.id || postponedToToday?.id
+    };
+  }).filter(c => c.isScheduledToday || c.statusOverride === 'cancelled').sort((a,b) => (a.displayTime || '').localeCompare(b.displayTime || ''));
+  
+  const handleCancelSession = (classId: string) => {
+    createOverrideMutation.mutate({ class_id: classId, original_date: todayDateString, status: 'cancelled' }, {
+      onSuccess: () => toast.success("Session cancelled for today")
+    });
+  };
+  
+  const handlePostponeSession = () => {
+    if (!postponeClassId || !postponeDate || !postponeTime) return;
+    createOverrideMutation.mutate({ class_id: postponeClassId, original_date: todayDateString, status: 'postponed', new_date: postponeDate, new_time: postponeTime }, {
+      onSuccess: () => {
+        toast.success("Session postponed successfully");
+        setPostponeClassId(null);
+      }
+    });
+  };
 
   const submitTodayClassCheckIn = (classId: string, coachId: string, originalCoachId: string) => {
     coachCheckInMutation.mutate({
@@ -477,12 +542,13 @@ export default function CheckIn() {
               <p className="text-center text-muted-foreground py-6">No classes scheduled for today.</p>
             ) : todaysClasses.map(cls => {
               const mainCoach = coaches.find(c => c.id === cls.coach_id);
-              const timeSlot = (cls.schedules || []).find(s => s.day === todayName)?.time;
+              const timeSlot = formatTo12Hour((cls as any).displayTime);
               const checkedInForClass = checkIns.filter(ci => ci.class_id === cls.id);
               const alreadyDone = checkedInForClass.length > 0;
+              const isCancelled = (cls as any).statusOverride === 'cancelled';
 
               return (
-                <div key={cls.id} className={`rounded-xl border p-4 space-y-3 ${alreadyDone ? 'bg-emerald-50 border-emerald-200' : 'bg-card'}`}>
+                <div key={cls.id} className={`rounded-xl border p-4 space-y-3 ${alreadyDone ? 'bg-emerald-50 border-emerald-200' : isCancelled ? 'bg-muted/50 border-muted opacity-80' : 'bg-card'}`}>
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-semibold text-foreground">{cls.name}</p>
@@ -490,14 +556,25 @@ export default function CheckIn() {
                     </div>
                     {alreadyDone ? (
                       <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
-                        ✓ Done — {coaches.find(c => c.id === checkedInForClass[0]?.coach_id)?.name}
+                        ✓ Done - {coaches.find(c => c.id === checkedInForClass[0]?.coach_id)?.name}
                       </Badge>
+                    ) : isCancelled ? (
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-muted-foreground border-muted-foreground/30">Cancelled</Badge>
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => {
+                          if ((cls as any).overrideId) deleteOverrideMutation.mutate((cls as any).overrideId, { onSuccess: () => toast.success("Cancellation undone") });
+                        }}>Undo</Button>
+                      </div>
                     ) : (
-                      <Badge variant="outline" className="text-amber-600 border-amber-300">Pending</Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-amber-600 border-amber-300">Pending</Badge>
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setPostponeClassId(cls.id)}>Postpone</Button>
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => handleCancelSession(cls.id)}>Cancel</Button>
+                      </div>
                     )}
                   </div>
 
-                  {!alreadyDone && (
+                  {!alreadyDone && !isCancelled && (
                     <div className="space-y-2">
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Who taught this session?</p>
                       {/* Main coach first */}
@@ -542,6 +619,31 @@ export default function CheckIn() {
             })}
           </div>
         </TabsContent>
+
+        {/* Postpone Dialog */}
+        <Dialog open={!!postponeClassId} onOpenChange={(o) => !o && setPostponeClassId(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Postpone Session</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>New Date</Label>
+                <Input type="date" value={postponeDate} onChange={e => setPostponeDate(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>New Time</Label>
+                <Input type="time" value={postponeTime} onChange={e => setPostponeTime(e.target.value)} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPostponeClassId(null)}>Cancel</Button>
+              <Button onClick={handlePostponeSession} disabled={!postponeDate || !postponeTime || createOverrideMutation.isPending}>
+                {createOverrideMutation.isPending ? "Saving..." : "Confirm Postpone"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </Tabs>
     </div>
   );

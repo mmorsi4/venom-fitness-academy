@@ -21,7 +21,8 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   useEmployees, useCreateEmployee, useUpdateEmployee, useDeleteEmployee,
   useEmployeeCheckIns, useCreateEmployeeCheckIn,
-  useEmployeeDeductions, useCreateEmployeeDeduction
+  useEmployeeDeductions, useCreateEmployeeDeduction,
+  useUpdateEmployeeCheckInTime, useDeleteEmployeeCheckIn
 } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
 import type { Employee } from "@/lib/types";
@@ -61,8 +62,13 @@ export default function Employees() {
   const { data: allDeductions = [] } = useEmployeeDeductions();
   const createCheckIn = useCreateEmployeeCheckIn();
   const createDeduction = useCreateEmployeeDeduction();
+  const updateEmployeeCheckInTime = useUpdateEmployeeCheckInTime();
+  const deleteEmployeeCheckIn = useDeleteEmployeeCheckIn();
 
   const [tab, setTab] = useState("directory");
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [editLogTime, setEditLogTime] = useState("");
+  const [editLogOutTime, setEditLogOutTime] = useState("");
   const [showDialog, setShowDialog] = useState(false);
   const [editEmp, setEditEmp] = useState<Employee | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -111,8 +117,6 @@ export default function Employees() {
       });
     }
   };
-
-
 
   const handleAddDeduction = () => {
     if (!deductionEmp || !deductionForm.amount || !deductionForm.reason) {
@@ -311,39 +315,98 @@ export default function Employees() {
         <div className="space-y-3">
           <Card>
             <CardContent className="p-0 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/30">
-                    {["Employee", "Department", "Check-in Time", "Late", "Deduction"].map(h => (
-                      <th key={h} className="text-left p-3 text-xs font-semibold text-muted-foreground">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {allCheckIns.length === 0 ? (
-                    <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">No check-ins this month</td></tr>
-                  ) : allCheckIns.map(ci => {
-                    const emp = employees.find(e => e.id === ci.employee_id);
-                    return (
-                      <tr key={ci.id} className="hover:bg-muted/30">
-                        <td className="p-3 font-medium">{emp?.name ?? "—"}</td>
-                        <td className="p-3 text-muted-foreground">{emp?.department ?? "—"}</td>
-                        <td className="p-3">{format(new Date(ci.checked_in_at || ci.check_in_time || ci.created_at || ""), "dd MMM yyyy HH:mm")}</td>
-                        <td className="p-3">
-                          {(ci.late_minutes || 0) > 0 ? (
-                            <Badge variant="outline" className="text-amber-600 border-amber-300 text-xs">
-                              {(ci.late_minutes || 0)} min
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-emerald-600 border-emerald-300 text-xs">On time</Badge>
-                          )}
-                        </td>
-                        <td className="p-3 text-red-600">{(ci.deduction || 0) > 0 ? `${(ci.deduction || 0).toFixed(0)} EGP` : "—"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <table className="w-full text-sm text-left">
+                  <thead className="bg-muted/50 border-b">
+                    <tr>
+                      <th className="p-3 font-medium text-muted-foreground">Employee</th>
+                      <th className="p-3 font-medium text-muted-foreground">Department</th>
+                      <th className="p-3 font-medium text-muted-foreground">Time In</th>
+                      <th className="p-3 font-medium text-muted-foreground">Time Out</th>
+                      <th className="p-3 font-medium text-muted-foreground">Status</th>
+                      <th className="p-3 font-medium text-muted-foreground">Deduction</th>
+                      <th className="p-3 font-medium text-muted-foreground text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {allCheckIns.length === 0 ? (
+                      <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No check-ins this month</td></tr>
+                    ) : allCheckIns.map(ci => {
+                      const emp = employees.find(e => e.id === ci.employee_id);
+                      return (
+                        <tr key={ci.id} className="hover:bg-muted/30">
+                          <td className="p-3 font-medium">{emp?.name ?? "—"}</td>
+                          <td className="p-3 text-muted-foreground">{emp?.department ?? "—"}</td>
+                          <td className="p-3">
+                            {editingLogId === ci.id ? (
+                              <Input 
+                                type="datetime-local" 
+                                value={editLogTime} 
+                                onChange={e => setEditLogTime(e.target.value)} 
+                                className="h-8 text-xs max-w-[200px]" 
+                              />
+                            ) : (
+                              format(new Date(ci.checked_in_at || ci.check_in_time || ci.created_at || ""), "dd MMM yyyy HH:mm")
+                            )}
+                          </td>
+                          <td className="p-3">
+                            {editingLogId === ci.id ? (
+                              <Input 
+                                type="datetime-local" 
+                                value={editLogOutTime} 
+                                onChange={e => setEditLogOutTime(e.target.value)} 
+                                className="h-8 text-xs max-w-[200px]" 
+                              />
+                            ) : (
+                              ci.check_out_time ? format(new Date(ci.check_out_time), "dd MMM yyyy HH:mm") : "—"
+                            )}
+                          </td>
+                          <td className="p-3">
+                            {(ci.late_minutes || 0) > 0 ? (
+                              <Badge variant="outline" className="text-amber-600 border-amber-300 text-xs">
+                                {(ci.late_minutes || 0)} min late
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-emerald-600 border-emerald-300 text-xs">On time</Badge>
+                            )}
+                          </td>
+                          <td className="p-3 text-red-600">{(ci.deduction || 0) > 0 ? `${(ci.deduction || 0).toFixed(0)} EGP` : "—"}</td>
+                          <td className="p-3 text-right">
+                            {editingLogId === ci.id ? (
+                              <div className="flex justify-end gap-1">
+                                <Button size="sm" onClick={() => {
+                                  updateEmployeeCheckInTime.mutate({ 
+                                    id: ci.id, 
+                                    checkInTime: new Date(editLogTime).toISOString(),
+                                    checkOutTime: editLogOutTime ? new Date(editLogOutTime).toISOString() : undefined
+                                  });
+                                  setEditingLogId(null);
+                                }}>Save</Button>
+                                <Button size="sm" variant="ghost" onClick={() => setEditingLogId(null)}>Cancel</Button>
+                              </div>
+                            ) : (
+                              <div className="flex justify-end gap-1">
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => { 
+                                  setEditingLogId(ci.id); 
+                                  setEditLogTime(format(new Date(ci.checked_in_at || ci.check_in_time || ci.created_at || ""), "yyyy-MM-dd'T'HH:mm")); 
+                                  setEditLogOutTime(ci.check_out_time ? format(new Date(ci.check_out_time), "yyyy-MM-dd'T'HH:mm") : "");
+                                }}>
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" onClick={() => {
+                                  if(confirm("Are you sure you want to delete this check-in?")) {
+                                    deleteEmployeeCheckIn.mutate(ci.id);
+                                  }
+                                }}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
             </CardContent>
           </Card>
         </div>

@@ -58,6 +58,7 @@ interface MemberForm {
   invitations_remaining: string;
   inbody_sessions_remaining: string;
   status: string;
+  removePhoto?: boolean;
 }
 
 const emptyForm: MemberForm = {
@@ -1136,42 +1137,13 @@ export default function Members() {
                         {history.map(log => (
                           <div key={log.id} className="p-3 rounded-lg border bg-muted/30 text-sm">
                             <div className="flex justify-between items-start mb-1">
-                              {editingLogId === log.id ? (
-                                <div className="flex items-center gap-2">
-                                  <Input 
-                                    type="datetime-local" 
-                                    value={editLogTime} 
-                                    onChange={e => setEditLogTime(e.target.value)} 
-                                    className="h-8 text-xs max-w-[200px]" 
-                                  />
-                                  <Button size="sm" onClick={() => {
-                                    updateAuditCheckInTime.mutate({ id: log.id, newTime: new Date(editLogTime).toISOString() });
-                                    setEditingLogId(null);
-                                  }}>Save</Button>
-                                  <Button size="sm" variant="ghost" onClick={() => setEditingLogId(null)}>Cancel</Button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-2">
-                                  <span className="font-semibold">{format(parseISO(log.timestamp), "MMM d, yyyy h:mm a")}</span>
-                                  <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => { 
-                                    setEditingLogId(log.id); 
-                                    setEditLogTime(format(parseISO(log.timestamp), "yyyy-MM-dd'T'HH:mm")); 
-                                  }}>
-                                    <Pencil className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                              )}
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold">{format(parseISO(log.timestamp), "MMM d, yyyy h:mm a")}</span>
+                              </div>
                               <span className="text-xs text-muted-foreground">{log.action_type === 'override_checkin' ? 'Override' : 'Check-in'}</span>
                             </div>
                             <div className="flex justify-between items-end mt-2">
                               <p className="text-muted-foreground text-xs leading-snug">{log.details}</p>
-                              <Button variant="ghost" size="sm" className="h-6 text-destructive text-xs hover:bg-destructive/10" onClick={() => {
-                                if(confirm("Are you sure you want to delete this check-in? The session will be refunded to the member.")) {
-                                  deleteAuditCheckIn.mutate(log.id);
-                                }
-                              }}>
-                                <Trash2 className="h-3 w-3 mr-1" /> Delete
-                              </Button>
                             </div>
                           </div>
                         ))}
