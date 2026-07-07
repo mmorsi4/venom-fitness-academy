@@ -34,7 +34,7 @@ const DEPARTMENTS = ["Reception", "Sales", "Cleaning", "Security", "Management",
 const emptyForm = {
   name: "", phone: "", department: "Reception", rate: "",
   workDays: [] as string[], shiftStart: "09:00", shiftEnd: "17:00",
-  lateThresholdMinutes: "15", deductionPerMinute: "0", user_id: ""
+  lateThresholdMinutes: "15", deductionPerMinute: "0", missedDayDeduction: "0", user_id: ""
 };
 
 function empToForm(e: Employee) {
@@ -44,6 +44,7 @@ function empToForm(e: Employee) {
     shiftEnd: e.shift_end || "17:00",
     lateThresholdMinutes: String(e.late_threshold_minutes),
     deductionPerMinute: String(e.deduction_per_minute),
+    missedDayDeduction: String(e.missed_day_deduction || 0),
     user_id: e.user_id || "",
   };
 }
@@ -93,8 +94,9 @@ export default function Employees() {
       name: form.name.trim(), phone: form.phone.trim(), department: form.department,
       rate: Number(form.rate) || 0, work_days: form.workDays,
       shift_start: form.shiftStart || null, shift_end: form.shiftEnd || null,
-      late_threshold_minutes: Number(form.lateThresholdMinutes) || 15,
-      deduction_per_minute: Number(form.deductionPerMinute) || 0,
+      late_threshold_minutes: form.lateThresholdMinutes === "" ? 15 : Number(form.lateThresholdMinutes),
+      deduction_per_minute: form.deductionPerMinute === "" ? 0 : Number(form.deductionPerMinute),
+      missed_day_deduction: form.missedDayDeduction === "" ? 0 : Number(form.missedDayDeduction),
       user_id: form.user_id || null,
     };
     if (editEmp) {
@@ -110,52 +112,7 @@ export default function Employees() {
     }
   };
 
-  // HR Check-in: employee looks themselves up and checks in
-  const hrMatchedEmployee = useMemo(() => {
-    if (!hrSearch.trim()) return null;
-    const q = hrSearch.toLowerCase();
-    return employees.find(e =>
-      e.name.toLowerCase().includes(q) || e.phone.includes(q)
-    ) || null;
-  }, [hrSearch, employees]);
 
-  const handleHrCheckIn = () => {
-    if (!hrMatchedEmployee) { toast.error("Employee not found"); return; }
-
-    const now = new Date();
-    let lateMinutes = 0;
-    let deduction = 0;
-
-    if (hrMatchedEmployee.shift_start) {
-      const [sh, sm] = hrMatchedEmployee.shift_start.split(':').map(Number);
-      const shiftStart = new Date(now);
-      shiftStart.setHours(sh, sm, 0, 0);
-      const threshold = hrMatchedEmployee.late_threshold_minutes;
-      const diff = differenceInMinutes(now, shiftStart);
-      if (diff > threshold) {
-        lateMinutes = diff - threshold;
-        deduction = lateMinutes * hrMatchedEmployee.deduction_per_minute;
-      }
-    }
-
-    createCheckIn.mutate({
-      employee_id: hrMatchedEmployee.id,
-      checked_in_at: now.toISOString(),
-      late_minutes: lateMinutes,
-      deduction,
-      notes: lateMinutes > 0 ? `Arrived ${lateMinutes} minutes late` : null,
-    }, {
-      onSuccess: () => {
-        toast.success(
-          lateMinutes > 0
-            ? `Checked in — ${lateMinutes} min late, deduction: ${deduction.toFixed(0)} EGP`
-            : `${hrMatchedEmployee.name} checked in on time!`
-        );
-        setHrSearch(""); setHrPin("");
-      },
-      onError: (e) => toast.error(`Error: ${e.message}`)
-    });
-  };
 
   const handleAddDeduction = () => {
     if (!deductionEmp || !deductionForm.amount || !deductionForm.reason) {
@@ -206,11 +163,10 @@ export default function Employees() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
-          <TabsTrigger value="directory">Directory</TabsTrigger>
-          <TabsTrigger value="checkin">HR Check-in</TabsTrigger>
-          <TabsTrigger value="log">Attendance Log</TabsTrigger>
-        </TabsList>
+          <TabsList>
+            <TabsTrigger value="directory">Directory</TabsTrigger>
+            <TabsTrigger value="log">Attendance & Deductions</TabsTrigger>
+          </TabsList>
       </Tabs>
 
       {/* ── Directory Tab ── */}
@@ -232,7 +188,23 @@ export default function Employees() {
                 const lateDeductions = allCheckIns
                   .filter(ci => ci.employee_id === emp.id)
                   .reduce((s, ci) => s + (ci.deduction || 0), 0);
-                const netSalary = emp.rate - totalDeductions - lateDeductions;
+
+                let missedDays = 0;
+                const today = new Date();
+                for (let d = 1; d < today.getDate(); d++) {
+                  const checkDate = new Date(today.getFullYear(), today.getMonth(), d);
+                  const dayName = DAYS[checkDate.getDay()];
+                  if (emp.work_days.includes(dayName)) {
+                    const checkedIn = allCheckIns.some(ci => {
+                      const cid = new Date(ci.checked_in_at || ci.check_in_time || ci.created_at || "");
+                      return cid.getDate() === d && ci.employee_id === emp.id;
+                    });
+                    if (!checkedIn) missedDays++;
+                  }
+                }
+                const missedDaysDeductionTotal = missedDays * (emp.missed_day_deduction || 0);
+
+                const netSalary = emp.rate - totalDeductions - lateDeductions - missedDaysDeductionTotal;
                 const checkedInThisMonth = allCheckIns.filter(ci => ci.employee_id === emp.id).length;
                 const workingToday = emp.work_days.includes(todayName);
                 const checkedInTodayEmp = checkedInToday.some(ci => ci.employee_id === emp.id);
@@ -275,10 +247,17 @@ export default function Employees() {
                           <p className="text-muted-foreground">Days Attended</p>
                         </div>
                         <div className="p-2 rounded-lg bg-muted/50">
-                          <p className="font-semibold text-red-600">{(totalDeductions + lateDeductions).toLocaleString()} EGP</p>
+                          <p className="font-semibold text-red-600">{(totalDeductions + lateDeductions + missedDaysDeductionTotal).toLocaleString()} EGP</p>
                           <p className="text-muted-foreground">Deductions</p>
                         </div>
                       </div>
+
+                      {missedDays > 0 && (
+                        <div className="text-xs text-red-600 mt-2">
+                          <AlertTriangle className="inline w-3 h-3 mr-1" />
+                          Missed {missedDays} days (-{missedDaysDeductionTotal} EGP)
+                        </div>
+                      )}
 
                       <div className="flex flex-wrap gap-1">
                         {DAYS.map(d => (
@@ -324,83 +303,6 @@ export default function Employees() {
               })}
             </div>
           )}
-        </div>
-      )}
-
-      {/* ── HR Check-in Tab ── */}
-      {tab === "checkin" && (
-        <div className="max-w-md mx-auto space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Shield className="w-4 h-4 text-primary" /> Employee Self Check-in
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-1.5">
-                <Label>Search by name or phone number</Label>
-                <Input
-                  placeholder="Enter your name or phone..."
-                  value={hrSearch}
-                  onChange={e => setHrSearch(e.target.value)}
-                  autoFocus
-                />
-              </div>
-
-              {hrMatchedEmployee && (
-                <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 space-y-2">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                      <span className="font-bold text-primary">{hrMatchedEmployee.name.charAt(0)}</span>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-foreground">{hrMatchedEmployee.name}</p>
-                      <p className="text-xs text-muted-foreground">{hrMatchedEmployee.department}</p>
-                    </div>
-                  </div>
-                  {hrMatchedEmployee.shift_start && (
-                    <div className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      Shift: {hrMatchedEmployee.shift_start} — {hrMatchedEmployee.shift_end}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <Button
-                className="w-full"
-                onClick={handleHrCheckIn}
-                disabled={!hrMatchedEmployee || createCheckIn.isPending}
-              >
-                {createCheckIn.isPending ? "Recording..." : "✓ Check In Now"}
-              </Button>
-
-              {/* Today's check-ins */}
-              {checkedInToday.length > 0 && (
-                <div className="space-y-2 pt-2">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Today's Attendance</p>
-                  {checkedInToday.map(ci => {
-                    const emp = employees.find(e => e.id === ci.employee_id);
-                    return (
-                      <div key={ci.id} className="flex items-center justify-between py-1.5 border-b border-border text-sm">
-                        <span className="font-medium text-foreground">{emp?.name ?? "Unknown"}</span>
-                        <div className="flex items-center gap-2">
-                          {(ci.late_minutes || 0) > 0 && (
-                            <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
-                              +{(ci.late_minutes || 0)}min late
-                            </Badge>
-                          )}
-                          <span className="text-xs text-muted-foreground">
-                            {format(new Date(ci.checked_in_at || ci.check_in_time || ci.created_at || ""), "HH:mm")}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
         </div>
       )}
 
@@ -527,15 +429,31 @@ export default function Employees() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label>Late Grace Period (min)</Label>
-                <Input type="number" placeholder="15" value={form.lateThresholdMinutes} onChange={e => setForm(p => ({ ...p, lateThresholdMinutes: e.target.value }))} />
+                <Label>Late Grace (mins)</Label>
+                <Input
+                  type="number"
+                  value={form.lateThresholdMinutes}
+                  onChange={e => setForm({ ...form, lateThresholdMinutes: e.target.value })}
+                />
               </div>
               <div className="space-y-1.5">
-                <Label>Deduction per Late Minute (EGP)</Label>
-                <Input type="number" placeholder="e.g. 2" value={form.deductionPerMinute} onChange={e => setForm(p => ({ ...p, deductionPerMinute: e.target.value }))} />
+                <Label>Deduct per late min</Label>
+                <Input
+                  type="number"
+                  value={form.deductionPerMinute}
+                  onChange={e => setForm({ ...form, deductionPerMinute: e.target.value })}
+                />
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Deduction per missed day (EGP)</Label>
+              <Input
+                type="number"
+                value={form.missedDayDeduction}
+                onChange={e => setForm({ ...form, missedDayDeduction: e.target.value })}
+              />
             </div>
           </div>
           <DialogFooter>

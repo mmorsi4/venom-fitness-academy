@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, LogIn, Package, FileText, DollarSign,
   Dumbbell, Calendar, UserPlus, ClipboardList, Tag,
   ChevronRight, CalendarDays, BarChart2, AlertCircle, Landmark,
-  UserCog, LogOut, Menu, X, Trophy
+  UserCog, LogOut, Menu, X, Trophy, Shield
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -30,6 +30,7 @@ const ALL_NAV_ITEMS = [
   { href: "/audit", label: "Audit Log", icon: ClipboardList },
   { href: "/users", label: "User Management", icon: UserCog },
   { href: "/employees", label: "Employees", icon: Users },
+  { href: "/employee-checkin", label: "Staff Check-In", icon: Shield },
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {
@@ -45,7 +46,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   if (!currentUser) return <>{children}</>;
 
-  const allowedHrefs = Array.from(new Set(currentUser.roles.flatMap(r => r.tabs)));
+  const allowedHrefs = Array.from(new Set([...currentUser.roles.flatMap(r => r.tabs), '/employee-checkin']));
   const navItems = ALL_NAV_ITEMS.filter(item => allowedHrefs.includes(item.href));
   
   // Route protection

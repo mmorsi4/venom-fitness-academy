@@ -4,6 +4,7 @@
    --------------------------------------------------------------- */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import * as q from '../lib/queries';
 import type { Member, SubscriptionPackage, Invoice, Discount, Coach, Lead, Expense, Liability, AuditLog, Sport, Class, Employee, InvoicePayment, InternalTransfer } from '../lib/types';
 
@@ -384,6 +385,37 @@ export function useCreateAuditLog() {
   });
 }
 
+export function useMemberCheckIns(memberId: string) {
+  return useQuery({
+    queryKey: ['memberCheckIns', memberId],
+    queryFn: () => q.getMemberCheckIns(memberId),
+    enabled: !!memberId,
+  });
+}
+
+export function useDeleteMemberCheckIn(memberUuid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => q.deleteMemberCheckIn(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.members });
+      qc.invalidateQueries({ queryKey: queryKeys.invoices });
+      qc.invalidateQueries({ queryKey: ['memberCheckIns', memberUuid] });
+    },
+    onError: (err: any) => toast.error(err.message || 'Failed to delete check-in'),
+  });
+}
+
+export function useUpdateMemberCheckIn() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, newTime }: { id: string; newTime: string }) => q.updateMemberCheckInTime(id, newTime),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['memberCheckIns'] });
+    },
+  });
+}
+
 // ── Check-Ins (today) ───────────────────────────────────────
 
 export function useTodayCheckIns() {
@@ -628,13 +660,7 @@ export function useClockOutEmployee() {
   });
 }
 
-export function useMemberCheckIns(memberUuid: string) {
-  return useQuery({
-    queryKey: ['memberCheckIns', memberUuid],
-    queryFn: () => q.getMemberCheckIns(memberUuid),
-    enabled: !!memberUuid,
-  });
-}
+
 
 export function useCoachHistory(coachId: string | undefined) {
   return useQuery({

@@ -30,6 +30,8 @@ const ALL_TABS = [
   { value: '/liabilities', label: 'Liabilities' },
   { value: '/audit', label: 'Audit Log' },
   { value: '/users', label: 'User Management' },
+  { value: '/employees', label: 'Employees' },
+  { value: '/employee-checkin', label: 'Staff Check-In' },
 ];
 
 interface UserForm {

@@ -69,6 +69,7 @@ export interface Member {
   created_at: string;
   // Joined field (populated via query)
   frozen_until?: string | null;
+  photo_url?: string | null;
 }
 
 export interface SubscriptionPackage {
@@ -249,7 +250,7 @@ export interface Class {
   capacity: number;
   attendance_count: number;
   created_at: string;
-  
+
   // Joined fields
   sport_name?: string;
   coach_name?: string;
@@ -276,6 +277,7 @@ export interface Employee {
   shift_end: string | null;
   late_threshold_minutes: number;
   deduction_per_minute: number;
+  missed_day_deduction: number;
   user_id?: string | null;
   created_at: string;
 }
@@ -379,4 +381,14 @@ export interface Database {
       };
     };
   };
+}
+
+export interface CheckIn {
+  id: string;
+  member_id: string;
+  created_at: string;
+  checked_in_by: string;
+  checked_in_by_name?: string;
+  is_override: boolean;
+  override_reason?: string;
 }

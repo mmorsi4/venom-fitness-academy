@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Plus, Search, Phone, Calendar, Pencil, Trash2, Snowflake, Unlock, ArrowUpCircle, BicepsFlexed, Mail, Clock } from "lucide-react";
+import { Plus, Search, Phone, Calendar, Pencil, Trash2, Snowflake, Unlock, ArrowUpCircle, BicepsFlexed, Mail, Clock, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,7 +27,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog, useFreezeMember, useUnfreezeMember, usePackages, useCreateInvoice, useAuditLogs, useMemberCheckIns, useInvoices, useUpdateInvoice } from "@/hooks/use-data";
+import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog, useFreezeMember, useUnfreezeMember, usePackages, useCreateInvoice, useAuditLogs, useInvoices, useUpdateInvoice, useMemberCheckIns, useDeleteMemberCheckIn, useUpdateMemberCheckIn } from "@/hooks/use-data";
+import { uploadMemberPhoto } from "@/lib/queries";
+import { CameraCapture } from "@/components/CameraCapture";
 import { useAuth } from "@/lib/auth";
 import type { Member, Gender } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
@@ -109,6 +111,9 @@ export default function Members() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [showAdd, setShowAdd] = useState(false);
+  const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
+  const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
+  const [isCapturing, setIsCapturing] = useState(false);
   const [editMember, setEditMember] = useState<Member | null>(null);
   const [form, setForm] = useState<MemberForm>(emptyForm);
   const [confirmDelete, setConfirmDelete] = useState<Member | null>(null);
@@ -123,8 +128,12 @@ export default function Members() {
   const [upgradePaidAmount, setUpgradePaidAmount] = useState("");
   const [upgradePackageCategoryFilter, setUpgradePackageCategoryFilter] = useState<string>("All");
   const [historyMember, setHistoryMember] = useState<Member | null>(null);
-
   const { data: checkInHistory = [] } = useMemberCheckIns(historyMember?.uuid || "");
+  const deleteMemberCheckIn = useDeleteMemberCheckIn(historyMember?.uuid || "");
+  const updateMemberCheckInTime = useUpdateMemberCheckIn();
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [editLogTime, setEditLogTime] = useState("");
+
 
   const [searchField, setSearchField] = useState<string>("all");
   const [classFilter, setClassFilter] = useState<string>("all");
@@ -177,9 +186,9 @@ export default function Members() {
     new: members.filter(m => m.status === 'new').length,
   };
 
-  const openAdd = () => { setForm(emptyForm); setShowAdd(true); };
-  const openEdit = (m: Member) => { setEditMember(m); setForm(memberToForm(m)); };
-  const closeDialogs = () => { setShowAdd(false); setEditMember(null); };
+  const openAdd = () => { setForm(emptyForm); setShowAdd(true); setPhotoBlob(null); setPhotoDataUrl(null); setIsCapturing(false); };
+  const openEdit = (m: Member) => { setEditMember(m); setForm(memberToForm(m)); setPhotoBlob(null); setPhotoDataUrl(m.photo_url || null); setIsCapturing(false); };
+  const closeDialogs = () => { setShowAdd(false); setEditMember(null); setPhotoBlob(null); setPhotoDataUrl(null); setIsCapturing(false); };
 
   const handleSave = async () => {
     if (!form.name.trim() || !form.phone.trim()) {
@@ -221,24 +230,32 @@ export default function Members() {
 
       // Automatically update status based on sessions remaining
       if (updates.sessions_remaining !== undefined && editMember.sessions_remaining !== updates.sessions_remaining) {
-         if (updates.sessions_remaining <= 0 && updates.sessions_remaining !== 999) {
-            updates.status = 'expired';
-         } else if (updates.sessions_remaining <= 2 && updates.sessions_remaining > 0 && updates.sessions_remaining !== 999) {
-            updates.status = 'expiring_soon';
-         } else if (updates.status === 'expired' && updates.sessions_remaining > 0) {
-            updates.status = 'active';
-         }
+        if (updates.sessions_remaining <= 0 && updates.sessions_remaining !== 999) {
+          updates.status = 'expired';
+        } else if (updates.sessions_remaining <= 2 && updates.sessions_remaining > 0 && updates.sessions_remaining !== 999) {
+          updates.status = 'expiring_soon';
+        } else if (updates.status === 'expired' && updates.sessions_remaining > 0) {
+          updates.status = 'active';
+        }
       }
 
+      if (form.removePhoto) updates.photo_url = null;
+
       updateMember.mutate({ id: editMember.uuid, updates }, {
-        onSuccess: () => {
+        onSuccess: async () => {
+          if (photoBlob) {
+            try {
+              const url = await uploadMemberPhoto(editMember.uuid, photoBlob);
+              await updateMember.mutateAsync({ id: editMember.uuid, updates: { photo_url: url } });
+            } catch (err) { toast.error("Failed to upload photo"); }
+          }
           // Sync with invoice if sessions changed
           if (updates.sessions_remaining !== undefined && editMember.sessions_remaining !== updates.sessions_remaining) {
-            const latestInvoice = invoices.filter(i => 
-              i.member_id === editMember.uuid && 
+            const latestInvoice = invoices.filter(i =>
+              i.member_id === editMember.uuid &&
               (i.status === 'paid' || i.status === 'partial')
-            ).sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-            
+            ).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
             if (latestInvoice.length > 0) {
               updateInvoice.mutate({
                 uuid: latestInvoice[0].uuid,
@@ -272,7 +289,13 @@ export default function Members() {
         inbody_sessions_remaining: 0,
         id: form.isClinicVisitor ? -1 : (form.customId ? Number(form.customId) : 0),
       }, {
-        onSuccess: () => {
+        onSuccess: async (newMember) => {
+          if (photoBlob && newMember) {
+            try {
+              const url = await uploadMemberPhoto(newMember.uuid, photoBlob);
+              await updateMember.mutateAsync({ id: newMember.uuid, updates: { photo_url: url } });
+            } catch (err) { toast.error("Failed to upload photo"); }
+          }
           toast.success(`Member ${form.name} created`);
           closeDialogs();
         },
@@ -387,15 +410,15 @@ export default function Members() {
       return;
     }
 
-    const activeInvoice = invoices.filter(i => i.member_id === upgradeMemberState.uuid && i.package_name === upgradeMemberState.package_name).sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-    
+    const activeInvoice = invoices.filter(i => i.member_id === upgradeMemberState.uuid && i.package_name === upgradeMemberState.package_name).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
     let usedSessions = 0;
     if (currentPkg.sessions !== 999 && upgradeMemberState.sessions_remaining !== 999) {
       usedSessions = Math.max(0, currentPkg.sessions - upgradeMemberState.sessions_remaining);
     }
-    
+
     const newSessions = newPkg.sessions === 999 ? 999 : Math.max(0, newPkg.sessions - usedSessions);
-    
+
     const activationDateStr = activeInvoice?.activation_date || activeInvoice?.created_at || new Date().toISOString();
     const actDate = new Date(activationDateStr);
     const newExpiresAt = new Date(actDate.getTime() + newPkg.validity_days * 86400000).toISOString();
@@ -571,8 +594,12 @@ export default function Members() {
                   <TableRow key={m.uuid} data-testid={`member-row-${m.uuid}`}>
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${m.id === -1 ? 'bg-teal-100 text-teal-600' : 'bg-primary/10 text-primary'}`}>
-                          <span className="text-sm font-bold">{m.name.charAt(0)}</span>
+                        <div className={`w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden border shadow-sm ${m.id === -1 ? 'bg-teal-100 text-teal-600 border-teal-200' : 'bg-primary/10 text-primary border-primary/20'}`}>
+                          {m.photo_url ? (
+                            <img src={m.photo_url} alt={m.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-xl font-bold">{m.name.charAt(0)}</span>
+                          )}
                         </div>
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
@@ -591,7 +618,7 @@ export default function Members() {
                                 const jInvs = invoices.filter((i: any) => jGroups.includes(i.joint_invoice_group_id) && i.member_id !== m.uuid);
                                 jIds = Array.from(new Set(jInvs.map((i: any) => members.find((mem: any) => mem.uuid === i.member_id)?.id))).filter(Boolean);
                               }
-                              
+
                               // 2. Try parsing discount_description (e.g. "10% joint 3354, 3355")
                               if (jIds.length === 0) {
                                 const myInvs = invoices.filter((i: any) => i.member_id === m.uuid && i.discount_description);
@@ -656,12 +683,12 @@ export default function Members() {
                     <TableCell>
                       <div className="space-y-1">
                         {(() => {
-                          const activeInvoices = invoices.filter(i => 
-                            i.member_id === m.uuid && 
-                            (i.status === 'paid' || i.status === 'partial') && 
+                          const activeInvoices = invoices.filter(i =>
+                            i.member_id === m.uuid &&
+                            (i.status === 'paid' || i.status === 'partial') &&
                             (i.sessions_remaining === undefined || i.sessions_remaining === null || i.sessions_remaining > 0)
                           );
-                          
+
                           if (activeInvoices.length > 0) {
                             return activeInvoices.map(inv => (
                               <div key={inv.uuid} className="text-sm font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded w-max mb-1">
@@ -669,7 +696,7 @@ export default function Members() {
                               </div>
                             ));
                           }
-                          
+
                           if (m.package_name && m.package_name !== 'None') {
                             return (
                               <div className="text-sm font-medium text-gray-500 bg-gray-50 px-2 py-1 rounded w-max mb-1 flex items-center gap-1">
@@ -677,10 +704,10 @@ export default function Members() {
                               </div>
                             );
                           }
-                          
+
                           return <p className="text-sm font-medium text-muted-foreground">None</p>;
                         })()}
-                        
+
                         <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
                           Last Subscription: {m.last_subscription_date ? format(new Date(m.last_subscription_date), "dd/MM/yyyy") : 'Never'}
                         </div>
@@ -717,24 +744,24 @@ export default function Members() {
                     <TableCell>
                       <div className="flex items-center gap-1">
                         {m.invitations_remaining > 0 ?
-                        (<button
-                          data-testid={`btn-invite-member-${m.uuid}`}
-                          onClick={() => handleDecrement(m, 'invitations_remaining')}
-                          className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                          title="Invite"
-                        >
-                          <Mail className="w-4 h-4" />
-                        </button>) : ("")
+                          (<button
+                            data-testid={`btn-invite-member-${m.uuid}`}
+                            onClick={() => handleDecrement(m, 'invitations_remaining')}
+                            className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                            title="Invite"
+                          >
+                            <Mail className="w-4 h-4" />
+                          </button>) : ("")
                         }
                         {m.inbody_sessions_remaining > 0 ?
-                        (<button
-                          data-testid={`btn-inbody-member-${m.uuid}`}
-                          onClick={() => handleDecrement(m, 'inbody_sessions_remaining')}
-                          className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                          title="InBody"
-                        >
-                          <BicepsFlexed className="w-4 h-4" />
-                        </button>) : ("")
+                          (<button
+                            data-testid={`btn-inbody-member-${m.uuid}`}
+                            onClick={() => handleDecrement(m, 'inbody_sessions_remaining')}
+                            className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                            title="InBody"
+                          >
+                            <BicepsFlexed className="w-4 h-4" />
+                          </button>) : ("")
                         }
                         {m.frozen_until && new Date(m.frozen_until) > new Date() ? (
                           <button
@@ -855,183 +882,228 @@ export default function Members() {
             )}
             <TabsContent value="details">
               <div className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-1">
+                {/* Photo Capture Section */}
+                <div className="flex flex-col items-center gap-3 pb-4 border-b">
+                  {isCapturing ? (
+                    <div className="w-full">
+                      <CameraCapture
+                        onCapture={(blob, url) => {
+                          setPhotoBlob(blob);
+                          setPhotoDataUrl(url);
+                          setIsCapturing(false);
+                        }}
+                        onCancel={() => setIsCapturing(false)}
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center gap-4 w-full">
+                      <div className="relative">
+                        {photoDataUrl ? (
+                          <img src={photoDataUrl} alt="Preview" className="w-[200px] h-[200px] rounded-lg object-cover border shadow-sm" />
+                        ) : (
+                          <div className="w-[200px] h-[200px] rounded-lg bg-muted flex items-center justify-center border shadow-sm">
+                            <Camera className="w-12 h-12 text-muted-foreground opacity-50" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button type="button" variant="outline" size="sm" onClick={() => setIsCapturing(true)}>
+                          <Camera className="w-4 h-4 mr-2" />
+                          {photoDataUrl ? "Retake Photo" : "Take Photo"}
+                        </Button>
+                        {photoDataUrl && (
+                          <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => {
+                            setPhotoBlob(null);
+                            setPhotoDataUrl(null);
+                            if (editMember && editMember.photo_url) {
+                              setForm(f => ({ ...f, removePhoto: true } as any));
+                            }
+                          }}>
+                            Remove
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Clinic Visitor Checkbox */}
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="is-clinic-visitor"
-                checked={form.isClinicVisitor}
-                onCheckedChange={(c) => setForm(p => ({ ...p, isClinicVisitor: !!c }))}
-              />
-              <Label htmlFor="is-clinic-visitor" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                This is a Clinic Visitor
-              </Label>
-            </div>
-
-            {/* Custom ID (Optional) */}
-            {!form.isClinicVisitor && (
-              <div className="space-y-1.5">
-                <Label htmlFor="m-custom-id">Member ID</Label>
-                <Input
-                  id="m-custom-id"
-                  placeholder="Leave empty for auto-generation"
-                  type="number"
-                  value={form.customId}
-                  onChange={f('customId')}
-                />
-              </div>
-            )}
-
-            {/* Name */}
-            <div className="space-y-1.5">
-              <Label htmlFor="m-name">Full Name *</Label>
-              <Input
-                data-testid="input-new-member-name"
-                id="m-name"
-                placeholder="Full name"
-                value={form.name}
-                onChange={f('name')}
-              />
-            </div>
-
-            {/* Phone + Parent Phone */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="m-phone">Phone *</Label>
-                <Input
-                  data-testid="input-new-member-phone"
-                  id="m-phone"
-                  placeholder="01XXXXXXXXX"
-                  value={form.phone}
-                  onChange={f('phone')}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="m-parent-phone">Parent Phone</Label>
-                <Input
-                  data-testid="input-new-member-parent-phone"
-                  id="m-parent-phone"
-                  placeholder="01XXXXXXXXX"
-                  value={form.parentPhone}
-                  onChange={f('parentPhone')}
-                />
-              </div>
-            </div>
-
-            {/* Birth date + Gender */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="m-birth">Date of Birth</Label>
-                <Input
-                  data-testid="input-new-member-birthdate"
-                  id="m-birth"
-                  type="date"
-                  value={form.birthDate}
-                  onChange={f('birthDate')}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Gender</Label>
-                <Select value={form.gender} onValueChange={v => setForm(p => ({ ...p, gender: v as Gender }))}>
-                  <SelectTrigger data-testid="select-member-gender">
-                    <SelectValue placeholder="Select..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {GENDERS.map(g => <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Class (Hidden for clinic visitors) */}
-            {!form.isClinicVisitor && (
-              <div className="space-y-1.5">
-                <Label htmlFor="m-class">Class</Label>
-                <Select value={form.classId} onValueChange={v => setForm(p => ({ ...p, classId: v }))}>
-                  <SelectTrigger data-testid="select-member-class">
-                    <SelectValue placeholder="Select Class" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
-                    {classes.map(c => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name ?? 'Class Name'} - {c.coach_name ?? 'Coach'} ({c.schedules?.length || 0} slots)
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {/* Custom Session Edits */}
-            {editMember && (
-              <div className="pt-4 mt-4 border-t space-y-4">
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Balances</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label>Sessions</Label>
-                    <Input type="number" value={form.sessions_remaining} onChange={e => setForm(p => ({ ...p, sessions_remaining: e.target.value }))} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Freeze Days</Label>
-                    <Input type="number" value={form.freeze_days_remaining} onChange={e => setForm(p => ({ ...p, freeze_days_remaining: e.target.value }))} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Invitations</Label>
-                    <Input type="number" value={form.invitations_remaining} onChange={e => setForm(p => ({ ...p, invitations_remaining: e.target.value }))} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>InBody Sessions</Label>
-                    <Input type="number" value={form.inbody_sessions_remaining} onChange={e => setForm(p => ({ ...p, inbody_sessions_remaining: e.target.value }))} />
-                  </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="is-clinic-visitor"
+                    checked={form.isClinicVisitor}
+                    onCheckedChange={(c) => setForm(p => ({ ...p, isClinicVisitor: !!c }))}
+                  />
+                  <Label htmlFor="is-clinic-visitor" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                    This is a Clinic Visitor
+                  </Label>
                 </div>
-              </div>
-            )}
 
-            {editMember && (
-              <div className="pt-4 mt-4 border-t space-y-4">
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Status</h4>
+                {/* Custom ID (Optional) */}
+                {!form.isClinicVisitor && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="m-custom-id">Member ID</Label>
+                    <Input
+                      id="m-custom-id"
+                      placeholder="Leave empty for auto-generation"
+                      type="number"
+                      value={form.customId}
+                      onChange={f('customId')}
+                    />
+                  </div>
+                )}
+
+                {/* Name */}
                 <div className="space-y-1.5">
-                  <Select value={form.status} onValueChange={(val) => setForm({ ...form, status: val })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="inactive">Inactive</SelectItem>
-                      <SelectItem value="frozen">Frozen</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="m-name">Full Name *</Label>
+                  <Input
+                    data-testid="input-new-member-name"
+                    id="m-name"
+                    placeholder="Full name"
+                    value={form.name}
+                    onChange={f('name')}
+                  />
                 </div>
-              </div>
-            )}
 
-
-            {/* Subscription Package — read-only display + change via invoice */}
-            {editMember && (
-              <div className="space-y-1.5">
-                <Label>Subscription Package</Label>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 px-3 py-2 rounded-md border bg-muted/50 text-sm text-foreground">
-                    {editMember.package_name || "None"}
+                {/* Phone + Parent Phone */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="m-phone">Phone *</Label>
+                    <Input
+                      data-testid="input-new-member-phone"
+                      id="m-phone"
+                      placeholder="01XXXXXXXXX"
+                      value={form.phone}
+                      onChange={f('phone')}
+                    />
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() => {
-                      closeDialogs();
-                      navigate(`/invoices?memberId=${editMember.uuid}`);
-                    }}
-                  >
-                    Change Subscription
-                  </Button>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="m-parent-phone">Parent Phone</Label>
+                    <Input
+                      data-testid="input-new-member-parent-phone"
+                      id="m-parent-phone"
+                      placeholder="01XXXXXXXXX"
+                      value={form.parentPhone}
+                      onChange={f('parentPhone')}
+                    />
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  To change the subscription, create a new invoice with the desired package.
-                </p>
-              </div>
-            )}
+
+                {/* Birth date + Gender */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="m-birth">Date of Birth</Label>
+                    <Input
+                      data-testid="input-new-member-birthdate"
+                      id="m-birth"
+                      type="date"
+                      value={form.birthDate}
+                      onChange={f('birthDate')}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Gender</Label>
+                    <Select value={form.gender} onValueChange={v => setForm(p => ({ ...p, gender: v as Gender }))}>
+                      <SelectTrigger data-testid="select-member-gender">
+                        <SelectValue placeholder="Select..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {GENDERS.map(g => <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Class (Hidden for clinic visitors) */}
+                {!form.isClinicVisitor && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="m-class">Class</Label>
+                    <Select value={form.classId} onValueChange={v => setForm(p => ({ ...p, classId: v }))}>
+                      <SelectTrigger data-testid="select-member-class">
+                        <SelectValue placeholder="Select Class" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">None</SelectItem>
+                        {classes.map(c => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name ?? 'Class Name'} - {c.coach_name ?? 'Coach'} ({c.schedules?.length || 0} slots)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* Custom Session Edits */}
+                {editMember && (
+                  <div className="pt-4 mt-4 border-t space-y-4">
+                    <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Balances</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <Label>Sessions</Label>
+                        <Input type="number" value={form.sessions_remaining} onChange={e => setForm(p => ({ ...p, sessions_remaining: e.target.value }))} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Freeze Days</Label>
+                        <Input type="number" value={form.freeze_days_remaining} onChange={e => setForm(p => ({ ...p, freeze_days_remaining: e.target.value }))} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Invitations</Label>
+                        <Input type="number" value={form.invitations_remaining} onChange={e => setForm(p => ({ ...p, invitations_remaining: e.target.value }))} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>InBody Sessions</Label>
+                        <Input type="number" value={form.inbody_sessions_remaining} onChange={e => setForm(p => ({ ...p, inbody_sessions_remaining: e.target.value }))} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {editMember && (
+                  <div className="pt-4 mt-4 border-t space-y-4">
+                    <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Status</h4>
+                    <div className="space-y-1.5">
+                      <Select value={form.status} onValueChange={(val) => setForm({ ...form, status: val })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">Active</SelectItem>
+                          <SelectItem value="inactive">Inactive</SelectItem>
+                          <SelectItem value="frozen">Frozen</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+
+
+                {/* Subscription Package — read-only display + change via invoice */}
+                {editMember && (
+                  <div className="space-y-1.5">
+                    <Label>Subscription Package</Label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 px-3 py-2 rounded-md border bg-muted/50 text-sm text-foreground">
+                        {editMember.package_name || "None"}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={() => {
+                          closeDialogs();
+                          navigate(`/invoices?memberId=${editMember.uuid}`);
+                        }}
+                      >
+                        Change Subscription
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      To change the subscription, create a new invoice with the desired package.
+                    </p>
+                  </div>
+                )}
 
               </div>
               <DialogFooter className="mt-6">
@@ -1050,8 +1122,8 @@ export default function Members() {
               <TabsContent value="history">
                 <div className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-1">
                   {(() => {
-                    const history = auditLogs.filter(l => 
-                      (l.action_type === 'checkin' || l.action_type === 'override_checkin') && 
+                    const history = auditLogs.filter(l =>
+                      (l.action_type === 'checkin' || l.action_type === 'override_checkin') &&
                       l.details.includes(editMember.id.toString())
                     ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
@@ -1064,10 +1136,43 @@ export default function Members() {
                         {history.map(log => (
                           <div key={log.id} className="p-3 rounded-lg border bg-muted/30 text-sm">
                             <div className="flex justify-between items-start mb-1">
-                              <span className="font-semibold">{format(parseISO(log.timestamp), "MMM d, yyyy h:mm a")}</span>
+                              {editingLogId === log.id ? (
+                                <div className="flex items-center gap-2">
+                                  <Input 
+                                    type="datetime-local" 
+                                    value={editLogTime} 
+                                    onChange={e => setEditLogTime(e.target.value)} 
+                                    className="h-8 text-xs max-w-[200px]" 
+                                  />
+                                  <Button size="sm" onClick={() => {
+                                    updateAuditCheckInTime.mutate({ id: log.id, newTime: new Date(editLogTime).toISOString() });
+                                    setEditingLogId(null);
+                                  }}>Save</Button>
+                                  <Button size="sm" variant="ghost" onClick={() => setEditingLogId(null)}>Cancel</Button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold">{format(parseISO(log.timestamp), "MMM d, yyyy h:mm a")}</span>
+                                  <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => { 
+                                    setEditingLogId(log.id); 
+                                    setEditLogTime(format(parseISO(log.timestamp), "yyyy-MM-dd'T'HH:mm")); 
+                                  }}>
+                                    <Pencil className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              )}
                               <span className="text-xs text-muted-foreground">{log.action_type === 'override_checkin' ? 'Override' : 'Check-in'}</span>
                             </div>
-                            <p className="text-muted-foreground text-xs leading-snug">{log.details}</p>
+                            <div className="flex justify-between items-end mt-2">
+                              <p className="text-muted-foreground text-xs leading-snug">{log.details}</p>
+                              <Button variant="ghost" size="sm" className="h-6 text-destructive text-xs hover:bg-destructive/10" onClick={() => {
+                                if(confirm("Are you sure you want to delete this check-in? The session will be refunded to the member.")) {
+                                  deleteAuditCheckIn.mutate(log.id);
+                                }
+                              }}>
+                                <Trash2 className="h-3 w-3 mr-1" /> Delete
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1121,20 +1226,51 @@ export default function Members() {
               return new Date(ci.created_at) >= new Date(historyMember.last_subscription_date);
             }).map(ci => {
               return (
-                <div key={ci.id} className="flex items-center justify-between p-3 rounded-lg border bg-card">
-                  <div>
-                    <p className="font-semibold text-sm">
-                      Session
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {new Date(ci.created_at).toLocaleString()}
-                    </p>
-                    {ci.is_override && (
-                      <Badge variant="outline" className="text-[10px] mt-1 bg-amber-50 text-amber-600 border-amber-200">Manual Override</Badge>
-                    )}
+                <div key={ci.id} className="flex flex-col p-3 rounded-lg border bg-card">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex flex-col">
+                      <p className="font-semibold text-sm">Session</p>
+                      {editingLogId === ci.id ? (
+                        <div className="flex items-center gap-2 mt-1">
+                          <Input 
+                            type="datetime-local" 
+                            value={editLogTime} 
+                            onChange={e => setEditLogTime(e.target.value)} 
+                            className="h-8 text-xs max-w-[200px]" 
+                          />
+                          <Button size="sm" onClick={() => {
+                            updateMemberCheckInTime.mutate({ id: ci.id, newTime: new Date(editLogTime).toISOString() });
+                            setEditingLogId(null);
+                          }}>Save</Button>
+                          <Button size="sm" variant="ghost" onClick={() => setEditingLogId(null)}>Cancel</Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <p className="text-xs text-muted-foreground">
+                            {format(parseISO(ci.created_at), "MMM d, yyyy h:mm a")}
+                          </p>
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => { 
+                            setEditingLogId(ci.id); 
+                            setEditLogTime(format(parseISO(ci.created_at), "yyyy-MM-dd'T'HH:mm")); 
+                          }}>
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                      {ci.is_override && (
+                        <Badge variant="outline" className="text-[10px] mt-1 bg-amber-50 text-amber-600 border-amber-200 w-max">Manual Override</Badge>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Checked in by: {ci.checked_in_by || 'System'}</p>
+                  <div className="flex justify-between items-end border-t pt-2">
+                    <p className="text-xs text-muted-foreground">Checked in by: <span className="font-medium text-foreground">{ci.checked_in_by_name || 'System'}</span></p>
+                    <Button variant="ghost" size="sm" className="h-6 text-destructive text-xs hover:bg-destructive/10" onClick={() => {
+                      if(confirm("Are you sure you want to delete this check-in? The session will be refunded to the member.")) {
+                        deleteMemberCheckIn.mutate(ci.id);
+                      }
+                    }}>
+                      <Trash2 className="h-3 w-3 mr-1" /> Delete
+                    </Button>
                   </div>
                 </div>
               );
@@ -1193,28 +1329,28 @@ export default function Members() {
               <div className="flex justify-between"><span className="text-muted-foreground">Current Package</span><span className="font-bold">{upgradeMemberState?.package_name}</span></div>
             </div>
             <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label>Select New Package</Label>
-                  <Tabs value={upgradePackageCategoryFilter} onValueChange={(v: any) => setUpgradePackageCategoryFilter(v)} className="w-[150px]">
-                    <TabsList className="grid w-full grid-cols-3 h-7 text-[10px]">
-                      <TabsTrigger value="All" className="text-[10px]">All</TabsTrigger>
-                      <TabsTrigger value="Normal" className="text-[10px]">Gym</TabsTrigger>
-                      <TabsTrigger value="PT" className="text-[10px]">PT</TabsTrigger>
-                    </TabsList>
-                  </Tabs>
-                </div>
-                <SearchableSelect
-                  options={packages.filter(p => p.name !== upgradeMemberState?.package_name && p.category !== 'Clinic' && (upgradePackageCategoryFilter === "All" || p.category === upgradePackageCategoryFilter)).map(p => ({
-                    value: p.id.toString(),
-                    label: `${p.name} - ${p.price} EGP`,
-                    searchTerms: p.category
-                  }))}
-                  value={upgradePackageId}
-                  onValueChange={setUpgradePackageId}
-                  placeholder="Select package..."
-                  searchPlaceholder="Search packages..."
-                />
+              <div className="flex items-center justify-between">
+                <Label>Select New Package</Label>
+                <Tabs value={upgradePackageCategoryFilter} onValueChange={(v: any) => setUpgradePackageCategoryFilter(v)} className="w-[150px]">
+                  <TabsList className="grid w-full grid-cols-3 h-7 text-[10px]">
+                    <TabsTrigger value="All" className="text-[10px]">All</TabsTrigger>
+                    <TabsTrigger value="Normal" className="text-[10px]">Gym</TabsTrigger>
+                    <TabsTrigger value="PT" className="text-[10px]">PT</TabsTrigger>
+                  </TabsList>
+                </Tabs>
               </div>
+              <SearchableSelect
+                options={packages.filter(p => p.name !== upgradeMemberState?.package_name && p.category !== 'Clinic' && (upgradePackageCategoryFilter === "All" || p.category === upgradePackageCategoryFilter)).map(p => ({
+                  value: p.id.toString(),
+                  label: `${p.name} - ${p.price} EGP`,
+                  searchTerms: p.category
+                }))}
+                value={upgradePackageId}
+                onValueChange={setUpgradePackageId}
+                placeholder="Select package..."
+                searchPlaceholder="Search packages..."
+              />
+            </div>
             {upgradePackageId && upgradeMemberState?.package_name && (
               <>
                 <div className="grid grid-cols-2 gap-3 mt-4">

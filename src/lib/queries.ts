@@ -53,10 +53,10 @@ export async function getMembers() {
       hasMore = false;
     }
   }
-  
+
   return allData.map((m: any) => {
     const validInvoices = (m.invoices || []).filter((i: any) => i.package_id != null);
-    
+
     const appliedInvoices = validInvoices.filter((i: any) => i.is_applied);
     appliedInvoices.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     const lastSubDate = appliedInvoices.length > 0 ? appliedInvoices[0].created_at : null;
@@ -111,7 +111,7 @@ export async function createMember(member: Omit<Member, 'uuid' | 'created_at' | 
 
 export async function updateMember(uuid: string, updates: Partial<Member>) {
   const { coach_name, ...clean } = updates as any;
-  
+
   if (clean.id === 0) {
     // A 0 here implies they are transitioning from a Clinic Visitor (-1) to a regular member,
     // or similarly needs an auto-generated ID. Since update doesn't trigger INSERT, 
@@ -137,7 +137,38 @@ export async function updateMember(uuid: string, updates: Partial<Member>) {
 }
 
 export async function deleteMember(uuid: string) {
+  // Try to delete their photo if they have one
+  const { data: member } = await supabase.from('members').select('photo_url').eq('uuid', uuid).single();
+  if (member?.photo_url) {
+    try {
+      await deleteMemberPhoto(uuid);
+    } catch (e) {
+      console.error("Failed to delete member photo:", e);
+    }
+  }
+
   const { error } = await supabase.from('members').delete().eq('uuid', uuid);
+  if (error) throw error;
+}
+
+export async function uploadMemberPhoto(uuid: string, file: Blob): Promise<string> {
+  const fileName = `members/${uuid}.jpg`;
+  const { error } = await supabase.storage
+    .from('pictures')
+    .upload(fileName, file, {
+      contentType: 'image/jpeg',
+      upsert: true
+    });
+
+  if (error) throw error;
+
+  const { data } = supabase.storage.from('pictures').getPublicUrl(fileName);
+  return `${data.publicUrl}?t=${Date.now()}`;
+}
+
+export async function deleteMemberPhoto(uuid: string) {
+  const fileName = `members/${uuid}.jpg`;
+  const { error } = await supabase.storage.from('pictures').remove([fileName]);
   if (error) throw error;
 }
 
@@ -170,13 +201,13 @@ export async function freezeMember(memberId: string, days: number) {
     .eq('uuid', memberId)
     .single();
   if (readErr) throw readErr;
-  
+
   if (member.freeze_days_remaining < days) {
     throw new Error(`Cannot freeze for ${days} days. Only ${member.freeze_days_remaining} days remaining.`);
   }
 
   const newRemaining = Math.max(0, (member.freeze_days_remaining ?? 0) - days);
-  
+
   // Extend expiration date if there is one
   let newExpiresAt = member.expires_at;
   if (newExpiresAt) {
@@ -184,14 +215,14 @@ export async function freezeMember(memberId: string, days: number) {
     d.setDate(d.getDate() + days);
     newExpiresAt = d.toISOString();
   }
-  
+
   // Calculate frozen_until date
   const frozenUntil = new Date();
   frozenUntil.setDate(frozenUntil.getDate() + days);
 
   const { error } = await supabase
     .from('members')
-    .update({ 
+    .update({
       freeze_days_remaining: newRemaining,
       expires_at: newExpiresAt,
       frozen_until: frozenUntil.toISOString()
@@ -206,17 +237,17 @@ export async function unfreezeMember(memberId: string) {
     .select('frozen_until, expires_at')
     .eq('uuid', memberId)
     .single();
-  
+
   if (readErr) throw readErr;
   if (!member.frozen_until) return; // not frozen
 
   const frozenUntil = new Date(member.frozen_until);
   const now = new Date();
-  
+
   if (frozenUntil > now) {
     const diffTime = frozenUntil.getTime() - now.getTime();
     const unusedDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
+
     if (unusedDays > 0) {
       let newExpiresAt = member.expires_at;
       if (newExpiresAt) {
@@ -224,7 +255,7 @@ export async function unfreezeMember(memberId: string) {
         d.setDate(d.getDate() - unusedDays);
         newExpiresAt = d.toISOString();
       }
-      
+
       const { error } = await supabase
         .from('members')
         .update({
@@ -236,12 +267,35 @@ export async function unfreezeMember(memberId: string) {
       return;
     }
   }
-  
+
   // if already passed or no unused days, just clear it
   const { error } = await supabase
     .from('members')
     .update({ frozen_until: null })
     .eq('uuid', memberId);
+  if (error) throw error;
+}
+
+export async function getMemberCheckIns(memberId: string): Promise<CheckIn[]> {
+  const { data, error } = await supabase
+    .from('check_ins')
+    .select('*, profiles:checked_in_by(name)')
+    .eq('member_id', memberId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data.map((d: any) => ({
+    ...d,
+    checked_in_by_name: d.profiles?.name || 'System'
+  })) as CheckIn[];
+}
+
+export async function deleteMemberCheckIn(checkinId: string) {
+  const { error } = await supabase.rpc('delete_member_checkin', { p_checkin_id: checkinId });
+  if (error) throw error;
+}
+
+export async function updateMemberCheckInTime(checkinId: string, newTime: string) {
+  const { error } = await supabase.rpc('update_member_checkin_time', { p_checkin_id: checkinId, p_new_time: newTime });
   if (error) throw error;
 }
 
@@ -422,15 +476,7 @@ export async function checkInCoachWithDetails(args: {
   if (error) throw error;
 }
 
-export async function getMemberCheckIns(memberUuid: string) {
-  const { data, error } = await supabase
-    .from('check_ins')
-    .select('*')
-    .eq('member_id', memberUuid)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data as CheckIn[];
-}
+
 
 // ── Leads ───────────────────────────────────────────────────
 
@@ -654,14 +700,14 @@ export async function getInvoicePayments(invoiceUuid?: string) {
 export async function createInvoicePayment(payment: Omit<InvoicePayment, 'id' | 'created_at'>) {
   const { data, error } = await supabase.from('invoice_payments').insert(payment).select().single();
   if (error) throw error;
-  
+
   // Also update the paid_amount on the invoice
   const { data: invData } = await supabase.from('invoices').select('total_amount, paid_amount').eq('uuid', payment.invoice_uuid).single();
-  
+
   const allPayments = await getInvoicePayments(payment.invoice_uuid);
   const totalPaid = (invData?.paid_amount || 0) + payment.amount;
-  
-  await supabase.from('invoices').update({ 
+
+  await supabase.from('invoices').update({
     paid_amount: totalPaid,
     status: totalPaid >= (invData?.total_amount || 0) ? 'paid' : 'partial'
   }).eq('uuid', payment.invoice_uuid);
@@ -718,9 +764,34 @@ export async function getEmployeeCheckIns(month?: number, year?: number) {
 }
 
 export async function clockInEmployee(employeeId: string) {
+  const { data: emp, error: empError } = await supabase.from('employees').select('*').eq('id', employeeId).single();
+  if (empError) throw empError;
+
+  let lateMinutes = 0;
+  let deduction = 0;
+  let notes = null;
+
+  if (emp.shift_start) {
+    const now = new Date();
+    const [sh, sm] = emp.shift_start.split(':').map(Number);
+    const shiftStart = new Date(now);
+    shiftStart.setHours(sh, sm, 0, 0);
+    const diff = Math.floor((now.getTime() - shiftStart.getTime()) / 60000);
+    if (diff > emp.late_threshold_minutes) {
+      lateMinutes = diff - emp.late_threshold_minutes;
+      deduction = lateMinutes * emp.deduction_per_minute;
+      notes = `Arrived ${lateMinutes} minutes late (via Dashboard)`;
+    }
+  }
+
   const { data, error } = await supabase
     .from('employee_checkins')
-    .insert({ employee_id: employeeId })
+    .insert({
+      employee_id: employeeId,
+      late_minutes: lateMinutes,
+      deduction: deduction,
+      notes: notes
+    })
     .select()
     .single();
   if (error) throw error;
@@ -828,6 +899,6 @@ export async function unmarkCoachSessionsPaidForExpense(expenseId: string, coach
     .update({ is_paid: false, expense_uuid: null })
     .eq('expense_uuid', expenseId)
     .eq('coach_id', coachId);
-  
+
   if (error) throw error;
 }
