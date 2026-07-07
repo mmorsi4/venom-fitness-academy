@@ -167,7 +167,7 @@ export default function Finance() {
   const totalCoachPayroll = coachPayrolls.reduce((sum, c) => sum + c.calculatedAmount, 0);
 
   const totalBaseExpenses = filteredExpenses.reduce((s, e) => s + e.amount, 0);
-  const totalExpenses = totalBaseExpenses + totalCoachPayroll;
+  const totalExpenses = totalBaseExpenses;
   const netBalance = totalIncome - totalExpenses;
 
   const cashIncome = calculateIncomeByMethod(filteredInvoices, 'Cash');
@@ -215,10 +215,6 @@ export default function Finance() {
     category: cat,
     amount: filteredExpenses.filter(e => e.category === cat).reduce((s, e) => s + e.amount, 0),
   })).filter(c => c.amount > 0);
-
-  if (totalCoachPayroll > 0) {
-    rawExpenseByCategory.push({ category: "Coach Payroll", amount: totalCoachPayroll });
-  }
 
   const totalCalculatedExpenses = rawExpenseByCategory.reduce((s, c) => s + c.amount, 0);
   const expenseByCategory = rawExpenseByCategory.map(c => ({
@@ -622,7 +618,7 @@ export default function Finance() {
               </div>
             </div>
             <p className="text-3xl font-bold text-red-600">{totalExpenses.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground mt-2">EGP spent (Includes Coach Payroll)</p>
+            <p className="text-xs text-muted-foreground mt-2">EGP spent</p>
           </CardContent>
         </Card>
         <Card className={netBalance >= 0 ? "border-emerald-100 shadow-sm" : "border-red-100 shadow-sm"}>
