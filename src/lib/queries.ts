@@ -617,6 +617,22 @@ export async function getTodayCheckIns() {
   return data as CheckIn[];
 }
 
+export async function getCheckInsByDate(date: Date) {
+  const startOfDay = new Date(date);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(date);
+  endOfDay.setHours(23, 59, 59, 999);
+  
+  const { data, error } = await supabase
+    .from('check_ins')
+    .select('*')
+    .gte('created_at', startOfDay.toISOString())
+    .lte('created_at', endOfDay.toISOString())
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data as CheckIn[];
+}
+
 // ── Sports ──────────────────────────────────────────────────
 
 export async function getSports() {

@@ -41,6 +41,18 @@ BEGIN
     END IF;
   END IF;
 
+  -- Log the deletion in audit_logs
+  IF v_member.uuid IS NOT NULL THEN
+    INSERT INTO public.audit_logs (action, action_type, details, member_id, member_name)
+    VALUES (
+      'Delete Check-in',
+      'delete_checkin',
+      format('Deleted check-in from %s. Session refunded.', to_char(v_checkin.created_at, 'YYYY-MM-DD HH24:MI')),
+      v_member.uuid,
+      v_member.name
+    );
+  END IF;
+
   -- Delete the check-in
   DELETE FROM public.check_ins WHERE id = p_checkin_id;
 

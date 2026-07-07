@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { useAuditLogs, useInvoices, useExpenses, useClasses, useInvoicePayments } from "@/hooks/use-data";
+import { useAuditLogs, useInvoices, useExpenses, useClasses, useInvoicePayments, useCheckInsByDate, useMembers } from "@/hooks/use-data";
 import { format, isSameDay, subDays, addDays, parseISO } from "date-fns";
 
 function isoToDate(s: string) {
@@ -23,23 +23,22 @@ export default function DailyReport() {
   const { data: expenses = [] } = useExpenses();
   const { data: classes = [] } = useClasses();
   const { data: invoicePayments = [] } = useInvoicePayments();
+  const { data: members = [] } = useMembers();
 
   const [selectedDate, setSelectedDate] = useState(new Date());
+  
+  const { data: checkInsData = [] } = useCheckInsByDate(selectedDate);
 
   const dayOfWeek = DAYS_OF_WEEK[selectedDate.getDay()];
   const isToday = isSameDay(selectedDate, new Date());
 
   const classesForDay = classes.filter(c => c.schedules?.some(s => s.day === dayOfWeek));
 
-  // Check-ins from audit log for selected date
-  const checkIns = useMemo(() =>
-    auditLogs.filter(log =>
-      (log.action_type === 'checkin' || log.action_type === 'override_checkin') &&
-      isSameDay(isoToDate(log.timestamp), selectedDate)
-    ), [auditLogs, selectedDate]);
+  // Check-ins from check_ins table for selected date
+  const checkIns = checkInsData;
 
   // Overrides for selected date
-  const overrides = checkIns.filter(l => l.action_type === 'override_checkin');
+  const overrides = checkIns.filter(l => l.is_override);
 
   // Invoices created on this date
   const invoicesForDay = useMemo(() =>
@@ -284,22 +283,25 @@ export default function DailyReport() {
               <div className="py-6 text-center text-muted-foreground text-sm">No check-ins recorded for this day</div>
             ) : (
               <div className="space-y-2">
-                {checkIns.map(log => (
-                  <div key={log.id} className={`flex items-center gap-3 p-2.5 rounded-lg border ${log.action_type === 'override_checkin' ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${log.action_type === 'override_checkin' ? 'bg-red-100' : 'bg-emerald-100'}`}>
-                      {log.action_type === 'override_checkin'
-                        ? <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
-                        : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+                {checkIns.map(log => {
+                  const member = members.find(m => m.uuid === log.member_id);
+                  return (
+                    <div key={log.id} className={`flex items-center gap-3 p-2.5 rounded-lg border ${log.is_override ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${log.is_override ? 'bg-red-100' : 'bg-emerald-100'}`}>
+                        {log.is_override
+                          ? <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
+                          : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground">{member?.name || 'Unknown Member'}</p>
+                        {log.is_override && (
+                          <p className="text-xs text-red-600">Override — expired or missing invoice</p>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground flex-shrink-0">{format(isoToDate(log.created_at), "hh:mm a")}</p>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground">{log.member_name || log.details.split('(')[1]?.split(')')[0] || 'Member'}</p>
-                      {log.action_type === 'override_checkin' && (
-                        <p className="text-xs text-red-600">Override — expired member</p>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground flex-shrink-0">{format(isoToDate(log.timestamp), "hh:mm a")}</p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </CardContent>

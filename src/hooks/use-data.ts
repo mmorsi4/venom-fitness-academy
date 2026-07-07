@@ -422,6 +422,13 @@ export function useTodayCheckIns() {
   return useQuery({ queryKey: queryKeys.todayCheckIns, queryFn: q.getTodayCheckIns });
 }
 
+export function useCheckInsByDate(date: Date) {
+  return useQuery({
+    queryKey: ['checkInsByDate', date.toISOString().split('T')[0]],
+    queryFn: () => q.getCheckInsByDate(date)
+  });
+}
+
 // ── Sports ──────────────────────────────────────────────────
 
 export function useSports() {
