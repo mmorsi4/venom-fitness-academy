@@ -197,9 +197,9 @@ export default function Finance() {
     return transfersIn - transfersOut;
   };
 
-  const breakdownCashIncome = calculateIncomeByMethod(breakdownInvoices, 'Cash') + startingCashIncome + calculateMonthlyTransferNet('Cash');
-  const breakdownVisaIncome = calculateIncomeByMethod(breakdownInvoices, 'Visa') + startingVisaIncome + calculateMonthlyTransferNet('Visa');
-  const breakdownInstapayIncome = calculateIncomeByMethod(breakdownInvoices, 'InstaPay') + startingInstapayIncome + calculateMonthlyTransferNet('InstaPay');
+  const breakdownCashIncome = calculateIncomeByMethod(breakdownInvoices, 'Cash') + startingCashIncome;
+  const breakdownVisaIncome = calculateIncomeByMethod(breakdownInvoices, 'Visa') + startingVisaIncome;
+  const breakdownInstapayIncome = calculateIncomeByMethod(breakdownInvoices, 'InstaPay') + startingInstapayIncome;
 
   const breakdownPaymentMethods = [
     { name: "Cash", amount: breakdownCashIncome },
