@@ -32,8 +32,13 @@ export const queryKeys = {
 // ── Members ─────────────────────────────────────────────────
 
 export function useMembers() {
-  return useQuery({ queryKey: queryKeys.members, queryFn: q.getMembers });
+  return useQuery({
+    queryKey: queryKeys.members,
+    queryFn: q.getMembers,
+  });
 }
+
+
 
 export function useCreateMember() {
   const qc = useQueryClient();
@@ -749,6 +754,14 @@ export function useCreateClassScheduleOverride() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (override: any) => q.createClassScheduleOverride(override),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['class_schedule_overrides'] }),
+  });
+}
+
+export function useUpdateClassScheduleOverride() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; [key: string]: any }) => q.updateClassScheduleOverride(args),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['class_schedule_overrides'] }),
   });
 }

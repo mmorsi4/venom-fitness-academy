@@ -15,12 +15,13 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/SearchableSelect";
-import { useLeads, useCreateLead, useUpdateLead, useMembers, useUpdateMember, useDeleteLead, useSports, useEmployees } from "@/hooks/use-data";
+import { useLeads, useCreateLead, useUpdateLead, useMembers, useUpdateMember, useDeleteLead, useSports, useEmployees, useProfiles } from "@/hooks/use-data";
 import { MultiSelect } from "@/components/MultiSelect";
 import type { Lead } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { useLocation } from "wouter";
 
 const SOURCES = ["Walk-in", "Referral", "Facebook", "Instagram", "WhatsApp", "Invitation"];
 const STATUSES = ["New", "Contacted", "Follow-up", "Converted", "Invited", "Lost"] as const;
@@ -39,11 +40,13 @@ export default function Leads() {
   const { data: members = [] } = useMembers();
   const { data: sports = [] } = useSports();
   const { data: employees = [] } = useEmployees();
+  const { data: profiles = [] } = useProfiles();
   const createLead = useCreateLead();
   const updateLead = useUpdateLead();
   const updateMember = useUpdateMember();
   const deleteLead = useDeleteLead();
   const { currentUser } = useAuth();
+  const [, navigate] = useLocation();
 
   const [mainTab, setMainTab] = useState("leads");
   const [tab, setTab] = useState("all");
@@ -53,6 +56,9 @@ export default function Leads() {
   const [editLead, setEditLead] = useState<Lead | null>(null);
   const [newNote, setNewNote] = useState("");
   const [form, setForm] = useState({ name: "", phone: "", source: "Walk-in", invitingMemberId: "", interest: "" });
+  const [showConvertDialog, setShowConvertDialog] = useState(false);
+  const [leadToConvert, setLeadToConvert] = useState<Lead | null>(null);
+  const [convertedToMemberId, setConvertedToMemberId] = useState("");
   const [filterSource, setFilterSource] = useState("all");
   const [filterInterest, setFilterInterest] = useState("all");
 
@@ -143,6 +149,12 @@ export default function Leads() {
   };
 
   const handleUpdateStatus = (lead: Lead, status: Lead['status']) => {
+    if (status === 'Converted' && lead.status !== 'Converted') {
+      setLeadToConvert(lead);
+      setConvertedToMemberId("");
+      setShowConvertDialog(true);
+      return;
+    }
     updateLead.mutate({
       id: lead.id,
       updates: { status }
@@ -154,6 +166,29 @@ export default function Leads() {
       onError: (err) => toast.error(`Error updating status: ${err.message}`)
     });
   };
+
+  const handleConfirmConvert = () => {
+    if (!leadToConvert || !convertedToMemberId) return;
+    updateLead.mutate({
+      id: leadToConvert.id,
+      updates: { 
+        status: 'Converted',
+        converted_to_member_id: convertedToMemberId,
+        converted_by_user_id: currentUser?.id
+      }
+    }, {
+      onSuccess: () => {
+        if (selectedLead?.id === leadToConvert.id) {
+          setSelectedLead(prev => prev ? { ...prev, status: 'Converted', converted_to_member_id: convertedToMemberId, converted_by_user_id: currentUser?.id } : null);
+        }
+        toast.success(`Lead converted to member successfully!`);
+        setShowConvertDialog(false);
+        setLeadToConvert(null);
+      },
+      onError: (err) => toast.error(`Error converting lead: ${err.message}`)
+    });
+  };
+
   const handleUpdateFollowUp = (lead: Lead, date: string) => {
     updateLead.mutate({
       id: lead.id,
@@ -386,7 +421,13 @@ export default function Leads() {
                   <TableCell>
                     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${statusColors[lead.status]}`}>
                       {lead.status}
+                      
                     </span>
+                    {lead.status === 'Converted' && lead.converted_by_user_id && (
+                      <span className="text-xs text-muted-foreground font-normal">
+                        <br></br>by {profiles.find(p => p.id === lead.converted_by_user_id)?.name || 'Unknown'}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
@@ -530,9 +571,11 @@ export default function Leads() {
               <DialogTitle className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   {selectedLead.name}
-                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${statusColors[selectedLead.status]}`}>
-                    {selectedLead.status}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${statusColors[selectedLead.status]}`}>
+                      {selectedLead.status}
+                    </span>
+                  </div>
                 </div>
               </DialogTitle>
             </DialogHeader>
@@ -551,6 +594,27 @@ export default function Leads() {
                   />
                 </div>
               </div>
+
+              {selectedLead.status === 'Converted' && (
+                <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 space-y-1.5 mt-2">
+                  <p className="text-sm font-medium text-emerald-900">Conversion Details</p>
+                  <p className="text-xs text-emerald-700">
+                    <span className="font-semibold">Linked Member:</span> {
+                      selectedLead.converted_to_member_id 
+                        ? members.find(m => m.uuid === selectedLead.converted_to_member_id)?.name || 'Unknown Member'
+                        : 'Not linked'
+                    }
+                  </p>
+                  <p className="text-xs text-emerald-700">
+                    <span className="font-semibold">Converted By:</span> {
+                      selectedLead.converted_by_user_id
+                        ? profiles.find(p => p.id === selectedLead.converted_by_user_id)?.name || 'Unknown User'
+                        : 'Unknown User'
+                    }
+                  </p>
+                </div>
+              )}
+
               {selectedLead.source === "Invitation" && (
                 <div className="space-y-1.5 pt-1">
                   <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 border">
@@ -659,6 +723,57 @@ export default function Leads() {
             <Button variant="outline" onClick={() => setShowEdit(false)}>Cancel</Button>
             <Button onClick={handleEditLead} disabled={updateLead.isPending}>
               {updateLead.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Convert Lead Dialog */}
+      <Dialog open={showConvertDialog} onOpenChange={open => { setShowConvertDialog(open); if (!open) setLeadToConvert(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Convert Lead to Member</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Link to Member Profile</Label>
+              <SearchableSelect
+                options={members.map(m => ({
+                  value: m.uuid,
+                  label: `${m.name} (${m.id === -1 ? 'Clinic Visitor' : m.id})`,
+                  searchTerms: `${m.phone} ${m.id}`,
+                }))}
+                value={convertedToMemberId}
+                onValueChange={setConvertedToMemberId}
+                placeholder="Search member..."
+                searchPlaceholder="Type name, phone, or member ID..."
+                emptyMessage="No members found"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Select the member account that was created for this lead.</p>
+            </div>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">Or</span>
+              </div>
+            </div>
+
+            <Button 
+              variant="outline" 
+              className="w-full"
+              onClick={() => {
+                setShowConvertDialog(false);
+                navigate(`/members?createLeadId=${leadToConvert?.id}&leadName=${encodeURIComponent(leadToConvert?.name || "")}&leadPhone=${encodeURIComponent(leadToConvert?.phone || "")}`);
+              }}
+            >
+              Create New Member
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowConvertDialog(false)}>Cancel</Button>
+            <Button onClick={handleConfirmConvert} disabled={!convertedToMemberId || updateLead.isPending}>
+              {updateLead.isPending ? "Converting..." : "Confirm Conversion"}
             </Button>
           </DialogFooter>
         </DialogContent>

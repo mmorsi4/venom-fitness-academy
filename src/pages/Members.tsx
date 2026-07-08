@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useLocation } from "wouter";
+import { useState, useEffect, useRef } from "react";
+import { useLocation, useSearch } from "wouter";
 import { Plus, Search, Phone, Calendar, Pencil, Trash2, Snowflake, Unlock, ArrowUpCircle, BicepsFlexed, Mail, Clock, Camera, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog, useFreezeMember, useUnfreezeMember, usePackages, useCreateInvoice, useAuditLogs, useInvoices, useUpdateInvoice, useMemberCheckIns, useDeleteMemberCheckIn, useUpdateMemberCheckIn } from "@/hooks/use-data";
+import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog, useFreezeMember, useUnfreezeMember, usePackages, useCreateInvoice, useAuditLogs, useInvoices, useUpdateInvoice, useMemberCheckIns, useDeleteMemberCheckIn, useUpdateMemberCheckIn, useUpdateLead } from "@/hooks/use-data";
 import { uploadMemberPhoto } from "@/lib/queries";
 import { CameraCapture } from "@/components/CameraCapture";
 import { processImageFile } from "@/lib/imageUtils";
@@ -109,8 +109,11 @@ export default function Members() {
   const { data: packages = [] } = usePackages();
   const { data: auditLogs = [] } = useAuditLogs();
   const createInvoice = useCreateInvoice();
+  const updateLead = useUpdateLead();
   const { currentUser } = useAuth();
   const [, navigate] = useLocation();
+  const searchString = useSearch();
+  const hasConsumedParams = useRef(false);
 
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -139,6 +142,24 @@ export default function Members() {
   const [editLogTime, setEditLogTime] = useState("");
   const [qrMember, setQrMember] = useState<Member | null>(null);
   const [registrationLinkQr, setRegistrationLinkQr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (hasConsumedParams.current) return;
+    const params = new URLSearchParams(searchString);
+    const createLeadId = params.get("createLeadId");
+    const leadName = params.get("leadName");
+    const leadPhone = params.get("leadPhone");
+
+    if (createLeadId && !showAdd) {
+      setShowAdd(true);
+      setForm(prev => ({
+        ...prev,
+        name: leadName || "",
+        phone: leadPhone || ""
+      }));
+      hasConsumedParams.current = true;
+    }
+  }, [searchString, showAdd]);
 
   const generateSelfRegistrationLink = async () => {
     try {
@@ -311,6 +332,19 @@ export default function Members() {
               const url = await uploadMemberPhoto(newMember.uuid, photoBlob);
               await updateMember.mutateAsync({ id: newMember.uuid, updates: { photo_url: url } });
             } catch (err) { toast.error("Failed to upload photo"); }
+          }
+          const params = new URLSearchParams(searchString);
+          const createLeadId = params.get("createLeadId");
+          if (createLeadId && newMember) {
+            updateLead.mutate({
+              id: createLeadId,
+              updates: {
+                status: 'Converted',
+                converted_to_member_id: newMember.uuid,
+                converted_by_user_id: currentUser?.id
+              }
+            });
+            navigate("/members", { replace: true });
           }
           toast.success(`Member ${form.name} created`);
           closeDialogs();
@@ -523,7 +557,7 @@ export default function Members() {
             className="gap-2"
             title="Generate One-Time Link"
           >
-            <QrCode className="w-4 h-4" /> QR Link
+            <QrCode className="w-4 h-4" /> Self-Registration QR
           </Button>
           <Button data-testid="btn-add-member" onClick={openAdd} className="gap-2">
             <Plus className="w-4 h-4" /> New Member
@@ -1463,7 +1497,7 @@ export default function Members() {
       <Dialog open={!!registrationLinkQr} onOpenChange={(open) => !open && setRegistrationLinkQr(null)}>
         <DialogContent className="sm:max-w-md text-center">
           <DialogHeader>
-            <DialogTitle>Self-Registration QR Link</DialogTitle>
+            <DialogTitle>Self-Registration QR</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center justify-center p-6 space-y-4">
             {registrationLinkQr && (

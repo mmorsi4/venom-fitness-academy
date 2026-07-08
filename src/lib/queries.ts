@@ -499,6 +499,7 @@ export async function getLeads() {
   return data as Lead[];
 }
 
+
 export async function createLead(lead: Omit<Lead, 'id' | 'created_at'>) {
   const { data, error } = await supabase.from('leads').insert(lead).select().single();
   if (error) throw error;
@@ -542,14 +543,19 @@ export async function deleteInternalTransfer(id: string) {
 export async function getClassScheduleOverrides() {
   const { data, error } = await supabase
     .from('class_schedule_overrides')
-    .select('*')
-    .gte('original_date', new Date().toISOString().split('T')[0]);
+    .select('*');
   if (error) throw error;
   return data as import('./types').ClassScheduleOverride[];
 }
 
 export async function createClassScheduleOverride(override: any) {
   const { data, error } = await supabase.from('class_schedule_overrides').insert(override).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateClassScheduleOverride({ id, ...updates }: { id: string; [key: string]: any }) {
+  const { data, error } = await supabase.from('class_schedule_overrides').update(updates).eq('id', id).select().single();
   if (error) throw error;
   return data;
 }
