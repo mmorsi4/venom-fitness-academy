@@ -10,15 +10,12 @@ import {
   AlertDialogHeader, AlertDialogTitle
 } from "@/components/ui/alert-dialog";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
 } from "@/components/ui/dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
-} from "@/components/ui/dialog";
 import { useMembers, useCheckInMember, usePackages, useCoaches, useCheckInCoachWithDetails, useClasses, useCoachCheckInsToday, useCheckInCoach, useInvoices, useClassScheduleOverrides, useCreateClassScheduleOverride, useDeleteClassScheduleOverride } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
 import type { Member, SubscriptionPackage, Coach } from "@/lib/types";
