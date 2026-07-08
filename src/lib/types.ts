@@ -28,6 +28,7 @@ export type LiabilityType = 'installment' | 'one_time';
 export type DiscountType = 'fixed' | 'percentage';
 export type AuditActionType =
   | 'override_checkin'
+  | 'delete_checkin'
   | 'edit_payment'
   | 'apply_discount'
   | 'remove_discount'
@@ -135,6 +136,8 @@ export interface Coach {
   pt_rate: number;
   pt_percentage?: number;
   user_id?: string | null;
+  advance_balance: number;
+  color?: string;
   created_at: string;
 }
 
@@ -209,6 +212,7 @@ export interface CheckIn {
   id: string;
   member_id: string;
   checked_in_by: string | null;
+  checked_in_by_name?: string;
   is_override: boolean;
   pay_later: boolean;
   created_at: string;
@@ -383,12 +387,12 @@ export interface Database {
   };
 }
 
-export interface CheckIn {
+export interface ClassScheduleOverride {
   id: string;
-  member_id: string;
+  class_id: string;
+  original_date: string;
+  status: 'cancelled' | 'postponed';
+  new_date?: string;
+  new_time?: string;
   created_at: string;
-  checked_in_by: string;
-  checked_in_by_name?: string;
-  is_override: boolean;
-  override_reason?: string;
 }

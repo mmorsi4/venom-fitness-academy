@@ -454,6 +454,16 @@ export async function checkInCoach(coachId: string, classId?: string) {
   if (error) throw error;
 }
 
+export async function updateCoachCheckInTime(id: string, newTime: string) {
+  const { error } = await supabase.from('coach_check_ins').update({ check_in_date: newTime }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteCoachCheckIn(id: string) {
+  const { error } = await supabase.from('coach_check_ins').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function checkInCoachWithDetails(args: {
   coachId: string;
   classId?: string;
@@ -528,6 +538,26 @@ export async function deleteInternalTransfer(id: string) {
 }
 
 // ── Expenses ────────────────────────────────────────────────
+
+export async function getClassScheduleOverrides() {
+  const { data, error } = await supabase
+    .from('class_schedule_overrides')
+    .select('*')
+    .gte('original_date', new Date().toISOString().split('T')[0]);
+  if (error) throw error;
+  return data as import('./types').ClassScheduleOverride[];
+}
+
+export async function createClassScheduleOverride(override: any) {
+  const { data, error } = await supabase.from('class_schedule_overrides').insert(override).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteClassScheduleOverride(id: string) {
+  const { error } = await supabase.from('class_schedule_overrides').delete().eq('id', id);
+  if (error) throw error;
+}
 
 export async function getExpenses() {
   const { data, error } = await supabase
@@ -696,6 +726,14 @@ export async function deleteClass(id: string) {
   const { error } = await supabase.from('classes').delete().eq('id', id);
   if (error) throw error;
 }
+
+
+
+export async function adjustCoachAdvanceBalance(id: string, amount: number) {
+  const { error } = await supabase.rpc('adjust_coach_advance', { coach_id: id, amount });
+  if (error) throw error;
+}
+
 export async function createJointInvoiceGroup() {
   const { data, error } = await supabase.from('joint_invoice_groups').insert({}).select().single();
   if (error) throw error;
@@ -823,6 +861,18 @@ export async function clockOutEmployee(checkInId: string) {
     .single();
   if (error) throw error;
   return data as EmployeeCheckIn;
+}
+
+export async function updateEmployeeCheckInTime(id: string, checkInTime: string, checkOutTime?: string) {
+  const updates: any = { check_in_time: checkInTime };
+  if (checkOutTime !== undefined) updates.check_out_time = checkOutTime;
+  const { error } = await supabase.from('employee_checkins').update(updates).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteEmployeeCheckIn(id: string) {
+  const { error } = await supabase.from('employee_checkins').delete().eq('id', id);
+  if (error) throw error;
 }
 
 export async function createEmployeeCheckIn(checkIn: Omit<EmployeeCheckIn, 'id' | 'created_at'>) {

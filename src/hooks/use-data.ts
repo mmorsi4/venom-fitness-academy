@@ -528,6 +528,22 @@ export function useEmployeeCheckIns(month?: number, year?: number) {
   });
 }
 
+export function useUpdateEmployeeCheckInTime() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, checkInTime, checkOutTime }: { id: string; checkInTime: string; checkOutTime?: string }) => q.updateEmployeeCheckInTime(id, checkInTime, checkOutTime),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['employeeCheckIns'] }),
+  });
+}
+
+export function useDeleteEmployeeCheckIn() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => q.deleteEmployeeCheckIn(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['employeeCheckIns'] }),
+  });
+}
+
 export function useCreateEmployeeCheckIn() {
   const qc = useQueryClient();
   return useMutation({
@@ -611,6 +627,22 @@ export function useDeleteCoachDeduction() {
 
 // -- Additional Hooks --
 
+export function useUpdateCoachCheckInTime() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, newTime }: { id: string; newTime: string }) => q.updateCoachCheckInTime(id, newTime),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.coachCheckIns }),
+  });
+}
+
+export function useDeleteCoachCheckIn() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => q.deleteCoachCheckIn(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.coachCheckIns }),
+  });
+}
+
 export function useCheckInCoachWithDetails() {
   const qc = useQueryClient();
   return useMutation({
@@ -680,15 +712,59 @@ export function useCoachHistory(coachId: string | undefined) {
 export function useDeleteExpenseWithRollback() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ expenseId, coachId }: { expenseId: string; coachId: string | null }) => {
+    mutationFn: async ({ expenseId, coachId, description, amount }: { expenseId: string; coachId: string | null; description?: string; amount?: number }) => {
       if (coachId) {
         await q.unmarkCoachSessionsPaidForExpense(expenseId, coachId);
       }
+      
+      if (coachId && description && description.startsWith('Advance given to ') && amount) {
+        await q.adjustCoachAdvanceBalance(coachId, -amount);
+      }
+      
+      if (coachId && description && description.includes('(Advance Burned)')) {
+        const match = description.match(/- (\d+) EGP \(Advance Burned\)/);
+        if (match && match[1]) {
+           await q.adjustCoachAdvanceBalance(coachId, Number(match[1]));
+        }
+      }
+
       await q.deleteExpense(expenseId);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.expenses });
       qc.invalidateQueries({ queryKey: queryKeys.coachCheckIns });
+      qc.invalidateQueries({ queryKey: queryKeys.coaches });
     },
+  });
+}
+
+export function useClassScheduleOverrides() {
+  return useQuery({
+    queryKey: ['class_schedule_overrides'],
+    queryFn: q.getClassScheduleOverrides,
+  });
+}
+
+export function useCreateClassScheduleOverride() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (override: any) => q.createClassScheduleOverride(override),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['class_schedule_overrides'] }),
+  });
+}
+
+export function useDeleteClassScheduleOverride() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => q.deleteClassScheduleOverride(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['class_schedule_overrides'] }),
+  });
+}
+
+export function useAdjustCoachAdvanceBalance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ coachId, amount }: { coachId: string; amount: number }) => q.adjustCoachAdvanceBalance(coachId, amount),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.coaches }),
   });
 }

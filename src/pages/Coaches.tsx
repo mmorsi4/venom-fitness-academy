@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { CheckCircle2, Clock, Dumbbell, DollarSign, Plus, Pencil, Trash2 } from "lucide-react";
+import { format, parseISO } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +17,9 @@ import {
   useCreateCoach, useUpdateCoach, useDeleteCoach, 
   useCoachCheckInsToday,
   useCoachCheckInsForMonth, useCoachHistory, useClasses,
-  useCoachDeductions, useCreateCoachDeduction, useDeleteCoachDeduction
+  useCoachDeductions, useCreateCoachDeduction, useDeleteCoachDeduction,
+  useCreateExpense, useAdjustCoachAdvanceBalance, useExpenses, useDeleteExpense,
+  useUpdateCoachCheckInTime, useDeleteCoachCheckIn
 } from "@/hooks/use-data";
 import { toast } from "sonner";
 import { calculateCoachPayroll } from "@/lib/utils";
@@ -57,6 +60,12 @@ export default function Coaches() {
   const deleteCoach = useDeleteCoach();
   const createDeduction = useCreateCoachDeduction();
   const deleteDeduction = useDeleteCoachDeduction();
+  const createExpense = useCreateExpense();
+  const adjustAdvance = useAdjustCoachAdvanceBalance();
+  const { data: expenses = [] } = useExpenses();
+  const deleteExpense = useDeleteExpense();
+  const deleteCoachCheckIn = useDeleteCoachCheckIn();
+  const updateCoachCheckInTime = useUpdateCoachCheckInTime();
 
   const [showCoachDialog, setShowCoachDialog] = useState(false);
   const [editCoach, setEditCoach] = useState<Coach | null>(null);
@@ -67,12 +76,15 @@ export default function Coaches() {
   const [deductionsModalCoach, setDeductionsModalCoach] = useState<Coach | null>(null);
   const [deductionAmount, setDeductionAmount] = useState("");
   const [deductionReason, setDeductionReason] = useState("");
-  const [deductionType, setDeductionType] = useState<'deduction'|'bonus'>('deduction');
+  const [deductionType, setDeductionType] = useState<'deduction'|'bonus'|'advance'>('deduction');
   const [historyCoach, setHistoryCoach] = useState<Coach | null>(null);
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [editLogTime, setEditLogTime] = useState("");
 
   const { data: history = [] } = useCoachHistory(historyCoach?.id);
   const [coachSearch, setCoachSearch] = useState("");
   const [mainCoachSearch, setMainCoachSearch] = useState("");
+  const [expandedAdvanceCoach, setExpandedAdvanceCoach] = useState<string | null>(null);
 
   const todayName = DAYS[new Date().getDay()];
   const todaysClasses = classes
@@ -101,22 +113,24 @@ export default function Coaches() {
   const handleAddDeduction = () => {
     if (!deductionsModalCoach || !deductionAmount) return;
     const amt = Number(deductionAmount);
-    const finalAmount = deductionType === 'bonus' ? amt : -amt;
+    if (amt <= 0) {
+      toast.error("Please enter a valid amount");
+      return;
+    }
 
     createDeduction.mutate({
       coach_id: deductionsModalCoach.id,
-      amount: finalAmount,
+      amount: deductionType === 'deduction' ? -amt : amt,
       forgiven_sessions: 0,
-      reason: deductionReason || (deductionType === 'bonus' ? "Manual Bonus" : "Manual Deduction"),
+      reason: deductionReason || (deductionType === 'deduction' ? 'Deduction' : 'Bonus'),
       date: new Date().toISOString()
     }, {
       onSuccess: () => {
-        toast.success("Adjustment added");
+        toast.success("Adjustment added successfully");
         setDeductionAmount("");
         setDeductionReason("");
       },
       onError: (err) => {
-        console.error("Adjustment error", err);
         toast.error(`Error adding adjustment: ${err.message}`);
       }
     });
@@ -161,6 +175,7 @@ export default function Coaches() {
         pt_sessions_done: 0,
         pt_rate: Number(form.ptRate) || 250,
         pt_percentage: Number(form.ptPercentage),
+        advance_balance: 0,
       }, {
         onSuccess: () => {
           toast.success(`Coach added: ${form.name}`);
@@ -322,6 +337,47 @@ export default function Coaches() {
                       <span className={`text-xs px-2 py-0.5 rounded-full ${paymentTypeColors[coach.payment_type]}`}>{paymentTypeLabels[coach.payment_type]}</span>
                     </div>
                   </div>
+                  {coach.advance_balance > 0 && (
+                    <div className="mb-2">
+                      <div 
+                        className="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] px-2 py-1.5 rounded-md flex justify-between items-center cursor-pointer hover:bg-amber-100 transition-colors"
+                        onClick={() => setExpandedAdvanceCoach(expandedAdvanceCoach === coach.id ? null : coach.id)}
+                      >
+                        <span className="font-medium">Active Advance Debt: (Click for Details)</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold">{coach.advance_balance.toLocaleString()} EGP</span>
+                          <Button variant="ghost" size="icon" className="h-5 w-5 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm('Delete this advance debt? (This will reset the debt balance to 0. Use this to clear old records without expenses)')) {
+                              adjustAdvance.mutate({ coachId: coach.id, amount: -coach.advance_balance });
+                            }
+                          }}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                      {expandedAdvanceCoach === coach.id && (
+                        <div className="mt-1 p-2 bg-amber-50/50 border border-amber-100 rounded-md space-y-2">
+                          <p className="text-[10px] text-amber-800 font-semibold mb-1">Recent Coach Expenses:</p>
+                          {expenses
+                            .filter(e => e.coach_id === coach.id || e.description.startsWith(`Advance given to ${coach.name}`))
+                            .map(a => (
+                            <div key={a.uuid} className="flex flex-col text-[10px] bg-white p-1.5 rounded border border-amber-100">
+                              <div className="flex justify-between font-semibold text-amber-900">
+                                <span>ID: {a.id || 'N/A'}</span>
+                                <span>{a.amount} EGP</span>
+                              </div>
+                              <span className="text-muted-foreground mt-0.5">{a.description}</span>
+                              <span className="text-[9px] text-muted-foreground mt-0.5">{new Date(a.date).toLocaleDateString()}</span>
+                            </div>
+                          ))}
+                          {expenses.filter(e => e.coach_id === coach.id || e.description.startsWith(`Advance given to ${coach.name}`)).length === 0 && (
+                             <p className="text-[10px] text-muted-foreground italic text-center">No recent records found</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="grid grid-cols-3 gap-2 text-xs">
                     <div className="bg-muted/50 p-2 rounded-md">
                       <p className="text-muted-foreground mb-0.5">Expected</p>
@@ -416,11 +472,19 @@ export default function Coaches() {
             </div>
             <div className="space-y-1.5">
               <Label>Reason</Label>
-              <Input value={deductionReason} onChange={e => setDeductionReason(e.target.value)} placeholder="e.g. Advance payment" />
+              <Input value={deductionReason} onChange={e => setDeductionReason(e.target.value)} placeholder={deductionType === 'advance' ? "e.g. For PT Package Invoice #123" : "e.g. Late penalty"} />
             </div>
-            <Button className="w-full" onClick={handleAddDeduction} disabled={createDeduction.isPending}>
+            <Button className="w-full" onClick={handleAddDeduction} disabled={createDeduction.isPending || adjustAdvance.isPending}>
               Add Adjustment
             </Button>
+
+            <div className="mt-6 pt-4 border-t border-border">
+              <h4 className="font-semibold mb-3">Wallet & Advance Balance</h4>
+              <div className="flex justify-between items-center bg-muted/30 p-3 rounded-lg border border-border">
+                <span className="text-sm font-medium">Current Advance Balance:</span>
+                <span className="font-bold text-amber-600">{deductionsModalCoach?.advance_balance || 0} EGP</span>
+              </div>
+            </div>
 
             <div className="mt-4 border-t pt-4">
               <h4 className="text-sm font-medium mb-3">Adjustments This Month</h4>
@@ -460,10 +524,10 @@ export default function Coaches() {
                         thisMonthDeductions.map(d => (
                           <div key={d.id} className="flex items-center justify-between p-2 rounded border bg-card">
                             <div>
-                              <p className={`text-sm font-bold ${d.amount > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                              <p className={`font-semibold ${d.amount > 0 ? 'text-green-600' : 'text-red-600'}`}>
                                 {d.amount > 0 ? '+' : ''}{d.amount} EGP
                               </p>
-                              <p className="text-xs text-muted-foreground">{d.reason}</p>
+                              {d.reason && <p className="text-xs text-muted-foreground mt-0.5">{d.reason}</p>}
                             </div>
                             <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => deleteDeduction.mutate(d.id)} disabled={deleteDeduction.isPending}>
                               ✕
@@ -495,29 +559,64 @@ export default function Coaches() {
               const cls = classes.find(c => c.id === ci.class_id);
               const m = members.find(mem => mem.uuid === ci.member_uuid);
               return (
-                <div key={ci.id} className="flex items-center justify-between p-3 rounded-lg border bg-card">
-                  <div>
-                    <p className="font-semibold text-sm">
-                      {ci.session_type === 'pt' ? 'PT Session' : (cls?.name || 'General Group Session')}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {new Date(ci.check_in_date).toLocaleDateString()} - {new Date(ci.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                    </p>
-                    {ci.is_substitute && (
-                      <Badge variant="outline" className="text-[10px] mt-1 bg-amber-50 text-amber-600 border-amber-200">Substitute</Badge>
-                    )}
+                <div key={ci.id} className="flex flex-col p-3 rounded-lg border bg-card">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-sm flex items-center gap-2">
+                        {ci.session_type === 'pt' ? 'PT Session' : (cls?.name || 'General Group Session')}
+                      </p>
+                      {editingLogId === ci.id ? (
+                        <div className="flex items-center gap-2 mt-1">
+                          <Input 
+                            type="datetime-local" 
+                            value={editLogTime} 
+                            onChange={e => setEditLogTime(e.target.value)} 
+                            className="h-8 text-xs max-w-[200px]" 
+                          />
+                          <Button size="sm" onClick={() => {
+                            updateCoachCheckInTime.mutate({ id: ci.id, newTime: new Date(editLogTime).toISOString() });
+                            setEditingLogId(null);
+                          }}>Save</Button>
+                          <Button size="sm" variant="ghost" onClick={() => setEditingLogId(null)}>Cancel</Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(ci.check_in_date).toLocaleDateString()} - {new Date(ci.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                          </p>
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => { 
+                            setEditingLogId(ci.id); 
+                            setEditLogTime(format(parseISO(ci.created_at || ci.check_in_date), "yyyy-MM-dd'T'HH:mm")); 
+                          }}>
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                      {ci.is_substitute && (
+                        <Badge variant="outline" className="text-[10px] mt-1 bg-amber-50 text-amber-600 border-amber-200">Substitute</Badge>
+                      )}
+                    </div>
+                    <div className="text-right flex flex-col items-end gap-2">
+                      {ci.session_type === 'pt' && m && (
+                        <div>
+                          <p className="text-sm font-medium">Client</p>
+                          <p className="text-xs text-muted-foreground">{m.name}</p>
+                        </div>
+                      )}
+                      {ci.session_type === 'group' && cls && (
+                        <div>
+                          <p className="text-sm font-medium">{cls.sport_name}</p>
+                        </div>
+                      )}
+                      <Button variant="ghost" size="sm" className="h-6 text-destructive text-xs hover:bg-destructive/10" onClick={() => {
+                        if(confirm("Are you sure you want to delete this session? It will be removed from payroll calculations.")) {
+                          deleteCoachCheckIn.mutate(ci.id);
+                        }
+                      }}>
+                        <Trash2 className="h-3 w-3 mr-1" /> Delete
+                      </Button>
+                    </div>
                   </div>
-                  {ci.session_type === 'pt' && m && (
-                    <div className="text-right">
-                      <p className="text-sm font-medium">Client</p>
-                      <p className="text-xs text-muted-foreground">{m.name}</p>
-                    </div>
-                  )}
-                  {ci.session_type === 'group' && cls && (
-                    <div className="text-right">
-                      <p className="text-sm font-medium">{cls.sport_name}</p>
-                    </div>
-                  )}
                 </div>
               );
             })}
