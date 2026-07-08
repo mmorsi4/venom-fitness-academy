@@ -30,6 +30,7 @@ import {
 import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog, useFreezeMember, useUnfreezeMember, usePackages, useCreateInvoice, useAuditLogs, useInvoices, useUpdateInvoice, useMemberCheckIns, useDeleteMemberCheckIn, useUpdateMemberCheckIn } from "@/hooks/use-data";
 import { uploadMemberPhoto } from "@/lib/queries";
 import { CameraCapture } from "@/components/CameraCapture";
+import { processImageFile } from "@/lib/imageUtils";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import type { Member, Gender } from "@/lib/types";
@@ -948,11 +949,16 @@ export default function Members() {
                           <Input 
                             type="file" 
                             accept="image/*" 
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const file = e.target.files?.[0];
                               if (file) {
-                                setPhotoBlob(file);
-                                setPhotoDataUrl(URL.createObjectURL(file));
+                                try {
+                                  const { blob, url } = await processImageFile(file);
+                                  setPhotoBlob(blob);
+                                  setPhotoDataUrl(url);
+                                } catch (err) {
+                                  toast.error("Failed to process image");
+                                }
                               }
                             }}
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"

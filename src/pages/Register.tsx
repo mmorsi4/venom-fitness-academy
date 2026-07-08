@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CameraCapture } from "@/components/CameraCapture";
+import { processImageFile } from "@/lib/imageUtils";
 import { useCreateMember, useClasses } from "@/hooks/use-data";
 import { uploadMemberPhoto } from "@/lib/queries";
 import { supabase } from "@/lib/supabase";
@@ -63,12 +64,16 @@ export default function Register() {
   const f = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(p => ({ ...p, [key]: e.target.value }));
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    setPhotoBlob(file);
-    setPhotoDataUrl(url);
+    try {
+      const { blob, url } = await processImageFile(file);
+      setPhotoBlob(blob);
+      setPhotoDataUrl(url);
+    } catch (err) {
+      toast.error("Failed to process image");
+    }
   };
 
   const handleSave = async () => {
