@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, CheckCircle2, AlertTriangle, XCircle, UserCheck, Clock } from "lucide-react";
+import { Search, CheckCircle2, AlertTriangle, XCircle, UserCheck, Clock, QrCode, Camera } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,9 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
+} from "@/components/ui/dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
@@ -20,6 +23,7 @@ import StatusBadge from "@/components/StatusBadge";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Scanner } from '@yudiel/react-qr-scanner';
 
 export default function CheckIn() {
   const { data: members = [] } = useMembers();
@@ -35,6 +39,7 @@ export default function CheckIn() {
   
   const [tab, setTab] = useState("members");
   const [query, setQuery] = useState("");
+  const [isScanning, setIsScanning] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const selectedMember = selectedMemberId ? members.find(m => m.uuid === selectedMemberId) || null : null;
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>("");
@@ -258,18 +263,28 @@ export default function CheckIn() {
 
         <TabsContent value="members" className="space-y-6 mt-6">
           {/* Search */}
-          <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-        <Input
-          data-testid="input-checkin-search"
-          type="search"
-          placeholder="Search member..."
-          value={query}
-          onChange={e => { setQuery(e.target.value); setSelectedMemberId(null); setSuccessMember(null); }}
-          className="pl-10 h-12 text-base"
-          autoFocus
-        />
-      </div>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+              <Input
+                data-testid="input-checkin-search"
+                type="search"
+                placeholder="Search member..."
+                value={query}
+                onChange={e => { setQuery(e.target.value); setSelectedMemberId(null); setSuccessMember(null); }}
+                className="pl-10 h-12 text-base"
+                autoFocus
+              />
+            </div>
+            <Button
+              variant="outline"
+              className="h-12 w-12 px-0 shrink-0"
+              onClick={() => setIsScanning(true)}
+              title="Scan QR Code"
+            >
+              <QrCode className="w-5 h-5" />
+            </Button>
+          </div>
 
       {/* Search results */}
       {results.length > 0 && !selectedMember && (
@@ -543,6 +558,37 @@ export default function CheckIn() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* QR Scanner Dialog */}
+      <Dialog open={isScanning} onOpenChange={setIsScanning}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Scan QR Code</DialogTitle>
+          </DialogHeader>
+          <div className="aspect-square rounded-lg overflow-hidden bg-black flex items-center justify-center">
+            {isScanning && (
+              <Scanner
+                onScan={(result) => {
+                  if (result && result.length > 0) {
+                    const scannedUuid = result[0].rawValue;
+                    const member = members.find(m => m.uuid === scannedUuid);
+                    if (member) {
+                      handleSelect(member);
+                      setIsScanning(false);
+                      toast.success(`Found ${member.name}`);
+                    } else {
+                      toast.error("Invalid QR code or member not found");
+                    }
+                  }
+                }}
+              />
+            )}
+          </div>
+          <DialogFooter className="sm:justify-center">
+            <Button variant="secondary" onClick={() => setIsScanning(false)}>Cancel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

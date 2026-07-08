@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Plus, Search, Phone, Calendar, Pencil, Trash2, Snowflake, Unlock, ArrowUpCircle, BicepsFlexed, Mail, Clock, Camera } from "lucide-react";
+import { Plus, Search, Phone, Calendar, Pencil, Trash2, Snowflake, Unlock, ArrowUpCircle, BicepsFlexed, Mail, Clock, Camera, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,10 +31,12 @@ import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, u
 import { uploadMemberPhoto } from "@/lib/queries";
 import { CameraCapture } from "@/components/CameraCapture";
 import { useAuth } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 import type { Member, Gender } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import { toast } from "sonner";
 import { format, differenceInYears, parseISO } from "date-fns";
+import QRCode from "react-qr-code";
 
 const GENDERS: { value: Gender; label: string }[] = [
   { value: "male", label: "Male" },
@@ -133,6 +135,18 @@ export default function Members() {
   const updateMemberCheckInTime = useUpdateMemberCheckIn();
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [editLogTime, setEditLogTime] = useState("");
+  const [qrMember, setQrMember] = useState<Member | null>(null);
+  const [registrationLinkQr, setRegistrationLinkQr] = useState<string | null>(null);
+
+  const generateSelfRegistrationLink = async () => {
+    try {
+      const id = crypto.randomUUID();
+      const url = `${window.location.origin}/register/${id}`;
+      setRegistrationLinkQr(url);
+    } catch (err: any) {
+      toast.error(`Error generating link: ${err.message}`);
+    }
+  };
 
 
   const [searchField, setSearchField] = useState<string>("all");
@@ -500,9 +514,19 @@ export default function Members() {
           <h1 className="text-2xl font-bold text-foreground">Members</h1>
           <p className="text-sm text-muted-foreground">{members.length} total members</p>
         </div>
-        <Button data-testid="btn-add-member" onClick={openAdd} className="gap-2">
-          <Plus className="w-4 h-4" /> New Member
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            onClick={generateSelfRegistrationLink} 
+            className="gap-2"
+            title="Generate One-Time Link"
+          >
+            <QrCode className="w-4 h-4" /> QR Link
+          </Button>
+          <Button data-testid="btn-add-member" onClick={openAdd} className="gap-2">
+            <Plus className="w-4 h-4" /> New Member
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -743,6 +767,14 @@ export default function Members() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
+                        <button
+                          data-testid={`btn-qr-member-${m.uuid}`}
+                          onClick={() => setQrMember(m)}
+                          className="p-1.5 rounded-md hover:bg-slate-50 transition-colors text-muted-foreground hover:text-slate-600"
+                          title="Show QR Code"
+                        >
+                          <QrCode className="w-4 h-4" />
+                        </button>
                         {m.invitations_remaining > 0 ?
                           (<button
                             data-testid={`btn-invite-member-${m.uuid}`}
@@ -906,11 +938,28 @@ export default function Members() {
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center justify-center gap-2">
                         <Button type="button" variant="outline" size="sm" onClick={() => setIsCapturing(true)}>
                           <Camera className="w-4 h-4 mr-2" />
-                          {photoDataUrl ? "Retake Photo" : "Take Photo"}
+                          {photoDataUrl ? "Retake" : "Take"} Photo
                         </Button>
+                        <div className="relative">
+                          <Input 
+                            type="file" 
+                            accept="image/*" 
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                setPhotoBlob(file);
+                                setPhotoDataUrl(URL.createObjectURL(file));
+                              }
+                            }}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                          />
+                          <Button type="button" variant="outline" size="sm" className="pointer-events-none">
+                            Upload Photo
+                          </Button>
+                        </div>
                         {photoDataUrl && (
                           <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => {
                             setPhotoBlob(null);
@@ -1406,6 +1455,48 @@ export default function Members() {
             <Button onClick={handleUpgrade} disabled={createInvoice.isPending || updateMember.isPending}>
               {createInvoice.isPending || updateMember.isPending ? "Upgrading..." : "Upgrade Now"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* QR Code Dialog */}
+      <Dialog open={!!qrMember} onOpenChange={(open) => !open && setQrMember(null)}>
+        <DialogContent className="sm:max-w-md text-center">
+          <DialogHeader>
+            <DialogTitle>QR Code</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center p-6 space-y-4">
+            {qrMember && (
+              <div className="bg-white p-4 rounded-xl shadow-sm">
+                <QRCode value={qrMember.uuid} size={256} />
+              </div>
+            )}
+            <p className="text-sm font-medium">{qrMember?.name}</p>
+            <p className="text-xs text-muted-foreground">Scan this code to check in.</p>
+          </div>
+          <DialogFooter className="sm:justify-center">
+            <Button variant="secondary" onClick={() => setQrMember(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Registration Link QR Dialog */}
+      <Dialog open={!!registrationLinkQr} onOpenChange={(open) => !open && setRegistrationLinkQr(null)}>
+        <DialogContent className="sm:max-w-md text-center">
+          <DialogHeader>
+            <DialogTitle>Self-Registration QR Link</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center p-6 space-y-4">
+            {registrationLinkQr && (
+              <div className="bg-white p-4 rounded-xl shadow-sm">
+                <QRCode value={registrationLinkQr} size={256} />
+              </div>
+            )}
+            <p className="text-sm font-medium">One-Time Registration Link</p>
+            <p className="text-xs text-muted-foreground">Scan this to register a new member. The link closes automatically upon completion.</p>
+          </div>
+          <DialogFooter className="sm:justify-center">
+            <Button variant="secondary" onClick={() => setRegistrationLinkQr(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

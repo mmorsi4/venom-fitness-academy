@@ -24,6 +24,7 @@ import UsersPage from "@/pages/Users";
 import Employees from "@/pages/Employees";
 import EmployeeCheckIn from "@/pages/EmployeeCheckIn";
 import NotFound from "@/pages/not-found";
+import Register from "@/pages/Register";
 
 const queryClient = new QueryClient();
 
@@ -49,6 +50,7 @@ function Router() {
         <Route path="/users" component={UsersPage} />
         <Route path="/employees" component={Employees} />
         <Route path="/employee-checkin" component={EmployeeCheckIn} />
+        <Route path="/register/:id" component={Register} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
@@ -58,11 +60,7 @@ function Router() {
 function AppInner() {
   const { currentUser } = useAuth();
   if (!currentUser) return <LoginPage />;
-  return (
-    <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-      <Router />
-    </WouterRouter>
-  );
+  return <Router />;
 }
 
 function App() {
@@ -70,7 +68,14 @@ function App() {
     <AuthProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <AppInner />
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <Switch>
+              <Route path="/register/:id" component={Register} />
+              <Route path="*">
+                <AppInner />
+              </Route>
+            </Switch>
+          </WouterRouter>
           <Toaster richColors position="top-right" />
         </TooltipProvider>
       </QueryClientProvider>
