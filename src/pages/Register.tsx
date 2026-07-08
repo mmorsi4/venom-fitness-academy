@@ -74,6 +74,7 @@ export default function Register() {
     } catch (err) {
       toast.error("Failed to process image");
     }
+    e.target.value = '';
   };
 
   const handleSave = async () => {
@@ -158,7 +159,7 @@ export default function Register() {
           <CardContent className="pt-6 space-y-4">
             <CheckCircle2 className="w-16 h-16 text-emerald-500 mx-auto" />
             <h2 className="text-2xl font-bold text-emerald-800">Registration Complete!</h2>
-            <p className="text-emerald-700">Your profile has been created successfully. Welcome to the academy!</p>
+            <p className="text-emerald-700">Your profile has been created successfully. Welcome to Venom!</p>
           </CardContent>
         </Card>
       </div>

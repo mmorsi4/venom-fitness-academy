@@ -960,6 +960,7 @@ export default function Members() {
                                   toast.error("Failed to process image");
                                 }
                               }
+                              e.target.value = '';
                             }}
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                           />
