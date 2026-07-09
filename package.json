@@ -78,6 +78,8 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
-    "html2canvas": "^1.4.1"
+    "@yudiel/react-qr-scanner": "^2.6.0",
+    "html2canvas": "^1.4.1",
+    "react-qr-code": "^2.2.0"
   }
 }

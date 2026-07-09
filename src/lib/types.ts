@@ -154,6 +154,8 @@ export interface Lead {
   inviting_member_id?: string | null;
   calls_made: number;
   took_invitation: boolean;
+  converted_to_member_id?: string | null;
+  converted_by_user_id?: string | null;
   created_at: string;
 }
 

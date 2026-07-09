@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, CheckCircle2, AlertTriangle, XCircle, UserCheck, Clock } from "lucide-react";
+import { Search, CheckCircle2, AlertTriangle, XCircle, UserCheck, Clock, QrCode, Camera } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,19 +10,20 @@ import {
   AlertDialogHeader, AlertDialogTitle
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
+} from "@/components/ui/dialog";
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
-} from "@/components/ui/dialog";
-import { useMembers, useCheckInMember, usePackages, useCoaches, useCheckInCoachWithDetails, useClasses, useCoachCheckInsToday, useCheckInCoach, useInvoices, useClassScheduleOverrides, useCreateClassScheduleOverride, useDeleteClassScheduleOverride } from "@/hooks/use-data";
+import { useMembers, useCheckInMember, usePackages, useCoaches, useCheckInCoachWithDetails, useClasses, useCoachCheckInsToday, useCheckInCoach, useInvoices, useClassScheduleOverrides, useCreateClassScheduleOverride, useDeleteClassScheduleOverride, useUpdateClassScheduleOverride } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
 import type { Member, SubscriptionPackage, Coach } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Scanner } from '@yudiel/react-qr-scanner';
 
 export default function CheckIn() {
   const { data: members = [] } = useMembers();
@@ -37,6 +38,7 @@ export default function CheckIn() {
   const { data: scheduleOverrides = [] } = useClassScheduleOverrides();
   const createOverrideMutation = useCreateClassScheduleOverride();
   const deleteOverrideMutation = useDeleteClassScheduleOverride();
+  const updateOverrideMutation = useUpdateClassScheduleOverride();
   const [postponeClassId, setPostponeClassId] = useState<string | null>(null);
   const [postponeDate, setPostponeDate] = useState("");
   const [postponeTime, setPostponeTime] = useState("");
@@ -44,6 +46,7 @@ export default function CheckIn() {
   
   const [tab, setTab] = useState("members");
   const [query, setQuery] = useState("");
+  const [isScanning, setIsScanning] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const selectedMember = selectedMemberId ? members.find(m => m.uuid === selectedMemberId) || null : null;
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>("");
@@ -250,24 +253,43 @@ export default function CheckIn() {
        isScheduledToday,
        displayTime,
        statusOverride: overrideToday?.status || (postponedToToday ? 'postponed_to_today' : null),
-       overrideId: overrideToday?.id || postponedToToday?.id
+       overrideId: overrideToday?.id || postponedToToday?.id,
+       originalDate: postponedToToday?.original_date
     };
   }).filter(c => c.isScheduledToday || c.statusOverride === 'cancelled').sort((a,b) => (a.displayTime || '').localeCompare(b.displayTime || ''));
   
   const handleCancelSession = (classId: string) => {
-    createOverrideMutation.mutate({ class_id: classId, original_date: todayDateString, status: 'cancelled' }, {
-      onSuccess: () => toast.success("Session cancelled for today")
-    });
+    const cls = todaysClasses.find(c => c.id === classId);
+    if (cls && (cls as any).overrideId) {
+      updateOverrideMutation.mutate({ id: (cls as any).overrideId, status: 'cancelled' }, {
+        onSuccess: () => toast.success("Session cancelled for today")
+      });
+    } else {
+      createOverrideMutation.mutate({ class_id: classId, original_date: todayDateString, status: 'cancelled' }, {
+        onSuccess: () => toast.success("Session cancelled for today")
+      });
+    }
   };
   
   const handlePostponeSession = () => {
     if (!postponeClassId || !postponeDate || !postponeTime) return;
-    createOverrideMutation.mutate({ class_id: postponeClassId, original_date: todayDateString, status: 'postponed', new_date: postponeDate, new_time: postponeTime }, {
-      onSuccess: () => {
-        toast.success("Session postponed successfully");
-        setPostponeClassId(null);
-      }
-    });
+    const cls = todaysClasses.find(c => c.id === postponeClassId);
+    
+    if (cls && (cls as any).overrideId) {
+      updateOverrideMutation.mutate({ id: (cls as any).overrideId, new_date: postponeDate, new_time: postponeTime, status: 'postponed' }, {
+        onSuccess: () => {
+          toast.success("Session postponement updated successfully");
+          setPostponeClassId(null);
+        }
+      });
+    } else {
+      createOverrideMutation.mutate({ class_id: postponeClassId, original_date: todayDateString, status: 'postponed', new_date: postponeDate, new_time: postponeTime }, {
+        onSuccess: () => {
+          toast.success("Session postponed successfully");
+          setPostponeClassId(null);
+        }
+      });
+    }
   };
 
   const submitTodayClassCheckIn = (classId: string, coachId: string, originalCoachId: string) => {
@@ -313,9 +335,14 @@ export default function CheckIn() {
   const coachResults = coachQuery.length >= 1
     ? coaches.filter(c => c.name.toLowerCase().includes(coachQuery.toLowerCase()) || c.phone?.includes(coachQuery)).slice(0, 6)
     : [];
+    
+  const futurePostponed = scheduleOverrides
+    .filter(o => o.status === 'postponed' && new Date(o.new_date) >= new Date(todayDateString))
+    .sort((a, b) => new Date(a.new_date).getTime() - new Date(b.new_date).getTime());
 
   return (
-    <div className="p-6 max-w-2xl mx-auto space-y-6">
+    <div className="p-6 max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-2 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Check-In</h1>
@@ -331,18 +358,28 @@ export default function CheckIn() {
 
         <TabsContent value="members" className="space-y-6 mt-6">
           {/* Search */}
-          <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-        <Input
-          data-testid="input-checkin-search"
-          type="search"
-          placeholder="Search member..."
-          value={query}
-          onChange={e => { setQuery(e.target.value); setSelectedMemberId(null); setSuccessMember(null); }}
-          className="pl-10 h-12 text-base"
-          autoFocus
-        />
-      </div>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+              <Input
+                data-testid="input-checkin-search"
+                type="search"
+                placeholder="Search member..."
+                value={query}
+                onChange={e => { setQuery(e.target.value); setSelectedMemberId(null); setSuccessMember(null); }}
+                className="pl-10 h-12 text-base"
+                autoFocus
+              />
+            </div>
+            <Button
+              variant="outline"
+              className="h-12 w-12 px-0 shrink-0"
+              onClick={() => setIsScanning(true)}
+              title="Scan QR Code"
+            >
+              <QrCode className="w-5 h-5" />
+            </Button>
+          </div>
 
       {/* Search results */}
       {results.length > 0 && !selectedMember && (
@@ -560,7 +597,14 @@ export default function CheckIn() {
                 <div key={cls.id} className={`rounded-xl border p-4 space-y-3 ${alreadyDone ? 'bg-emerald-50 border-emerald-200' : isCancelled ? 'bg-muted/50 border-muted opacity-80' : 'bg-card'}`}>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-semibold text-foreground">{cls.name}</p>
+                      <p className="font-semibold text-foreground flex items-center gap-2">
+                        {cls.name}
+                        {(cls as any).statusOverride === 'postponed_to_today' && (cls as any).originalDate && (
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] uppercase tracking-wider py-0 font-bold">
+                            Postponed from {format(new Date((cls as any).originalDate), "MMM d")}
+                          </Badge>
+                        )}
+                      </p>
                       <p className="text-xs text-muted-foreground">{timeSlot} · {cls.sport_name || 'General'}</p>
                     </div>
                     {alreadyDone ? (
@@ -654,6 +698,91 @@ export default function CheckIn() {
           </DialogContent>
         </Dialog>
       </Tabs>
+      </div>
+
+      {/* Right Column: Upcoming Postponed Sessions */}
+      <div className="space-y-6 lg:pt-[3.25rem]">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Upcoming Postponed Sessions</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {futurePostponed.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No upcoming postponed sessions.</p>
+            ) : (
+              futurePostponed.map(po => {
+                const poClass = classes.find(c => c.id === po.class_id);
+                const isOriginalDatePassed = new Date(po.original_date) < new Date(todayDateString);
+
+                return (
+                  <div key={po.id} className="p-3 rounded-lg border bg-blue-50/50 space-y-3 flex flex-col">
+                    <div className="flex justify-between items-start">
+                      <p className="font-medium text-sm text-blue-900">{poClass?.name || 'Unknown Class'}</p>
+                    </div>
+                    <div className="text-xs text-blue-700 space-y-0.5">
+                      <p>From: <span className="font-semibold">{format(new Date(po.original_date), "MMM d, yyyy")}</span></p>
+                      <p>To: <span className="font-semibold">{format(new Date(po.new_date), "MMM d, yyyy")} at {formatTo12Hour(po.new_time)}</span></p>
+                    </div>
+                    
+                    <div className="flex items-center justify-end gap-2 pt-3 mt-1 border-t border-blue-200/50">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="h-7 px-3 text-[10px] uppercase font-bold text-blue-600 border-blue-200 hover:bg-blue-100" 
+                        onClick={() => deleteOverrideMutation.mutate(po.id, { onSuccess: () => toast.success("Postponing undone") })} 
+                        title={isOriginalDatePassed ? "Cannot undo because original date has passed" : "Restore class to its original date"}
+                        disabled={isOriginalDatePassed}
+                      >
+                        Undo Postpone
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="h-7 px-3 text-[10px] uppercase font-bold text-red-600 border-red-200 hover:bg-red-50" 
+                        onClick={() => updateOverrideMutation.mutate({ id: po.id, status: 'cancelled' }, { onSuccess: () => toast.success("Session cancelled") })} 
+                        title="Cancel class on the new postponed date"
+                      >
+                        Cancel Class
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* QR Scanner Dialog */}
+      <Dialog open={isScanning} onOpenChange={setIsScanning}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Scan QR Code</DialogTitle>
+          </DialogHeader>
+          <div className="aspect-square rounded-lg overflow-hidden bg-black flex items-center justify-center">
+            {isScanning && (
+              <Scanner
+                onScan={(result) => {
+                  if (result && result.length > 0) {
+                    const scannedUuid = result[0].rawValue;
+                    const member = members.find(m => m.uuid === scannedUuid);
+                    if (member) {
+                      handleSelect(member);
+                      setIsScanning(false);
+                      // toast.success(`Found ${member.name}`);
+                    } else {
+                      toast.error("Invalid QR code or member not found");
+                    }
+                  }
+                }}
+              />
+            )}
+          </div>
+          <DialogFooter className="sm:justify-center">
+            <Button variant="secondary" onClick={() => setIsScanning(false)}>Cancel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
