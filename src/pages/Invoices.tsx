@@ -684,9 +684,14 @@ export default function Invoices() {
   };
 
   const handleDeleteInvoice = (inv: Invoice) => {
-    const invoicesToDelete = inv.joint_invoice_group_id 
+    let invoicesToDelete = inv.joint_invoice_group_id 
       ? invoices.filter(i => i.joint_invoice_group_id === inv.joint_invoice_group_id)
       : [inv];
+
+    const paymentCompletions = invoices.filter(i => 
+      i.package_name && invoicesToDelete.some(parent => i.package_name!.startsWith(`Payment Completion: ${parent.id}`))
+    );
+    invoicesToDelete = [...invoicesToDelete, ...paymentCompletions];
 
     invoicesToDelete.forEach(i => {
       deleteInvoice.mutate(i.uuid, {

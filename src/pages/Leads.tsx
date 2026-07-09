@@ -103,7 +103,7 @@ export default function Leads() {
       notes: [],
       calls_made: 0,
       follow_up_date: new Date(Date.now() + 86400000).toISOString(),
-      assigned_to: linkedEmployee?.id || null,
+      assigned_to: currentUser?.id || null,
       interest: form.interest || null,
       inviting_member_id: form.source === "Invitation" ? form.invitingMemberId : null,
       took_invitation: false,

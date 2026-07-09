@@ -62,7 +62,14 @@ export default function CheckIn() {
         m.name.toLowerCase().includes(query.toLowerCase()) ||
         m.id.toString().includes(query) ||
         m.phone.includes(query)
-      ).slice(0, 6)
+      ).sort((a, b) => {
+        const isNumeric = /^\d+$/.test(query.trim());
+        if (isNumeric) {
+          if (a.id.toString() === query.trim() && b.id.toString() !== query.trim()) return -1;
+          if (b.id.toString() === query.trim() && a.id.toString() !== query.trim()) return 1;
+        }
+        return 0;
+      }).slice(0, 6)
     : [];
 
   const handleSuccess = (member: Member, msg: string, desc: string) => {
@@ -106,7 +113,8 @@ export default function CheckIn() {
       i.member_id === member.uuid && 
       (i.status === 'paid' || i.status === 'partial') && 
       (i.sessions_remaining === undefined || i.sessions_remaining === null || i.sessions_remaining > 0) &&
-      (!member.expires_at || new Date(member.expires_at) >= new Date(new Date().setHours(0,0,0,0)))
+      (!member.expires_at || new Date(member.expires_at) >= new Date(new Date().setHours(0,0,0,0))) &&
+      (!i.package_name || !i.package_name.startsWith('Payment Completion'))
     );
     if (memberActiveInvoices.length > 0) {
       setSelectedInvoiceId(memberActiveInvoices[0].uuid);
@@ -466,7 +474,8 @@ export default function CheckIn() {
                 i.member_id === selectedMember.uuid && 
                 (i.status === 'paid' || i.status === 'partial') && 
                 (i.sessions_remaining === undefined || i.sessions_remaining === null || i.sessions_remaining > 0) &&
-                (!selectedMember.expires_at || new Date(selectedMember.expires_at) >= new Date(new Date().setHours(0,0,0,0)))
+                (!selectedMember.expires_at || new Date(selectedMember.expires_at) >= new Date(new Date().setHours(0,0,0,0))) &&
+                (!i.package_name || !i.package_name.startsWith('Payment Completion'))
               );
               
               if (activeInvoices.length > 1) {

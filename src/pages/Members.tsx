@@ -172,6 +172,13 @@ export default function Members() {
     const matchPackage = packageFilter === "all" || m.package_id === packageFilter;
 
     return matchSearch && matchStatus && matchClass && matchPackage;
+  }).sort((a, b) => {
+    const isNumeric = /^\d+$/.test(query.trim());
+    if (isNumeric) {
+      if (a.id.toString() === query.trim() && b.id.toString() !== query.trim()) return -1;
+      if (b.id.toString() === query.trim() && a.id.toString() !== query.trim()) return 1;
+    }
+    return 0;
   });
 
   const totalPages = Math.ceil(filtered.length / pageSize);
@@ -687,7 +694,8 @@ export default function Members() {
                           const activeInvoices = invoices.filter(i =>
                             i.member_id === m.uuid &&
                             (i.status === 'paid' || i.status === 'partial') &&
-                            (i.sessions_remaining === undefined || i.sessions_remaining === null || i.sessions_remaining > 0)
+                            (i.sessions_remaining === undefined || i.sessions_remaining === null || i.sessions_remaining > 0) &&
+                            (!i.package_name || !i.package_name.startsWith('Payment Completion'))
                           );
 
                           if (activeInvoices.length > 0) {
