@@ -2,12 +2,15 @@ import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { eachDayOfInterval, startOfMonth, endOfMonth, isBefore, startOfDay, format } from "date-fns"
 import type { Coach, Class, CoachCheckIn, Invoice, PaymentMethod, CoachDeduction, Expense, ClassScheduleOverride } from "./types"
+import { DAYS_OF_WEEK } from "./constants"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+export function validateEgyptPhone(phone: string): boolean {
+  return /^\d{11}$/.test(phone.trim());
+}
 
 export function calculateCoachPayroll(
   coach: Coach,
@@ -57,7 +60,7 @@ export function calculateCoachPayroll(
   });
 
   allDays.forEach(day => {
-    const dayName = DAYS[day.getDay()];
+    const dayName = DAYS_OF_WEEK[day.getDay()];
     const dateString = format(day, 'yyyy-MM-dd');
     let slotsForDay = 0;
     

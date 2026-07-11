@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useLocation, useSearch } from "wouter";
+import { useLocation, useSearch, Link } from "wouter";
 import { Plus, FileText, CreditCard, Tag, Trash2, Pencil, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,13 +25,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { ExpensesView } from "@/components/ExpensesView";
+import { InvoiceFilters } from "@/components/features/invoices/InvoiceFilters";
+import { InvoiceList } from "@/components/features/invoices/InvoiceList";
 import { useInvoices, usePackages, useMembers, useDiscounts, useCreateInvoice, useUpdateInvoice, useDeleteInvoice, useCreateAuditLog, useClasses, useCreateJointInvoiceGroup, useUpdateMember } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
 import type { Invoice } from "@/lib/types";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
-const paymentMethods = ["Cash", "Visa", "InstaPay", "Split"];
+import { PAYMENT_METHODS, PAYMENT_METHODS_NO_SPLIT } from "@/lib/constants";
 const paymentStatuses: Record<string, string> = {
   paid: "bg-emerald-100 text-emerald-700 border-emerald-200",
   partial: "bg-amber-100 text-amber-700 border-amber-200",
@@ -720,38 +722,6 @@ export default function Invoices() {
               });
             }
           }
-
-          // Sync member status if this was a package invoice
-          if (i.member_id && (!i.package_name || !i.package_name.startsWith('Payment Completion'))) {
-            const memberInvoices = invoices
-              .filter(inv => inv.member_id === i.member_id && inv.uuid !== i.uuid && inv.status !== 'unpaid' && (!inv.package_name || !inv.package_name.startsWith('Payment Completion')))
-              .sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-            
-            if (memberInvoices.length > 0) {
-              const latest = memberInvoices[0];
-              updateMember.mutate({
-                id: i.member_id,
-                updates: {
-                  package_id: latest.package_id,
-                  package_name: latest.package_name,
-                  sessions_remaining: latest.sessions_remaining || 0,
-                  freeze_days_remaining: latest.freeze_days_remaining || 0,
-                  status: 'active'
-                }
-              });
-            } else {
-              updateMember.mutate({
-                id: i.member_id,
-                updates: {
-                  package_id: null,
-                  package_name: 'None',
-                  sessions_remaining: 0,
-                  freeze_days_remaining: 0,
-                  status: 'expired'
-                }
-              });
-            }
-          }
         },
         onError: (err) => toast.error(`Error deleting invoice: ${err.message}`),
       });
@@ -807,259 +777,34 @@ export default function Invoices() {
           </Tabs>
 
           {/* Filter Bar */}
-          <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
-            <div className="flex flex-wrap gap-2">
-              <Select value={searchField} onValueChange={setSearchField}>
-                <SelectTrigger className="w-[130px] h-9">
-                  <SelectValue placeholder="Search by..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Fields</SelectItem>
-                  <SelectItem value="id">ID / Invoice #</SelectItem>
-                  <SelectItem value="name">Name</SelectItem>
-                  <SelectItem value="phone">Phone</SelectItem>
-                </SelectContent>
-              </Select>
-              <div className="relative w-64">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search invoices..."
-                  className="pl-9 h-9"
-                  value={searchQuery}
-                  onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                />
-              </div>
-            </div>
-            <Select value={filterPaymentMethod} onValueChange={setFilterPaymentMethod}>
-              <SelectTrigger className="w-36" data-testid="filter-payment-method">
-                <SelectValue placeholder="Payment..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Methods</SelectItem>
-                {paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={filterPackage} onValueChange={setFilterPackage}>
-              <SelectTrigger className="w-40" data-testid="filter-package">
-                <SelectValue placeholder="Package..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Packages</SelectItem>
-                {[...new Set(invoices.map(i => i.package_name).filter(Boolean))].map(p => (
-                  <SelectItem key={p} value={p}>{p}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              type="date"
-              value={filterDateFrom}
-              onChange={e => setFilterDateFrom(e.target.value)}
-              className="w-36"
-              title="From date"
-            />
-            <Input
-              type="date"
-              value={filterDateTo}
-              onChange={e => setFilterDateTo(e.target.value)}
-              className="w-36"
-              title="To date"
-            />
-            <div className="flex items-center space-x-2 bg-muted/30 px-3 rounded-md border border-border/50">
-              <input
-                type="checkbox"
-                id="clinic-invoices-toggle"
-                checked={filterClinicOnly}
-                onChange={(e) => setFilterClinicOnly(e.target.checked)}
-                className="rounded border-gray-300 text-primary focus:ring-primary"
-              />
-              <Label htmlFor="clinic-invoices-toggle" className="text-sm font-medium leading-none cursor-pointer">
-                Clinic Only
-              </Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Label className="text-xs text-muted-foreground shrink-0">Activation Date:</Label>
-              <Input
-                type="date"
-                value={filterActivationDateFrom}
-                onChange={e => setFilterActivationDateFrom(e.target.value)}
-                className="w-36"
-                title="From activation date"
-              />
-              <Input
-                type="date"
-                value={filterActivationDateTo}
-                onChange={e => setFilterActivationDateTo(e.target.value)}
-                className="w-36"
-                title="To activation date"
-              />
-            </div>
-          </div>
+          <InvoiceFilters
+            searchField={searchField} setSearchField={setSearchField}
+            searchQuery={searchQuery} setSearchQuery={setSearchQuery}
+            setCurrentPage={setCurrentPage}
+            filterPaymentMethod={filterPaymentMethod} setFilterPaymentMethod={setFilterPaymentMethod}
+            filterPackage={filterPackage} setFilterPackage={setFilterPackage}
+            invoices={invoices}
+            filterDateFrom={filterDateFrom} setFilterDateFrom={setFilterDateFrom}
+            filterDateTo={filterDateTo} setFilterDateTo={setFilterDateTo}
+            filterClinicOnly={filterClinicOnly} setFilterClinicOnly={setFilterClinicOnly}
+            filterActivationDateFrom={filterActivationDateFrom} setFilterActivationDateFrom={setFilterActivationDateFrom}
+            filterActivationDateTo={filterActivationDateTo} setFilterActivationDateTo={setFilterActivationDateTo}
+          />
 
-          {filtered.length === 0 ? (
-            <Card><CardContent className="py-12 text-center"><p className="text-muted-foreground">No invoices</p></CardContent></Card>
-          ) : (
-            <div className="rounded-md border bg-card">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Invoice</TableHead>
-                    <TableHead>Member ID</TableHead>
-                    <TableHead>Member Name</TableHead>
-                    <TableHead>Package</TableHead>
-                    <TableHead>Creation Date</TableHead>
-                    <TableHead>Status & Payment</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead className="w-[80px]"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paginatedInvoices.map(inv => {
-                    const shortId = members.find(m => m.uuid === inv.member_id)?.id;
-                    const jointRelated = inv.joint_invoice_group_id ? invoices.filter(i => i.joint_invoice_group_id === inv.joint_invoice_group_id && i.uuid !== inv.uuid) : [];
-
-                    return (
-                      <TableRow key={inv.uuid} data-testid={`invoice-${inv.uuid}`}>
-                        <TableCell className="font-bold text-xs text-muted-foreground">
-                          {inv.id}
-                        </TableCell>
-                        <TableCell className="text-sm font-medium text-muted-foreground">{shortId === -1 ? 'Clinic Visitor' : (shortId ?? '?')}</TableCell>
-                        <TableCell className="font-medium text-sm">
-                          {inv.member_name}
-                          {inv.id.startsWith("FREE-") && (
-                            <div className="mt-1">
-                              <span className="text-[10px] text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-md inline-block max-w-fit font-bold">
-                                Free Membership
-                              </span>
-                            </div>
-                          )}
-                          {jointRelated.length > 0 && (
-                            <div className="mt-1 flex flex-col gap-0.5">
-                              {jointRelated.map(j => (
-                                <span key={j.uuid} className="text-[10px] text-primary/80 bg-primary/10 px-1.5 py-0.5 rounded-md inline-block max-w-fit">
-                                  Joint with: {j.id} - {j.member_name}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {inv.package_name}
-                          {inv.notes && (
-                            <div className="mt-1 text-[10px] text-muted-foreground italic border-l-2 border-primary/20 pl-1.5 py-0.5">
-                              {inv.notes}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm">{format(new Date(inv.created_at), "dd/MM/yyyy")}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1 items-start">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${paymentStatuses[inv.status]}`}>
-                              {inv.status}
-                            </span>
-                            <div className="flex flex-col gap-0.5 text-xs text-muted-foreground mt-1">
-                              {inv.payment_method === 'Split' && inv.split_payments ? (
-                                inv.split_payments.map((sp, idx) => (
-                                  <div key={idx} className="flex items-center gap-1 text-[10px]">
-                                    <CreditCard className="w-3 h-3" /> {sp.method}: {sp.amount}
-                                  </div>
-                                ))
-                              ) : (
-                                <div className="flex items-center gap-1">
-                                  <CreditCard className="w-3 h-3" /> {inv.payment_method}
-                                </div>
-                              )}
-                            </div>
-                            {inv.status === 'partial' && (
-                              <div className="space-y-1">
-                                <p className="text-[10px] text-muted-foreground">Paid: {getActualPaidAmount(inv)} / {inv.total_amount}</p>
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  className="h-6 text-[10px] px-2"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setPaymentModalInvoice(inv);
-                                  }}
-                                >
-                                  Collect
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <p className="text-sm font-bold">{getActualPaidAmount(inv).toLocaleString()} EGP</p>
-                          {inv.discount_amount > 0 && (
-                            <div className="flex items-center gap-1 justify-end text-muted-foreground mt-0.5">
-                              <Tag className="w-3 h-3" />
-                              <p className="text-[10px]">-{inv.discount_amount} EGP</p>
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1 justify-end">
-                            <button
-                              data-testid={`btn-edit-invoice-${inv.uuid}`}
-                              onClick={() => openEditInvoice(inv)}
-                              className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
-                            <button
-                              data-testid={`btn-delete-invoice-${inv.uuid}`}
-                              onClick={() => setConfirmDelete(inv)}
-                              className="p-1.5 rounded-md hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-
-              <div className="flex items-center justify-between p-4 border-t">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Rows per page:</span>
-                  <Select value={pageSize.toString()} onValueChange={v => { setPageSize(Number(v)); setCurrentPage(1); }}>
-                    <SelectTrigger className="w-[70px] h-8 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="25">25</SelectItem>
-                      <SelectItem value="50">50</SelectItem>
-                      <SelectItem value="100">100</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground mr-4">
-                    Page {currentPage} of {totalPages === 0 ? 1 : totalPages} ({filtered.length} total)
-                  </span>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                      disabled={currentPage === totalPages || totalPages === 0}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          <InvoiceList
+            paginatedInvoices={paginatedInvoices}
+            invoices={invoices}
+            members={members}
+            filteredLength={filtered.length}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+            currentPage={currentPage}
+            setCurrentPage={setCurrentPage}
+            totalPages={totalPages}
+            openEditInvoice={openEditInvoice}
+            setConfirmDelete={setConfirmDelete}
+            setPaymentModalInvoice={setPaymentModalInvoice}
+          />
 
           {/* Create Invoice Dialog */}
           <Dialog open={showCreate} onOpenChange={v => { if (!v) resetForm(); setShowCreate(v); }}>
@@ -1217,7 +962,7 @@ export default function Invoices() {
                           }));
                         }}>
                           <SelectTrigger data-testid="select-invoice-method"><SelectValue /></SelectTrigger>
-                          <SelectContent>{paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+                          <SelectContent>{PAYMENT_METHODS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-1.5">
@@ -1485,7 +1230,7 @@ export default function Invoices() {
                           }}
                         >
                           <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>{paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+                          <SelectContent>{PAYMENT_METHODS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-1.5">
@@ -1746,7 +1491,7 @@ export default function Invoices() {
                     }))}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                        {PAYMENT_METHODS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
@@ -1776,7 +1521,7 @@ export default function Invoices() {
                         >
                           <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            {paymentMethods.filter(m => m !== 'Split').map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                            {PAYMENT_METHODS_NO_SPLIT.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
                           </SelectContent>
                         </Select>
                         <Input

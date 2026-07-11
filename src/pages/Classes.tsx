@@ -10,8 +10,9 @@ import { Plus, Pencil, Trash2, Calendar as CalendarIcon, Clock, Users, X, Search
 import { toast } from "sonner";
 import type { Class, ClassSchedule } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
+import { DAYS_OF_WEEK } from "@/lib/constants";
 
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
 
 interface ClassForm {
   name: string;
@@ -236,7 +237,7 @@ export default function Classes() {
                 <thead>
                   <tr>
                     <th className="w-24 p-2 bg-transparent"></th>
-                    {DAYS.map(dayName => (
+                    {DAYS_OF_WEEK.map(dayName => (
                       <th 
                         key={dayName} 
                         className={`p-2 text-sm font-semibold text-white uppercase tracking-wider relative
@@ -274,7 +275,7 @@ export default function Classes() {
                           <td className="p-3 bg-[#78A4A3] text-white text-xs font-bold text-center align-top whitespace-nowrap shadow-sm">
                             {time12}
                           </td>
-                        {DAYS.map(day => {
+                        {DAYS_OF_WEEK.map(day => {
                           const classesInSlot = filtered.flatMap(cls => 
                             (cls.schedules || [])
                               .filter(s => s.day === day && s.time === time)
@@ -355,7 +356,7 @@ export default function Classes() {
                     <Select value={sched.day} onValueChange={v => handleUpdateSchedule(idx, 'day', v)}>
                       <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {DAYS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                        {DAYS_OF_WEEK.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
                       </SelectContent>
                     </Select>
                     <Input type="time" value={sched.time} onChange={e => handleUpdateSchedule(idx, 'time', e.target.value)} className="flex-1" />

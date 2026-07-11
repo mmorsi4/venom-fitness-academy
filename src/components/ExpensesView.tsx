@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearch, useLocation } from "wouter";
 import { Plus, Trash2, Pencil, Search, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,9 +27,9 @@ import { format } from "date-fns";
 
 import type { Expense } from "@/lib/types";
 
-const BASE_CATEGORIES = ["Government Bills", "Maintenance", "Salaries", "Loans/Debts", "Purchases", "Other"];
-const LIABILITY_CATEGORY = "Liability Payment";
-const paymentMethods = ["Cash", "Visa", "InstaPay", "Split"] as const;
+import { EXPENSE_BASE_CATEGORIES, LIABILITY_CATEGORY, PAYMENT_METHODS, PAYMENT_METHODS_NO_SPLIT } from "@/lib/constants";
+
+
 
 const emptyForm = {
   customId: "",
@@ -87,13 +88,39 @@ export function ExpensesView() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchField, setSearchField] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
+  const [filterPaymentMethod, setFilterPaymentMethod] = useState("all");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const searchParams = useSearch();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams);
+    if (params.get("action") === "add-expense") {
+      setShowCreate(true);
+      setForm(prev => ({
+        ...prev,
+        category: params.get("category") || prev.category,
+        liabilityId: params.get("liability_id") || prev.liabilityId,
+        amount: params.get("amount") || prev.amount,
+      }));
+      // Remove params so it doesn't reopen if they close it
+      params.delete("action");
+      params.delete("category");
+      params.delete("liability_id");
+      params.delete("amount");
+      
+      const newSearch = params.toString();
+      const newUrl = newSearch ? window.location.pathname + "?" + newSearch : window.location.pathname;
+      setLocation(newUrl);
+    }
+  }, [searchParams, setLocation]);
+
   const pageSize = 25;
 
   const uniqueExistingCategories = [...new Set(expenses.map(e => e.category))];
-  const dynamicCategories = [...new Set([...BASE_CATEGORIES, ...uniqueExistingCategories])].filter(c => c !== LIABILITY_CATEGORY);
+  const dynamicCategories = [...new Set([...EXPENSE_BASE_CATEGORIES, ...uniqueExistingCategories])].filter(c => c !== LIABILITY_CATEGORY);
   const allCategories = [...dynamicCategories, LIABILITY_CATEGORY, "CUSTOM"];
 
   const isLiabilityPayment = form.category === LIABILITY_CATEGORY;
@@ -118,6 +145,9 @@ export function ExpensesView() {
 
     // Category
     if (filterCategory !== "all" && e.category !== filterCategory) return false;
+
+    // Payment Method
+    if (filterPaymentMethod !== "all" && e.payment_method !== filterPaymentMethod) return false;
 
     // Date
     if (filterDateFrom && new Date(e.date) < new Date(filterDateFrom)) return false;
@@ -413,6 +443,16 @@ export function ExpensesView() {
           <SelectContent>
             <SelectItem value="all">All Categories</SelectItem>
             {uniqueExistingCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterPaymentMethod} onValueChange={setFilterPaymentMethod}>
+          <SelectTrigger className="w-36 h-9">
+            <SelectValue placeholder="Payment..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Methods</SelectItem>
+            {PAYMENT_METHODS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
           </SelectContent>
         </Select>
 
@@ -765,7 +805,7 @@ export function ExpensesView() {
                 }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                    {PAYMENT_METHODS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -797,7 +837,7 @@ export function ExpensesView() {
                     }}>
                       <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {paymentMethods.filter(m => m !== 'Split').map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                        {PAYMENT_METHODS_NO_SPLIT.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
                       </SelectContent>
                     </Select>
                     <Input
@@ -889,7 +929,7 @@ export function ExpensesView() {
                 }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                    {PAYMENT_METHODS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -921,7 +961,7 @@ export function ExpensesView() {
                     }}>
                       <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {paymentMethods.filter(m => m !== 'Split').map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                        {PAYMENT_METHODS_NO_SPLIT.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
                       </SelectContent>
                     </Select>
                     <Input

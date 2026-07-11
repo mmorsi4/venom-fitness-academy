@@ -22,7 +22,7 @@ import {
   useUpdateCoachCheckInTime, useDeleteCoachCheckIn
 } from "@/hooks/use-data";
 import { toast } from "sonner";
-import { calculateCoachPayroll } from "@/lib/utils";
+import { calculateCoachPayroll, validateEgyptPhone } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import type { Coach } from "@/lib/types";
 
@@ -33,7 +33,7 @@ const paymentTypeColors: Record<string, string> = {
 const paymentTypeLabels: Record<string, string> = {
   salary: "Monthly Salary", per_session: "Per Session",
 };
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+import { DAYS_OF_WEEK } from "@/lib/constants";
 
 interface CoachForm {
   name: string;
@@ -86,7 +86,7 @@ export default function Coaches() {
   const [mainCoachSearch, setMainCoachSearch] = useState("");
   const [expandedAdvanceCoach, setExpandedAdvanceCoach] = useState<string | null>(null);
 
-  const todayName = DAYS[new Date().getDay()];
+  const todayName = DAYS_OF_WEEK[new Date().getDay()];
   const todaysClasses = classes
     .filter(c => (c.schedules || []).some(s => s.day === todayName))
     .sort((a, b) => {
@@ -146,7 +146,7 @@ export default function Coaches() {
 
   const handleSave = () => {
     if (!form.name.trim() || !form.rate) { toast.error("Name and rate are required"); return; }
-    if (form.phone.trim() && !/^\d{11}$/.test(form.phone.trim())) { toast.error("Phone number must be exactly 11 digits"); return; }
+    if (form.phone.trim() && !validateEgyptPhone(form.phone)) { toast.error("Phone number must be exactly 11 digits"); return; }
     
     if (editCoach) {
       updateCoach.mutate({
@@ -225,7 +225,7 @@ export default function Coaches() {
         {coaches.filter(c => c.name.toLowerCase().includes(mainCoachSearch.toLowerCase()) || (c.phone && c.phone.includes(mainCoachSearch))).map(coach => {
           const stats = calculateCoachPayroll(coach, new Date().getMonth(), new Date().getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth, coachDeductions);
           const sessions = stats.attendedSessions;
-          const todayName = DAYS[new Date().getDay()];
+          const todayName = DAYS_OF_WEEK[new Date().getDay()];
           const coachTotalSlotsToday = classes.filter(c => c.coach_id === coach.id).flatMap(c => c.schedules || []).filter(s => s.day === todayName).length;
           const checkInsTodayCount = checkIns.filter(ci => ci.coach_id === coach.id).length;
 

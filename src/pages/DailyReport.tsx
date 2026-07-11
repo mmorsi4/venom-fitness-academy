@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useSearch, useLocation } from "wouter";
 import {
   CalendarDays, Users, DollarSign, TrendingDown, TrendingUp,
   Clock, CheckCircle2, CreditCard, AlertTriangle
@@ -25,8 +26,26 @@ export default function DailyReport() {
   const { data: invoicePayments = [] } = useInvoicePayments();
   const { data: members = [] } = useMembers();
   const { data: scheduleOverrides = [] } = useClassScheduleOverrides();
+  const searchParams = useSearch();
+  const [, setLocation] = useLocation();
 
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams);
+    const dateParam = params.get("date");
+    if (dateParam) {
+      const d = parseISO(dateParam);
+      if (!isNaN(d.getTime())) {
+        setSelectedDate(d);
+        params.delete("date");
+        const newSearch = params.toString();
+        const newUrl = newSearch ? window.location.pathname + "?" + newSearch : window.location.pathname;
+        setLocation(newUrl);
+      }
+    }
+  }, [searchParams, setLocation]);
+
   const dateString = format(selectedDate, "yyyy-MM-dd");
   const { data: checkInsData = [] } = useCheckInsByDate(selectedDate);
 

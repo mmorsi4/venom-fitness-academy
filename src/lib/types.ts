@@ -398,3 +398,4 @@ export interface ClassScheduleOverride {
   new_time?: string;
   created_at: string;
 }
+

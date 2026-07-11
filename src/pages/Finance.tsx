@@ -24,8 +24,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { calculateCoachPayroll, calculateIncomeByMethod, calculateExpenseByMethod } from "../lib/utils";
 
-const BASE_CATEGORIES = ["Government Bills", "Maintenance", "Salaries", "Loans/Debts", "Purchases", "Other"];
-const LIABILITY_CATEGORY = "Liability Payment";
+import { EXPENSE_BASE_CATEGORIES, LIABILITY_CATEGORY } from "@/lib/constants";
 const INCOME_COLORS = ['#047857', '#34d399', '#064e3b', '#6ee7b7', '#10b981', '#a7f3d0']; 
 const EXPENSE_COLORS = ['#dc2626', '#fca5a5', '#7f1d1d', '#f87171', '#ef4444', '#fecaca'];
 const PAYMENT_COLORS = ['#0284c7', '#7dd3fc', '#0c4a6e', '#38bdf8'];
@@ -76,7 +75,7 @@ export default function Finance() {
   });
 
   const uniqueExistingCategories = [...new Set(expenses.map(e => e.category))];
-  const dynamicCategories = [...new Set([...BASE_CATEGORIES, ...uniqueExistingCategories])].filter(c => c !== LIABILITY_CATEGORY);
+  const dynamicCategories = [...new Set([...EXPENSE_BASE_CATEGORIES, ...uniqueExistingCategories])].filter(c => c !== LIABILITY_CATEGORY);
   const allCategories = [...dynamicCategories, LIABILITY_CATEGORY, "CUSTOM"];
 
 

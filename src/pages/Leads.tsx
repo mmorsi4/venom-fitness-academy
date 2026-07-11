@@ -21,6 +21,7 @@ import type { Lead } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { validateEgyptPhone } from "@/lib/utils";
 import { useLocation } from "wouter";
 
 const SOURCES = ["Walk-in", "Referral", "Facebook", "Instagram", "WhatsApp", "Invitation"];

@@ -13,6 +13,7 @@ import { uploadMemberPhoto } from "@/lib/queries";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import type { Gender } from "@/lib/types";
+import { validateEgyptPhone } from "@/lib/utils";
 
 const GENDERS: { value: Gender; label: string }[] = [
   { value: "male", label: "Male" },
@@ -83,13 +84,13 @@ export default function Register() {
       return;
     }
 
-    const phoneRegex = /^\d{11}$/;
-    if (!phoneRegex.test(form.phone.trim())) {
+    
+    if (!validateEgyptPhone(form.phone)) {
       toast.error("Phone number must be exactly 11 digits");
       return;
     }
 
-    if (form.parentPhone.trim() && !phoneRegex.test(form.parentPhone.trim())) {
+    if (form.parentPhone.trim() && !validateEgyptPhone(form.parentPhone)) {
       toast.error("Parent phone number must be exactly 11 digits");
       return;
     }
@@ -118,6 +119,7 @@ export default function Register() {
         if (photoBlob && newMember) {
           try {
             const url = await uploadMemberPhoto(newMember.uuid, photoBlob);
+            // @ts-ignore
             await supabase.from('members').update({ photo_url: url }).eq('uuid', newMember.uuid);
           } catch (err) {
             console.error("Failed to upload photo", err);

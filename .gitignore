@@ -1,2 +1,7 @@
 node_modules/
 db_credentials.txt
+*.mjs
+temp_*.sql
+temp_*.ts
+.env
+.env.local

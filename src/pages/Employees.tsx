@@ -29,7 +29,7 @@ import type { Employee } from "@/lib/types";
 import { toast } from "sonner";
 import { format, differenceInMinutes, parseISO } from "date-fns";
 
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+import { DAYS_OF_WEEK } from "@/lib/constants";
 const DEPARTMENTS = ["Reception", "Sales", "Cleaning", "Security", "Management", "Other"];
 
 const emptyForm = {
@@ -141,7 +141,7 @@ export default function Employees() {
     e.department.toLowerCase().includes(search.toLowerCase())
   );
 
-  const todayName = DAYS[new Date().getDay()];
+  const todayName = DAYS_OF_WEEK[new Date().getDay()];
   const checkedInToday = allCheckIns.filter(ci => {
     const d = new Date(ci.checked_in_at || ci.check_in_time || ci.created_at || "");
     const today = new Date();
@@ -197,7 +197,7 @@ export default function Employees() {
                 const today = new Date();
                 for (let d = 1; d < today.getDate(); d++) {
                   const checkDate = new Date(today.getFullYear(), today.getMonth(), d);
-                  const dayName = DAYS[checkDate.getDay()];
+                  const dayName = DAYS_OF_WEEK[checkDate.getDay()];
                   if (emp.work_days.includes(dayName)) {
                     const checkedIn = allCheckIns.some(ci => {
                       const cid = new Date(ci.checked_in_at || ci.check_in_time || ci.created_at || "");
@@ -248,7 +248,7 @@ export default function Employees() {
                         </div>
                         <div className="p-2 rounded-lg bg-muted/50">
                           <p className="font-semibold text-foreground">{checkedInThisMonth}</p>
-                          <p className="text-muted-foreground">Days Attended</p>
+                          <p className="text-muted-foreground">DAYS_OF_WEEK Attended</p>
                         </div>
                         <div className="p-2 rounded-lg bg-muted/50">
                           <p className="font-semibold text-red-600">{(totalDeductions + lateDeductions + missedDaysDeductionTotal).toLocaleString()} EGP</p>
@@ -259,12 +259,12 @@ export default function Employees() {
                       {missedDays > 0 && (
                         <div className="text-xs text-red-600 mt-2">
                           <AlertTriangle className="inline w-3 h-3 mr-1" />
-                          Missed {missedDays} days (-{missedDaysDeductionTotal} EGP)
+                          Missed {missedDays} DAYS_OF_WEEK (-{missedDaysDeductionTotal} EGP)
                         </div>
                       )}
 
                       <div className="flex flex-wrap gap-1">
-                        {DAYS.map(d => (
+                        {DAYS_OF_WEEK.map(d => (
                           <span
                             key={d}
                             className={`px-1.5 py-0.5 rounded text-xs font-medium ${
@@ -463,9 +463,9 @@ export default function Employees() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Work Days</Label>
+              <Label>Work DAYS_OF_WEEK</Label>
               <div className="flex flex-wrap gap-2">
-                {DAYS.map(d => (
+                {DAYS_OF_WEEK.map(d => (
                   <button
                     key={d}
                     onClick={() => toggleWorkDay(d)}
