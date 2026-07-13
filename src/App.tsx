@@ -58,7 +58,12 @@ function Router() {
 }
 
 function AppInner() {
-  const { currentUser } = useAuth();
+  const { currentUser, loading } = useAuth();
+  
+  if (loading) {
+    return <div className="min-h-screen bg-sidebar flex items-center justify-center p-4">Loading...</div>;
+  }
+
   if (!currentUser) return <LoginPage />;
   return <Router />;
 }

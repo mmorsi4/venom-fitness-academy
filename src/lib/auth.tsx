@@ -200,7 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await refreshRoles();
     // Also refresh users to update their effective roles and permissions
     await refreshUsers();
-    
+
     // Refresh current user if needed (in case our own role was updated)
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
@@ -221,9 +221,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAdmin = currentUser?.roles.some(r => r.name.toLowerCase() === 'admin') ?? false;
 
   return (
-    <AuthContext.Provider value={{ 
-      currentUser, isAdmin, users, availableRoles, loading, 
-      login, logout, 
+    <AuthContext.Provider value={{
+      currentUser, isAdmin, users, availableRoles, loading,
+      login, logout,
       createUser, updateUser, deleteUser, refreshUsers,
       createRole, updateRole, deleteRole, refreshRoles
     }}>
