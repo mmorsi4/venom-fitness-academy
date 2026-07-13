@@ -135,13 +135,13 @@ export default function Subscriptions() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Subscription Packages</h1>
           <p className="text-sm text-muted-foreground">Manage available packages and their details</p>
         </div>
         {isAdmin && (
-          <Button onClick={openCreate} className="gap-2">
+          <Button onClick={openCreate} className="gap-2 w-full sm:w-auto">
             <Plus className="w-4 h-4" /> New Package
           </Button>
         )}
@@ -151,7 +151,7 @@ export default function Subscriptions() {
         {packageUsage.map(pkg => (
           <Card key={pkg.id} data-testid={`package-${pkg.id}`} className="hover:shadow-md transition-shadow">
             <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                     <Package className="w-5 h-5 text-primary" />

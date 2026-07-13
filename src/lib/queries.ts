@@ -25,10 +25,6 @@ export async function getProfiles() {
 // ── Members ─────────────────────────────────────────────────
 
 export async function getMembers() {
-  // First, clean up any subscriptions that have expired
-  await supabase.rpc('cleanup_expired_subscriptions');
-  await supabase.rpc('activate_pending_subscriptions');
-
   let allData: any[] = [];
   let page = 0;
   const limit = 1000;

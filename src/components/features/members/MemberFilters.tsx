@@ -57,7 +57,7 @@ export function MemberFilters({
           </div>
         </div>
         <Tabs value={statusFilter} onValueChange={setStatusFilter}>
-          <TabsList className="h-9 flex-wrap">
+          <TabsList className="h-auto flex-wrap p-1 gap-1">
             <TabsTrigger value="all" className="text-xs">All ({counts.all})</TabsTrigger>
             <TabsTrigger value="active" className="text-xs">Active ({counts.active})</TabsTrigger>
             <TabsTrigger value="frozen" className="text-xs">Frozen ({counts.frozen})</TabsTrigger>

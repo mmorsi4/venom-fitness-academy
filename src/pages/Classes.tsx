@@ -124,13 +124,13 @@ export default function Classes() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Classes</h1>
           <p className="text-sm text-muted-foreground">{classes.length} active classes</p>
         </div>
         {isAdmin && (
-          <Button onClick={openAdd} className="gap-2 shrink-0"><Plus className="w-4 h-4" /> Add Class</Button>
+          <Button onClick={openAdd} className="gap-2 shrink-0 w-full sm:w-auto"><Plus className="w-4 h-4" /> Add Class</Button>
         )}
       </div>
 

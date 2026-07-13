@@ -190,7 +190,7 @@ export default function UsersPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">User Management</h1>
           <p className="text-sm text-muted-foreground">{users.length} account{users.length !== 1 ? 's' : ''} • Admin access only</p>
@@ -198,10 +198,10 @@ export default function UsersPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <div className="flex items-center justify-between">
-          <TabsList>
-            <TabsTrigger value="accounts" className="gap-2"><Users className="w-4 h-4" /> Accounts</TabsTrigger>
-            <TabsTrigger value="roles" className="gap-2"><Shield className="w-4 h-4" /> Custom Roles</TabsTrigger>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <TabsList className="flex-wrap h-auto p-1 gap-1 w-full sm:w-auto">
+            <TabsTrigger value="accounts" className="gap-2 flex-1 sm:flex-none"><Users className="w-4 h-4" /> Accounts</TabsTrigger>
+            <TabsTrigger value="roles" className="gap-2 flex-1 sm:flex-none"><Shield className="w-4 h-4" /> Custom Roles</TabsTrigger>
           </TabsList>
           {activeTab === 'accounts' ? (
             <Button onClick={openCreateUser} className="gap-2">

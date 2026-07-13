@@ -102,8 +102,13 @@ export default function Members() {
     const createLeadId = params.get("createLeadId");
     const leadName = params.get("leadName");
     const leadPhone = params.get("leadPhone");
+    const searchId = params.get("search");
 
-    if (createLeadId && !showAdd) {
+    if (searchId) {
+      setQuery(searchId);
+      setSearchField("all");
+      hasConsumedParams.current = true;
+    } else if (createLeadId && !showAdd) {
       setShowAdd(true);
       setForm(prev => ({
         ...prev,
@@ -137,7 +142,7 @@ export default function Members() {
 
     const isNumeric = /^\d+$/.test(query.trim());
     if (searchField === "all") {
-      matchSearch = m.name.toLowerCase().includes(q) || m.phone.includes(query);
+      matchSearch = m.name.toLowerCase().includes(q) || m.phone.includes(query) || m.uuid === query.trim();
       if (m.id !== -1 && isNumeric) {
         // Only do EXACT match for ID if user typed a number
         matchSearch = matchSearch || m.id.toString() === query.trim();
@@ -378,21 +383,21 @@ export default function Members() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Members</h1>
           <p className="text-sm text-muted-foreground">{members.length} total members</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           <Button 
             variant="outline" 
             onClick={generateSelfRegistrationLink} 
-            className="gap-2"
+            className="flex-1 sm:flex-none gap-2"
             title="Generate One-Time Link"
           >
             <QrCode className="w-4 h-4" /> Self-Registration QR
           </Button>
-          <Button data-testid="btn-add-member" onClick={openAdd} className="gap-2">
+          <Button data-testid="btn-add-member" onClick={openAdd} className="flex-1 sm:flex-none gap-2">
             <Plus className="w-4 h-4" /> New Member
           </Button>
         </div>

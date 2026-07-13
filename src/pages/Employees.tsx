@@ -150,17 +150,21 @@ export default function Employees() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Employees</h1>
-          <p className="text-sm text-muted-foreground">
-            {employees.length} employees · {checkedInToday.length} checked in today
-          </p>
+          <p className="text-sm text-muted-foreground">{checkedInToday.length} checked in today</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <Input 
+            placeholder="Search by name or phone..." 
+            value={search} 
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full sm:w-64"
+          />
           {isAdmin && (
             <Button variant="outline" onClick={openCreate} className="gap-2">
-              <Plus className="w-4 h-4" /> Add Employee
+              <Plus className="w-4 h-4" /> Add
             </Button>
           )}
         </div>
@@ -248,7 +252,7 @@ export default function Employees() {
                         </div>
                         <div className="p-2 rounded-lg bg-muted/50">
                           <p className="font-semibold text-foreground">{checkedInThisMonth}</p>
-                          <p className="text-muted-foreground">DAYS_OF_WEEK Attended</p>
+                          <p className="text-muted-foreground">Days Attended</p>
                         </div>
                         <div className="p-2 rounded-lg bg-muted/50">
                           <p className="font-semibold text-red-600">{(totalDeductions + lateDeductions + missedDaysDeductionTotal).toLocaleString()} EGP</p>
@@ -259,7 +263,7 @@ export default function Employees() {
                       {missedDays > 0 && (
                         <div className="text-xs text-red-600 mt-2">
                           <AlertTriangle className="inline w-3 h-3 mr-1" />
-                          Missed {missedDays} DAYS_OF_WEEK (-{missedDaysDeductionTotal} EGP)
+                          Missed {missedDays} days (-{missedDaysDeductionTotal} EGP)
                         </div>
                       )}
 

@@ -116,14 +116,14 @@ export default function DailyReport() {
   return (
     <div className="p-6 space-y-6">
       {/* Header with date nav */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Daily Report</h1>
           <p className="text-sm text-muted-foreground">Day-by-day accounting and attendance</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <Button variant="outline" size="sm" onClick={prevDay}>←</Button>
-          <div className="flex items-center gap-1 px-1 py-1 rounded-lg border bg-card justify-center">
+          <div className="flex items-center gap-1 px-1 py-1 rounded-lg border bg-card justify-center flex-1 sm:flex-none">
             <Input 
               type="date"
               className="h-8 w-[140px] border-none shadow-none focus-visible:ring-0 text-foreground font-semibold"

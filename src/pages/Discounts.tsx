@@ -171,7 +171,7 @@ export default function Discounts() {
             return (
               <Card key={discount.id} data-testid={`discount-${discount.id}`} className={discount.active ? "" : "opacity-60"}>
                 <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                       <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${discount.active ? 'bg-primary/10' : 'bg-muted'}`}>
                         <Tag className={`w-4 h-4 ${discount.active ? 'text-primary' : 'text-muted-foreground'}`} />

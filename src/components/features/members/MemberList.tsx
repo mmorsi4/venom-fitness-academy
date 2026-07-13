@@ -80,9 +80,10 @@ export function MemberList({
                       )}
                     </div>
                     <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-semibold text-foreground text-sm">{m.name}</p>
-                        <StatusBadge status={m.status} />
+                      <div className="flex flex-col gap-1 mt-0.5">
+                        <p className="font-semibold text-foreground text-sm leading-tight">{m.name}</p>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <StatusBadge status={m.status} />
                         {m.frozen_until && new Date(m.frozen_until) > new Date() && (
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">
                             FROZEN
@@ -113,8 +114,9 @@ export function MemberList({
                             </span>
                           );
                         })()}
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-muted-foreground mt-1">
                         {m.id === -1 ? (
                           <span className="text-teal-600 font-medium">Clinic Visitor</span>
                         ) : (

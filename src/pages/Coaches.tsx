@@ -199,17 +199,17 @@ export default function Coaches() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Coaches</h1>
           <p className="text-sm text-muted-foreground">{checkedInCount} of {coaches.length} checked in today</p>
         </div>
-        <div className="flex gap-2 items-center">
+        <div className="flex flex-wrap gap-2 items-center w-full sm:w-auto">
           <Input 
             placeholder="Search by name or phone..." 
             value={mainCoachSearch} 
             onChange={(e) => setMainCoachSearch(e.target.value)}
-            className="w-48 sm:w-64"
+            className="w-full sm:w-64"
           />
           {isAdmin && (
             <Button variant="outline" onClick={openAdd} className="gap-2">
