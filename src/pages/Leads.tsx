@@ -21,6 +21,7 @@ import type { Lead } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { validateEgyptPhone } from "@/lib/utils";
 import { useLocation } from "wouter";
 
 const SOURCES = ["Walk-in", "Referral", "Facebook", "Instagram", "WhatsApp", "Invitation"];
@@ -275,12 +276,12 @@ export default function Leads() {
 
   return (
     <Tabs value={mainTab} onValueChange={setMainTab} className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Leads</h1>
           <p className="text-sm text-muted-foreground">{leads.length} total leads</p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto">
           <TabsList className="hidden sm:inline-flex">
             <TabsTrigger value="leads">Leads</TabsTrigger>
             <TabsTrigger value="performance">Employee Performance</TabsTrigger>

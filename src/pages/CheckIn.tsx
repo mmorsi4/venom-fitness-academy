@@ -62,15 +62,12 @@ export default function CheckIn() {
 
   const results = query.length >= 1
     ? members.filter(m =>
+        m.id.toString() === query.trim() ||
         m.name.toLowerCase().includes(query.toLowerCase()) ||
-        m.id.toString().includes(query) ||
-        m.phone.includes(query)
+        m.phone.includes(query.trim())
       ).sort((a, b) => {
-        const isNumeric = /^\d+$/.test(query.trim());
-        if (isNumeric) {
-          if (a.id.toString() === query.trim() && b.id.toString() !== query.trim()) return -1;
-          if (b.id.toString() === query.trim() && a.id.toString() !== query.trim()) return 1;
-        }
+        if (a.id.toString() === query.trim()) return -1;
+        if (b.id.toString() === query.trim()) return 1;
         return 0;
       }).slice(0, 6)
     : [];
@@ -337,13 +334,13 @@ export default function CheckIn() {
     : [];
     
   const futurePostponed = scheduleOverrides
-    .filter(o => o.status === 'postponed' && new Date(o.new_date) >= new Date(todayDateString))
-    .sort((a, b) => new Date(a.new_date).getTime() - new Date(b.new_date).getTime());
+    .filter(o => o.status === 'postponed' && o.new_date && new Date(o.new_date) >= new Date(todayDateString))
+    .sort((a, b) => new Date(a.new_date!).getTime() - new Date(b.new_date!).getTime());
 
   return (
     <div className="p-6 max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Check-In</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Manage daily attendance</p>
@@ -720,8 +717,8 @@ export default function CheckIn() {
                       <p className="font-medium text-sm text-blue-900">{poClass?.name || 'Unknown Class'}</p>
                     </div>
                     <div className="text-xs text-blue-700 space-y-0.5">
-                      <p>From: <span className="font-semibold">{format(new Date(po.original_date), "MMM d, yyyy")}</span></p>
-                      <p>To: <span className="font-semibold">{format(new Date(po.new_date), "MMM d, yyyy")} at {formatTo12Hour(po.new_time)}</span></p>
+                      <p>From: <span className="font-semibold">{format(new Date(po.original_date!), "MMM d, yyyy")}</span></p>
+                      <p>To: <span className="font-semibold">{format(new Date(po.new_date!), "MMM d, yyyy")} at {formatTo12Hour(po.new_time!)}</span></p>
                     </div>
                     
                     <div className="flex items-center justify-end gap-2 pt-3 mt-1 border-t border-blue-200/50">

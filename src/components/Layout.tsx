@@ -196,7 +196,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                 )}
                 {allowedHrefs.includes('/finance') && (
                   <Link
-                    href="/finance"
+                    href={`/invoices?action=add-expense&category=Liability+Payment&liability_id=${l.id}&amount=${l.installment_amount}`}
                     className="flex-shrink-0 px-3 py-1.5 md:py-1 rounded bg-white text-red-700 text-xs font-semibold hover:bg-white/90 transition-colors text-center flex-1 md:flex-none"
                   >
                     Pay Now →

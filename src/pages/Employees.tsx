@@ -29,7 +29,7 @@ import type { Employee } from "@/lib/types";
 import { toast } from "sonner";
 import { format, differenceInMinutes, parseISO } from "date-fns";
 
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+import { DAYS_OF_WEEK } from "@/lib/constants";
 const DEPARTMENTS = ["Reception", "Sales", "Cleaning", "Security", "Management", "Other"];
 
 const emptyForm = {
@@ -141,7 +141,7 @@ export default function Employees() {
     e.department.toLowerCase().includes(search.toLowerCase())
   );
 
-  const todayName = DAYS[new Date().getDay()];
+  const todayName = DAYS_OF_WEEK[new Date().getDay()];
   const checkedInToday = allCheckIns.filter(ci => {
     const d = new Date(ci.checked_in_at || ci.check_in_time || ci.created_at || "");
     const today = new Date();
@@ -150,17 +150,21 @@ export default function Employees() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Employees</h1>
-          <p className="text-sm text-muted-foreground">
-            {employees.length} employees · {checkedInToday.length} checked in today
-          </p>
+          <p className="text-sm text-muted-foreground">{checkedInToday.length} checked in today</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <Input 
+            placeholder="Search by name or phone..." 
+            value={search} 
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full sm:w-64"
+          />
           {isAdmin && (
             <Button variant="outline" onClick={openCreate} className="gap-2">
-              <Plus className="w-4 h-4" /> Add Employee
+              <Plus className="w-4 h-4" /> Add
             </Button>
           )}
         </div>
@@ -197,7 +201,7 @@ export default function Employees() {
                 const today = new Date();
                 for (let d = 1; d < today.getDate(); d++) {
                   const checkDate = new Date(today.getFullYear(), today.getMonth(), d);
-                  const dayName = DAYS[checkDate.getDay()];
+                  const dayName = DAYS_OF_WEEK[checkDate.getDay()];
                   if (emp.work_days.includes(dayName)) {
                     const checkedIn = allCheckIns.some(ci => {
                       const cid = new Date(ci.checked_in_at || ci.check_in_time || ci.created_at || "");
@@ -264,7 +268,7 @@ export default function Employees() {
                       )}
 
                       <div className="flex flex-wrap gap-1">
-                        {DAYS.map(d => (
+                        {DAYS_OF_WEEK.map(d => (
                           <span
                             key={d}
                             className={`px-1.5 py-0.5 rounded text-xs font-medium ${
@@ -463,9 +467,9 @@ export default function Employees() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Work Days</Label>
+              <Label>Work DAYS_OF_WEEK</Label>
               <div className="flex flex-wrap gap-2">
-                {DAYS.map(d => (
+                {DAYS_OF_WEEK.map(d => (
                   <button
                     key={d}
                     onClick={() => toggleWorkDay(d)}

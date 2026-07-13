@@ -50,7 +50,7 @@ function Router() {
         <Route path="/users" component={UsersPage} />
         <Route path="/employees" component={Employees} />
         <Route path="/employee-checkin" component={EmployeeCheckIn} />
-        <Route path="/register/:id" component={Register} />
+
         <Route component={NotFound} />
       </Switch>
     </Layout>

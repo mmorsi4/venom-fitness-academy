@@ -24,8 +24,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { calculateCoachPayroll, calculateIncomeByMethod, calculateExpenseByMethod } from "../lib/utils";
 
-const BASE_CATEGORIES = ["Government Bills", "Maintenance", "Salaries", "Loans/Debts", "Purchases", "Other"];
-const LIABILITY_CATEGORY = "Liability Payment";
+import { EXPENSE_BASE_CATEGORIES, LIABILITY_CATEGORY } from "@/lib/constants";
 const INCOME_COLORS = ['#047857', '#34d399', '#064e3b', '#6ee7b7', '#10b981', '#a7f3d0']; 
 const EXPENSE_COLORS = ['#dc2626', '#fca5a5', '#7f1d1d', '#f87171', '#ef4444', '#fecaca'];
 const PAYMENT_COLORS = ['#0284c7', '#7dd3fc', '#0c4a6e', '#38bdf8'];
@@ -76,7 +75,7 @@ export default function Finance() {
   });
 
   const uniqueExistingCategories = [...new Set(expenses.map(e => e.category))];
-  const dynamicCategories = [...new Set([...BASE_CATEGORIES, ...uniqueExistingCategories])].filter(c => c !== LIABILITY_CATEGORY);
+  const dynamicCategories = [...new Set([...EXPENSE_BASE_CATEGORIES, ...uniqueExistingCategories])].filter(c => c !== LIABILITY_CATEGORY);
   const allCategories = [...dynamicCategories, LIABILITY_CATEGORY, "CUSTOM"];
 
 
@@ -497,12 +496,12 @@ export default function Finance() {
       {/* --- STANDARD SCREEN LAYOUT --- */}
       <div className="print:hidden space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Financial Management</h1>
           <p className="text-sm text-muted-foreground">Income, expenses, and reports</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
           <Button variant="outline" onClick={() => {
             setStartBalancesForm({
               date: globalSettings?.finance_start_date ? globalSettings.finance_start_date.split('T')[0] : '',
@@ -663,7 +662,7 @@ export default function Finance() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Income by Package */}
             <Card className="flex flex-col h-[420px]">
               <CardHeader className="pb-3 flex-shrink-0">

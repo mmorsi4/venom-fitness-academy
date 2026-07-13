@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { Users, LogIn, AlertTriangle, DollarSign, UserPlus, Clock, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,9 +9,12 @@ import StatusBadge from "@/components/StatusBadge";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
+import { Pagination } from "@/components/Pagination";
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
+  const [expiringPage, setExpiringPage] = useState(1);
+  const expiringPageSize = 5;
   const { data: members = [] } = useMembers();
   const { data: invoices = [] } = useInvoices();
   const { data: leads = [] } = useLeads();
@@ -18,6 +22,10 @@ export default function Dashboard() {
 
   const activeMembers = members.filter(m => m.status === 'active').length;
   const expiringSoon = members.filter(m => m.status === 'expiring_soon');
+  
+  const totalExpiringPages = Math.ceil(expiringSoon.length / expiringPageSize) || 1;
+  const paginatedExpiring = expiringSoon.slice((expiringPage - 1) * expiringPageSize, expiringPage * expiringPageSize);
+  
   const expired = members.filter(m => m.status === 'expired');
   const newLeads = leads.filter(l => l.status === 'New');
   const outstandingAmount = invoices
@@ -107,19 +115,22 @@ export default function Dashboard() {
               Expiring Memberships
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 pt-0 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+          <CardContent className="space-y-2 pt-0 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
             {expiringSoon.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">No expiring memberships</p>
             ) : (
-              expiringSoon.map(m => (
-                <div key={m.uuid} data-testid={`expiring-${m.uuid}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">#{m.id} - {m.name}</p>
-                    <p className="text-xs text-muted-foreground">{m.sessions_remaining} sessions left</p>
+              <>
+                {paginatedExpiring.map(m => (
+                  <div key={m.uuid} data-testid={`expiring-${m.uuid}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">#{m.id} - {m.name}</p>
+                      <p className="text-xs text-muted-foreground">{m.sessions_remaining} sessions left</p>
+                    </div>
+                    <StatusBadge status={m.status} />
                   </div>
-                  <StatusBadge status={m.status} />
-                </div>
-              ))
+                ))}
+                <Pagination page={expiringPage} totalPages={totalExpiringPages} onPageChange={setExpiringPage} />
+              </>
             )}
           </CardContent>
         </Card>
