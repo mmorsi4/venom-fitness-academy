@@ -113,6 +113,7 @@ export interface Invoice {
   settled_by_invoice_id?: string | null;
   sessions_remaining?: number | null;
   freeze_days_remaining?: number | null;
+  packages?: { validity_days?: number } | null;
 }
 
 export interface Discount {

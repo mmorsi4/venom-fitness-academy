@@ -19,7 +19,7 @@ import {
   useCoachCheckInsForMonth, useCoachHistory, useClasses,
   useCoachDeductions, useCreateCoachDeduction, useDeleteCoachDeduction,
   useCreateExpense, useAdjustCoachAdvanceBalance, useExpenses, useDeleteExpense,
-  useUpdateCoachCheckInTime, useDeleteCoachCheckIn
+  useUpdateCoachCheckInTime, useDeleteCoachCheckIn, useCheckInCoach
 } from "@/hooks/use-data";
 import { toast } from "sonner";
 import { calculateCoachPayroll, validateEgyptPhone } from "@/lib/utils";
@@ -80,6 +80,11 @@ export default function Coaches() {
   const [historyCoach, setHistoryCoach] = useState<Coach | null>(null);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [editLogTime, setEditLogTime] = useState("");
+
+  const [pastCheckInCoach, setPastCheckInCoach] = useState<Coach | null>(null);
+  const [pastCheckInDate, setPastCheckInDate] = useState("");
+  const [pastCheckInClassId, setPastCheckInClassId] = useState("none");
+  const checkInCoachStandard = useCheckInCoach();
 
   const { data: history = [] } = useCoachHistory(historyCoach?.id);
   const [coachSearch, setCoachSearch] = useState("");
@@ -309,7 +314,10 @@ export default function Coaches() {
                     )}
                     {coach.payment_type === 'per_session' && stats.missedSessions === 0 && <p className="text-xs text-muted-foreground mt-1">{sessions} sessions — {coach.rate} EGP/session</p>}
                   </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
+                  <Button variant="outline" size="sm" className="w-full gap-2 text-xs px-1" onClick={() => setPastCheckInCoach(coach)}>
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Past
+                  </Button>
                   <Button data-testid={`btn-deductions-coach-${coach.id}`} variant="outline" size="sm" className="w-full gap-2 text-xs px-1" onClick={() => setDeductionsModalCoach(coach)}>
                     <DollarSign className="w-3.5 h-3.5" /> Adjust
                   </Button>
@@ -432,10 +440,6 @@ export default function Coaches() {
                 <div className="space-y-1.5">
                   <Label>Base PT Rate (EGP)</Label>
                   <Input type="number" placeholder="250" value={form.ptRate} onChange={e => setForm(p => ({ ...p, ptRate: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5 col-span-2">
-                  <Label>PT Percentage (%)</Label>
-                  <Input type="number" min="0" max="100" placeholder="100" value={form.ptPercentage} onChange={e => setForm(p => ({ ...p, ptPercentage: e.target.value }))} />
                 </div>
               </div>
             </div>
@@ -651,6 +655,69 @@ export default function Coaches() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      {/* Past Check-in Dialog */}
+      <Dialog open={!!pastCheckInCoach} onOpenChange={(o) => !o && setPastCheckInCoach(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Past Check-in: {pastCheckInCoach?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Date</Label>
+              <Input 
+                type="date" 
+                value={pastCheckInDate} 
+                onChange={(e) => setPastCheckInDate(e.target.value)} 
+                max={new Date().toISOString().split('T')[0]}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Class</Label>
+              <Select value={pastCheckInClassId} onValueChange={setPastCheckInClassId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Class" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">-- Select Class --</SelectItem>
+                  {classes.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPastCheckInCoach(null)}>Cancel</Button>
+            <Button onClick={() => {
+              if (!pastCheckInDate) {
+                toast.error("Please select a date");
+                return;
+              }
+              if (pastCheckInClassId === "none") {
+                toast.error("Please select a class");
+                return;
+              }
+              checkInCoachStandard.mutate({ 
+                coachId: pastCheckInCoach!.id, 
+                classId: pastCheckInClassId, 
+                checkInDate: pastCheckInDate 
+              }, {
+                onSuccess: () => {
+                  toast.success("Past session recorded successfully");
+                  setPastCheckInCoach(null);
+                  setPastCheckInDate("");
+                  setPastCheckInClassId("none");
+                },
+                onError: (err) => toast.error(`Failed: ${err.message}`)
+              });
+            }} disabled={checkInCoachStandard.isPending}>
+              {checkInCoachStandard.isPending ? "Saving..." : "Record Session"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }

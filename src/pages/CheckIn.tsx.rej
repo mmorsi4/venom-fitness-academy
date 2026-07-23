@@ -1,0 +1,703 @@
+diff a/src/pages/CheckIn.tsx b/src/pages/CheckIn.tsx	(rejected hunks)
+@@ -340,361 +340,370 @@ export default function CheckIn() {
+   return (
+     <div className="p-6 max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+       <div className="lg:col-span-2 space-y-6">
+-      <div className="flex items-center justify-between">
+-        <div>
+-          <h1 className="text-2xl font-bold text-foreground">Check-In</h1>
+-          <p className="text-sm text-muted-foreground mt-0.5">Manage daily attendance</p>
++        <div className="flex items-center justify-between">
++          <div>
++            <h1 className="text-2xl font-bold text-foreground">Check-In</h1>
++            <p className="text-sm text-muted-foreground mt-0.5">Manage daily attendance</p>
++          </div>
+         </div>
+-      </div>
+ 
+-      <Tabs value={tab} onValueChange={setTab}>
+-        <TabsList className="grid w-full grid-cols-2">
+-          <TabsTrigger value="members">Members</TabsTrigger>
+-          <TabsTrigger value="coaches">Coaches</TabsTrigger>
+-        </TabsList>
+-
+-        <TabsContent value="members" className="space-y-6 mt-6">
+-          {/* Search */}
+-          <div className="flex gap-2">
+-            <div className="relative flex-1">
+-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+-              <Input
+-                data-testid="input-checkin-search"
+-                type="search"
+-                placeholder="Search member..."
+-                value={query}
+-                onChange={e => { setQuery(e.target.value); setSelectedMemberId(null); setSuccessMember(null); }}
+-                className="pl-10 h-12 text-base"
+-                autoFocus
+-              />
+-            </div>
+-            <Button
+-              variant="outline"
+-              className="h-12 w-12 px-0 shrink-0"
+-              onClick={() => setIsScanning(true)}
+-              title="Scan QR Code"
+-            >
+-              <QrCode className="w-5 h-5" />
+-            </Button>
+-          </div>
++        <Tabs value={tab} onValueChange={setTab}>
++          <TabsList className="grid w-full grid-cols-2">
++            <TabsTrigger value="members">Members</TabsTrigger>
++            <TabsTrigger value="coaches">Coaches</TabsTrigger>
++          </TabsList>
+ 
+-      {/* Search results */}
+-      {results.length > 0 && !selectedMember && (
+-        <div className="space-y-2">
+-          {results.map(m => (
+-            <button
+-              key={m.uuid}
+-              data-testid={`result-member-${m.uuid}`}
+-              onClick={() => handleSelect(m)}
+-              className="w-full text-left p-3 rounded-lg border bg-card hover:bg-accent transition-colors flex items-center gap-4"
+-            >
+-              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+-                <span className="text-sm font-bold text-primary">{m.name.charAt(0)}</span>
+-              </div>
+-              <div className="flex-1 min-w-0">
+-                <p className="font-semibold text-foreground">{m.name}</p>
+-                <p className="text-sm text-muted-foreground">{m.id === -1 ? 'Clinic Visitor' : m.id} · {m.phone}</p>
+-              </div>
+-              <StatusBadge status={m.status} />
+-            </button>
+-          ))}
+-        </div>
+-      )}
+-
+-      {/* Member card */}
+-      {selectedMember && (
+-        <Card className={
+-          (selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999)) ? "border-red-300 bg-red-50" :
+-          selectedMember.status === 'expiring_soon' ? "border-amber-300 bg-amber-50" :
+-          (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999) ? "border-orange-300 bg-orange-50" :
+-          "border-emerald-200 bg-emerald-50"
+-        }>
+-          <CardHeader className="pb-2">
+-            <div className="flex items-start gap-4">
+-              <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
+-                <span className="text-lg font-bold text-primary">{selectedMember.name.charAt(0)}</span>
+-              </div>
+-              <div className="flex-1">
+-                <CardTitle className="text-xl flex items-center gap-2">
+-                  {selectedMember.name}
+-                  <StatusBadge status={selectedMember.status} />
+-                  {selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date() && (
+-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">
+-                      FROZEN
+-                    </span>
+-                  )}
+-                </CardTitle>
+-                <p className="text-sm text-muted-foreground">{selectedMember.id === -1 ? 'Clinic Visitor' : selectedMember.id} · {selectedMember.phone}</p>
+-              </div>
+-              <button onClick={() => setSelectedMemberId(null)} className="text-muted-foreground hover:text-foreground">✕</button>
+-            </div>
+-          </CardHeader>
+-          <CardContent className="space-y-4">
+-            <div className="grid grid-cols-3 gap-3 text-center">
+-              <div className="p-2 rounded-lg bg-white/70">
+-                <p className="text-xl font-bold text-foreground">
+-                  {selectedMember.sessions_remaining === 999 ? "∞" : selectedMember.sessions_remaining}
+-                </p>
+-                <p className="text-xs text-muted-foreground">Sessions Left</p>
+-              </div>
+-              <div className="p-2 rounded-lg bg-white/70">
+-                <p className="text-sm font-bold text-foreground truncate">{selectedMember.package_name}</p>
+-                <p className="text-xs text-muted-foreground">Package</p>
+-              </div>
+-              <div className="p-2 rounded-lg bg-white/70">
+-                <p className="text-sm font-bold text-foreground">{selectedMember.expires_at ? format(new Date(selectedMember.expires_at), "dd/MM") : "—"}</p>
+-                <p className="text-xs text-muted-foreground">Expires</p>
++          <TabsContent value="members" className="space-y-6 mt-6">
++            {/* Search */}
++            <div className="flex gap-2">
++              <div className="relative flex-1">
++                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
++                <Input
++                  data-testid="input-checkin-search"
++                  type="search"
++                  placeholder="Search member..."
++                  value={query}
++                  onChange={e => { setQuery(e.target.value); setSelectedMemberId(null); setSuccessMember(null); }}
++                  className="pl-10 h-12 text-base"
++                  autoFocus
++                />
+               </div>
++              <Button
++                variant="outline"
++                className="h-12 w-12 px-0 shrink-0"
++                onClick={() => setIsScanning(true)}
++                title="Scan QR Code"
++              >
++                <QrCode className="w-5 h-5" />
++              </Button>
+             </div>
+ 
+-            {selectedMember.status === 'expiring_soon' && (
+-              <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-100 border border-amber-200 text-amber-800 text-sm">
+-                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+-                <span>This member is expiring soon. Consider renewing their subscription.</span>
++            {/* Search results */}
++            {results.length > 0 && !selectedMember && (
++              <div className="space-y-2">
++                {results.map(m => (
++                  <button
++                    key={m.uuid}
++                    data-testid={`result-member-${m.uuid}`}
++                    onClick={() => handleSelect(m)}
++                    className="w-full text-left p-3 rounded-lg border bg-card hover:bg-accent transition-colors flex items-center gap-4"
++                  >
++                    <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
++                      <span className="text-sm font-bold text-primary">{m.name.charAt(0)}</span>
++                    </div>
++                    <div className="flex-1 min-w-0">
++                      <p className="font-semibold text-foreground">{m.name}</p>
++                      <p className="text-sm text-muted-foreground">{m.id === -1 ? 'Clinic Visitor' : m.id} · {m.phone}</p>
++                    </div>
++                    <StatusBadge status={m.status} />
++                  </button>
++                ))}
+               </div>
+             )}
+ 
+-            {selectedMember.status === 'expired' && (
+-              <div className="flex items-center gap-2 p-3 rounded-lg bg-red-100 border border-red-200 text-red-800 text-sm">
+-                <XCircle className="w-4 h-4 flex-shrink-0" />
+-                <span>Membership expired on {selectedMember.expires_at ? format(new Date(selectedMember.expires_at), "dd/MM/yyyy") : "unknown date"}. Cannot check in.</span>
+-              </div>
+-            )}
++            {/* Member card */}
++            {selectedMember && (
++              <Card className={
++                (selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999)) ? "border-red-300 bg-red-50" :
++                  selectedMember.status === 'expiring_soon' ? "border-amber-300 bg-amber-50" :
++                    (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999) ? "border-orange-300 bg-orange-50" :
++                      "border-emerald-200 bg-emerald-50"
++              }>
++                <CardHeader className="pb-2">
++                  <div className="flex items-start gap-4">
++                    <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
++                      <span className="text-lg font-bold text-primary">{selectedMember.name.charAt(0)}</span>
++                    </div>
++                    <div className="flex-1">
++                      <CardTitle className="text-xl flex items-center gap-2">
++                        {selectedMember.name}
++                        <StatusBadge status={selectedMember.status} />
++                        {selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date() && (
++                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">
++                            FROZEN
++                          </span>
++                        )}
++                      </CardTitle>
++                      <p className="text-sm text-muted-foreground">{selectedMember.id === -1 ? 'Clinic Visitor' : selectedMember.id} · {selectedMember.phone}</p>
++                    </div>
++                    <button onClick={() => setSelectedMemberId(null)} className="text-muted-foreground hover:text-foreground">✕</button>
++                  </div>
++                </CardHeader>
++                <CardContent className="space-y-4">
++                  <div className="grid grid-cols-3 gap-3 text-center">
++                    <div className="p-2 rounded-lg bg-white/70">
++                      <p className="text-xl font-bold text-foreground">
++                        {selectedMember.sessions_remaining === 999 ? "∞" : selectedMember.sessions_remaining}
++                      </p>
++                      <p className="text-xs text-muted-foreground">Sessions Left</p>
++                    </div>
++                    <div className="p-2 rounded-lg bg-white/70">
++                      <p className="text-sm font-bold text-foreground truncate">{selectedMember.package_name}</p>
++                      <p className="text-xs text-muted-foreground">Package</p>
++                    </div>
++                    <div className="p-2 rounded-lg bg-white/70">
++                      <p className="text-sm font-bold text-foreground">{selectedMember.expires_at ? format(new Date(selectedMember.expires_at), "dd/MM") : "—"}</p>
++                      <p className="text-xs text-muted-foreground">Expires</p>
++                    </div>
++                  </div>
+ 
+-            {selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999 && selectedMember.status !== 'expired' && (
+-              <div className="flex items-center gap-2 p-3 rounded-lg bg-red-100 border border-red-200 text-red-800 text-sm">
+-                <XCircle className="w-4 h-4 flex-shrink-0" />
+-                <span>This member has reached the maximum allowed session debt (-3). Cannot check in.</span>
+-              </div>
+-            )}
++                  {selectedMember.status === 'expiring_soon' && (
++                    <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-100 border border-amber-200 text-amber-800 text-sm">
++                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
++                      <span>This member is expiring soon. Consider renewing their subscription.</span>
++                    </div>
++                  )}
+ 
+-            {selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining > -3 && selectedMember.sessions_remaining !== 999 && selectedMember.status !== 'expired' && (
+-              <div className="flex items-center gap-2 p-3 rounded-lg bg-orange-100 border border-orange-200 text-orange-800 text-sm">
+-                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+-                <span>This member has {selectedMember.sessions_remaining} sessions. Overriding will incur session debt.</span>
+-              </div>
+-            )}
+-            
+-            {selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date() && (
+-              <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-100 border border-blue-200 text-blue-800 text-sm">
+-                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+-                <span>This member is frozen until {format(new Date(selectedMember.frozen_until), "dd/MM/yyyy")}. Overriding will cancel the freeze.</span>
+-              </div>
+-            )}
++                  {selectedMember.status === 'expired' && (
++                    <div className="flex items-center gap-2 p-3 rounded-lg bg-red-100 border border-red-200 text-red-800 text-sm">
++                      <XCircle className="w-4 h-4 flex-shrink-0" />
++                      <span>Membership expired on {selectedMember.expires_at ? format(new Date(selectedMember.expires_at), "dd/MM/yyyy") : "unknown date"}. Cannot check in.</span>
++                    </div>
++                  )}
+ 
+-            {selectedMember.status === 'has_debt' && (
+-              <div className="flex items-center gap-2 p-3 rounded-lg bg-purple-100 border border-purple-200 text-purple-800 text-sm">
+-                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+-                <span>Member has outstanding payment. Proceed with check-in?</span>
+-              </div>
++                  {selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999 && selectedMember.status !== 'expired' && (
++                    <div className="flex items-center gap-2 p-3 rounded-lg bg-red-100 border border-red-200 text-red-800 text-sm">
++                      <XCircle className="w-4 h-4 flex-shrink-0" />
++                      <span>This member has reached the maximum allowed session debt (-3). Cannot check in.</span>
++                    </div>
++                  )}
++
++                  {selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining > -3 && selectedMember.sessions_remaining !== 999 && selectedMember.status !== 'expired' && (
++                    <div className="flex items-center gap-2 p-3 rounded-lg bg-orange-100 border border-orange-200 text-orange-800 text-sm">
++                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
++                      <span>This member has {selectedMember.sessions_remaining} sessions. Overriding will incur session debt.</span>
++                    </div>
++                  )}
++
++                  {selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date() && (
++                    <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-100 border border-blue-200 text-blue-800 text-sm">
++                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
++                      <span>This member is frozen until {format(new Date(selectedMember.frozen_until), "dd/MM/yyyy")}. Overriding will cancel the freeze.</span>
++                    </div>
++                  )}
++
++                  {selectedMember.status === 'has_debt' && (
++                    <div className="flex items-center gap-2 p-3 rounded-lg bg-purple-100 border border-purple-200 text-purple-800 text-sm">
++                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
++                      <span>Member has outstanding payment. Proceed with check-in?</span>
++                    </div>
++                  )}
++
++                  {isPT && (
++                    <div className="p-3 rounded-lg bg-indigo-50 border border-indigo-100 space-y-2">
++                      <Label className="text-indigo-900 font-semibold">Trained by Coach (PT Session) *</Label>
++                      <Select value={ptCoachId} onValueChange={setPtCoachId}>
++                        <SelectTrigger className="bg-white"><SelectValue placeholder="Select Coach..." /></SelectTrigger>
++                        <SelectContent>
++                          {coaches.map(c => (
++                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
++                          ))}
++                        </SelectContent>
++                      </Select>
++                    </div>
++                  )}
++
++                  {(() => {
++                    const activeInvoices = invoices.filter(i => {
++                      const isForMember = i.member_id === selectedMember.uuid;
++                      const isPaid = i.status === 'paid' || i.status === 'partial';
++                      const hasSessions = i.sessions_remaining === undefined || i.sessions_remaining === null || i.sessions_remaining > 0;
++                      const isNotCompletion = !i.package_name || !i.package_name.startsWith('Payment Completion');
++                      
++                      let isExpired = false;
++                      if (i.activation_date && i.packages?.validity_days) {
++                        const expiryDate = new Date(i.activation_date);
++                        expiryDate.setDate(expiryDate.getDate() + i.packages.validity_days);
++                        expiryDate.setHours(23, 59, 59, 999);
++                        isExpired = new Date() > expiryDate;
++                      }
++
++                      return isForMember && isPaid && hasSessions && isNotCompletion && !isExpired;
++                    });
++
++                    if (activeInvoices.length > 1) {
++                      return (
++                        <div className="p-3 rounded-lg bg-blue-50 border border-blue-100 space-y-2">
++                          <Label className="text-blue-900 font-semibold">Select Subscription</Label>
++                          <Select value={selectedInvoiceId} onValueChange={setSelectedInvoiceId}>
++                            <SelectTrigger className="bg-white"><SelectValue placeholder="Select Subscription..." /></SelectTrigger>
++                            <SelectContent>
++                              {activeInvoices.map(inv => (
++                                <SelectItem key={inv.uuid} value={inv.uuid}>
++                                  {inv.package_name} {inv.sessions_remaining === 999 ? '(∞ sessions left)' : inv.sessions_remaining !== null ? `(${inv.sessions_remaining} sessions left)` : ''}
++                                </SelectItem>
++                              ))}
++                            </SelectContent>
++                          </Select>
++                        </div>
++                      );
++                    }
++                    return null;
++                  })()}
++
++                  <div className="flex gap-2">
++                    {!(selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999) && !(isClinic && selectedMember.sessions_remaining <= 0) && (
++                      <Button
++                        data-testid="btn-checkin-confirm"
++                        onClick={handleCheckInClick}
++                        disabled={checkInMutation.isPending}
++                        className={`flex-1 h-11 text-base font-semibold gap-2 ${(selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date()) || selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999) ? 'bg-orange-500 hover:bg-orange-600 text-white' : ''}`}
++                      >
++                        <CheckCircle2 className="w-5 h-5" />
++                        {checkInMutation.isPending
++                          ? 'Checking In...'
++                          : checkedInToday.includes(selectedMember.uuid)
++                            ? 'Check In Again'
++                            : (selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date())
++                              ? 'Override & Unfreeze'
++                              : (selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999))
++                                ? 'Override Check In'
++                                : 'Check In'}
++                      </Button>
++                    )}
++                    <Button data-testid="btn-checkin-cancel" variant="outline" onClick={() => setSelectedMemberId(null)} className={(!(selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999) && !(isClinic && selectedMember.sessions_remaining <= 0)) ? "" : "flex-1"}>Cancel</Button>
++                  </div>
++                </CardContent>
++              </Card>
+             )}
+ 
+-            {isPT && (
+-              <div className="p-3 rounded-lg bg-indigo-50 border border-indigo-100 space-y-2">
+-                <Label className="text-indigo-900 font-semibold">Trained by Coach (PT Session) *</Label>
+-                <Select value={ptCoachId} onValueChange={setPtCoachId}>
+-                  <SelectTrigger className="bg-white"><SelectValue placeholder="Select Coach..." /></SelectTrigger>
+-                  <SelectContent>
+-                    {coaches.map(c => (
+-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+-                    ))}
+-                  </SelectContent>
+-                </Select>
+-              </div>
++            {/* Success state */}
++            {successMember && (
++              <Card className="border-emerald-200 bg-emerald-50">
++                <CardContent className="p-6 text-center space-y-2">
++                  <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
++                  <p className="text-xl font-bold text-emerald-800">{successMember.name}</p>
++                  <p className="text-sm text-emerald-700">Checked in successfully at {format(new Date(), "hh:mm a")}</p>
++                  <p className="text-sm text-emerald-700">
++                    {successMember.sessions_remaining === 999
++                      ? "Unlimited sessions"
++                      : `${successMember.sessions_remaining - 1} sessions remaining`}
++                  </p>
++                </CardContent>
++              </Card>
+             )}
+ 
+-            {(() => {
+-              const activeInvoices = invoices.filter(i => 
+-                i.member_id === selectedMember.uuid && 
+-                (i.status === 'paid' || i.status === 'partial') && 
+-                (i.sessions_remaining === undefined || i.sessions_remaining === null || i.sessions_remaining > 0) &&
+-                (!selectedMember.expires_at || new Date(selectedMember.expires_at) >= new Date(new Date().setHours(0,0,0,0))) &&
+-                (!i.package_name || !i.package_name.startsWith('Payment Completion'))
+-              );
+-              
+-              if (activeInvoices.length > 1) {
++
++
++
++          </TabsContent>
++
++          <TabsContent value="coaches" className="space-y-6 mt-6">
++            <div className="space-y-3 py-2 max-h-[70vh] overflow-y-auto pr-1">
++              {todaysClasses.length === 0 ? (
++                <p className="text-center text-muted-foreground py-6">No classes scheduled for today.</p>
++              ) : todaysClasses.map(cls => {
++                const mainCoach = coaches.find(c => c.id === cls.coach_id);
++                const timeSlot = formatTo12Hour((cls as any).displayTime);
++                const checkedInForClass = checkIns.filter(ci => ci.class_id === cls.id);
++                const alreadyDone = checkedInForClass.length > 0;
++                const isCancelled = (cls as any).statusOverride === 'cancelled';
++
+                 return (
+-                  <div className="p-3 rounded-lg bg-blue-50 border border-blue-100 space-y-2">
+-                    <Label className="text-blue-900 font-semibold">Select Subscription</Label>
+-                    <Select value={selectedInvoiceId} onValueChange={setSelectedInvoiceId}>
+-                      <SelectTrigger className="bg-white"><SelectValue placeholder="Select Subscription..." /></SelectTrigger>
+-                      <SelectContent>
+-                        {activeInvoices.map(inv => (
+-                          <SelectItem key={inv.uuid} value={inv.uuid}>
+-                            {inv.package_name} {inv.sessions_remaining === 999 ? '(∞ sessions left)' : inv.sessions_remaining !== null ? `(${inv.sessions_remaining} sessions left)` : ''}
+-                          </SelectItem>
+-                        ))}
+-                      </SelectContent>
+-                    </Select>
+-                  </div>
+-                );
+-              }
+-              return null;
+-            })()}
++                  <div key={cls.id} className={`rounded-xl border p-4 space-y-3 ${alreadyDone ? 'bg-emerald-50 border-emerald-200' : isCancelled ? 'bg-muted/50 border-muted opacity-80' : 'bg-card'}`}>
++                    <div className="flex items-center justify-between">
++                      <div>
++                        <p className="font-semibold text-foreground flex items-center gap-2">
++                          {cls.name}
++                          {(cls as any).statusOverride === 'postponed_to_today' && (cls as any).originalDate && (
++                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] uppercase tracking-wider py-0 font-bold">
++                              Postponed from {format(new Date((cls as any).originalDate), "MMM d")}
++                            </Badge>
++                          )}
++                        </p>
++                        <p className="text-xs text-muted-foreground">{timeSlot} · {cls.sport_name || 'General'}</p>
++                      </div>
++                      {alreadyDone ? (
++                        <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
++                          ✓ Done - {coaches.find(c => c.id === checkedInForClass[0]?.coach_id)?.name}
++                        </Badge>
++                      ) : isCancelled ? (
++                        <div className="flex items-center gap-2">
++                          <Badge variant="outline" className="text-muted-foreground border-muted-foreground/30">Cancelled</Badge>
++                          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => {
++                            if ((cls as any).overrideId) deleteOverrideMutation.mutate((cls as any).overrideId, { onSuccess: () => toast.success("Cancellation undone") });
++                          }}>Undo</Button>
++                        </div>
++                      ) : (
++                        <div className="flex items-center gap-2">
++                          <Badge variant="outline" className="text-amber-600 border-amber-300">Pending</Badge>
++                          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setPostponeClassId(cls.id)}>Postpone</Button>
++                          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => handleCancelSession(cls.id)}>Cancel</Button>
++                        </div>
++                      )}
++                    </div>
+ 
+-            <div className="flex gap-2">
+-              {!(selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999) && !(isClinic && selectedMember.sessions_remaining <= 0) && (
+-                <Button
+-                  data-testid="btn-checkin-confirm"
+-                  onClick={handleCheckInClick}
+-                  disabled={checkInMutation.isPending}
+-                  className={`flex-1 h-11 text-base font-semibold gap-2 ${(selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date()) || selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999) ? 'bg-orange-500 hover:bg-orange-600 text-white' : ''}`}
+-                >
+-                  <CheckCircle2 className="w-5 h-5" />
+-                  {checkInMutation.isPending
+-                    ? 'Checking In...'
+-                    : checkedInToday.includes(selectedMember.uuid) 
+-                      ? 'Check In Again' 
+-                      : (selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date()) 
+-                          ? 'Override & Unfreeze' 
+-                          : (selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining !== 999))
+-                              ? 'Override Check In'
+-                              : 'Check In'}
+-                </Button>
+-              )}
+-              <Button data-testid="btn-checkin-cancel" variant="outline" onClick={() => setSelectedMemberId(null)} className={(!(selectedMember.sessions_remaining <= -3 && selectedMember.sessions_remaining !== 999) && !(isClinic && selectedMember.sessions_remaining <= 0)) ? "" : "flex-1"}>Cancel</Button>
+-            </div>
+-          </CardContent>
+-        </Card>
+-      )}
+-
+-      {/* Success state */}
+-      {successMember && (
+-        <Card className="border-emerald-200 bg-emerald-50">
+-          <CardContent className="p-6 text-center space-y-2">
+-            <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
+-            <p className="text-xl font-bold text-emerald-800">{successMember.name}</p>
+-            <p className="text-sm text-emerald-700">Checked in successfully at {format(new Date(), "hh:mm a")}</p>
+-            <p className="text-sm text-emerald-700">
+-              {successMember.sessions_remaining === 999 
+-                ? "Unlimited sessions" 
+-                : `${successMember.sessions_remaining - 1} sessions remaining`}
+-            </p>
+-          </CardContent>
+-        </Card>
+-      )}
+-
+-
+-
+-
+-        </TabsContent>
+-
+-        <TabsContent value="coaches" className="space-y-6 mt-6">
+-          <div className="space-y-3 py-2 max-h-[70vh] overflow-y-auto pr-1">
+-            {todaysClasses.length === 0 ? (
+-              <p className="text-center text-muted-foreground py-6">No classes scheduled for today.</p>
+-            ) : todaysClasses.map(cls => {
+-              const mainCoach = coaches.find(c => c.id === cls.coach_id);
+-              const timeSlot = formatTo12Hour((cls as any).displayTime);
+-              const checkedInForClass = checkIns.filter(ci => ci.class_id === cls.id);
+-              const alreadyDone = checkedInForClass.length > 0;
+-              const isCancelled = (cls as any).statusOverride === 'cancelled';
+-
+-              return (
+-                <div key={cls.id} className={`rounded-xl border p-4 space-y-3 ${alreadyDone ? 'bg-emerald-50 border-emerald-200' : isCancelled ? 'bg-muted/50 border-muted opacity-80' : 'bg-card'}`}>
+-                  <div className="flex items-center justify-between">
+-                    <div>
+-                      <p className="font-semibold text-foreground flex items-center gap-2">
+-                        {cls.name}
+-                        {(cls as any).statusOverride === 'postponed_to_today' && (cls as any).originalDate && (
+-                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] uppercase tracking-wider py-0 font-bold">
+-                            Postponed from {format(new Date((cls as any).originalDate), "MMM d")}
+-                          </Badge>
++                    {!alreadyDone && !isCancelled && (
++                      <div className="space-y-2">
++                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Who taught this session?</p>
++                        {/* Main coach first */}
++                        {mainCoach && (
++                          <button
++                            key={mainCoach.id}
++                            onClick={() => submitTodayClassCheckIn(cls.id, mainCoach.id, mainCoach.id)}
++                            className="w-full flex items-center justify-between p-2.5 rounded-lg border-2 border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors"
++                            disabled={coachCheckInMutation.isPending}
++                          >
++                            <div className="flex items-center gap-2">
++                              <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
++                                <span className="text-xs font-bold text-primary">{mainCoach.name.charAt(0)}</span>
++                              </div>
++                              <span className="text-sm font-medium">{mainCoach.name}</span>
++                              <Badge className="text-xs bg-primary/10 text-primary border-primary/20">Main Coach</Badge>
++                            </div>
++                            <span className="text-xs text-primary font-medium">✓ Check In</span>
++                          </button>
+                         )}
+-                      </p>
+-                      <p className="text-xs text-muted-foreground">{timeSlot} · {cls.sport_name || 'General'}</p>
+-                    </div>
+-                    {alreadyDone ? (
+-                      <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+-                        ✓ Done - {coaches.find(c => c.id === checkedInForClass[0]?.coach_id)?.name}
+-                      </Badge>
+-                    ) : isCancelled ? (
+-                      <div className="flex items-center gap-2">
+-                        <Badge variant="outline" className="text-muted-foreground border-muted-foreground/30">Cancelled</Badge>
+-                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => {
+-                          if ((cls as any).overrideId) deleteOverrideMutation.mutate((cls as any).overrideId, { onSuccess: () => toast.success("Cancellation undone") });
+-                        }}>Undo</Button>
+-                      </div>
+-                    ) : (
+-                      <div className="flex items-center gap-2">
+-                        <Badge variant="outline" className="text-amber-600 border-amber-300">Pending</Badge>
+-                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setPostponeClassId(cls.id)}>Postpone</Button>
+-                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => handleCancelSession(cls.id)}>Cancel</Button>
++                        {/* Other coaches as substitutes */}
++                        {coaches.filter(c => c.id !== cls.coach_id).map(sub => (
++                          <button
++                            key={sub.id}
++                            onClick={() => submitTodayClassCheckIn(cls.id, sub.id, cls.coach_id || sub.id)}
++                            className="w-full flex items-center justify-between p-2.5 rounded-lg border border-input bg-card hover:bg-accent transition-colors"
++                            disabled={coachCheckInMutation.isPending}
++                          >
++                            <div className="flex items-center gap-2">
++                              <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center">
++                                <span className="text-xs font-bold text-muted-foreground">{sub.name.charAt(0)}</span>
++                              </div>
++                              <span className="text-sm">{sub.name}</span>
++                              <span className="text-xs text-muted-foreground">(Substitute)</span>
++                            </div>
++                          </button>
++                        ))}
+                       </div>
+                     )}
+                   </div>
+-
+-                  {!alreadyDone && !isCancelled && (
+-                    <div className="space-y-2">
+-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Who taught this session?</p>
+-                      {/* Main coach first */}
+-                      {mainCoach && (
+-                        <button
+-                          key={mainCoach.id}
+-                          onClick={() => submitTodayClassCheckIn(cls.id, mainCoach.id, mainCoach.id)}
+-                          className="w-full flex items-center justify-between p-2.5 rounded-lg border-2 border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors"
+-                          disabled={coachCheckInMutation.isPending}
+-                        >
+-                          <div className="flex items-center gap-2">
+-                            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+-                              <span className="text-xs font-bold text-primary">{mainCoach.name.charAt(0)}</span>
+-                            </div>
+-                            <span className="text-sm font-medium">{mainCoach.name}</span>
+-                            <Badge className="text-xs bg-primary/10 text-primary border-primary/20">Main Coach</Badge>
+-                          </div>
+-                          <span className="text-xs text-primary font-medium">✓ Check In</span>
+-                        </button>
+-                      )}
+-                      {/* Other coaches as substitutes */}
+-                      {coaches.filter(c => c.id !== cls.coach_id).map(sub => (
+-                        <button
+-                          key={sub.id}
+-                          onClick={() => submitTodayClassCheckIn(cls.id, sub.id, cls.coach_id || sub.id)}
+-                          className="w-full flex items-center justify-between p-2.5 rounded-lg border border-input bg-card hover:bg-accent transition-colors"
+-                          disabled={coachCheckInMutation.isPending}
+-                        >
+-                          <div className="flex items-center gap-2">
+-                            <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center">
+-                              <span className="text-xs font-bold text-muted-foreground">{sub.name.charAt(0)}</span>
+-                            </div>
+-                            <span className="text-sm">{sub.name}</span>
+-                            <span className="text-xs text-muted-foreground">(Substitute)</span>
+-                          </div>
+-                        </button>
+-                      ))}
+-                    </div>
+-                  )}
++                );
++              })}
++            </div>
++          </TabsContent>
++
++          {/* Postpone Dialog */}
++          <Dialog open={!!postponeClassId} onOpenChange={(o) => !o && setPostponeClassId(null)}>
++            <DialogContent className="max-w-sm">
++              <DialogHeader>
++                <DialogTitle>Postpone Session</DialogTitle>
++              </DialogHeader>
++              <div className="space-y-4 py-4">
++                <div className="space-y-2">
++                  <Label>New Date</Label>
++                  <Input type="date" value={postponeDate} onChange={e => setPostponeDate(e.target.value)} />
++                </div>
++                <div className="space-y-2">
++                  <Label>New Time</Label>
++                  <Input type="time" value={postponeTime} onChange={e => setPostponeTime(e.target.value)} />
+                 </div>
+-              );
+-            })}
+-          </div>
+-        </TabsContent>
+-
+-        {/* Postpone Dialog */}
+-        <Dialog open={!!postponeClassId} onOpenChange={(o) => !o && setPostponeClassId(null)}>
+-          <DialogContent className="max-w-sm">
+-            <DialogHeader>
+-              <DialogTitle>Postpone Session</DialogTitle>
+-            </DialogHeader>
+-            <div className="space-y-4 py-4">
+-              <div className="space-y-2">
+-                <Label>New Date</Label>
+-                <Input type="date" value={postponeDate} onChange={e => setPostponeDate(e.target.value)} />
+-              </div>
+-              <div className="space-y-2">
+-                <Label>New Time</Label>
+-                <Input type="time" value={postponeTime} onChange={e => setPostponeTime(e.target.value)} />
+               </div>
+-            </div>
+-            <DialogFooter>
+-              <Button variant="outline" onClick={() => setPostponeClassId(null)}>Cancel</Button>
+-              <Button onClick={handlePostponeSession} disabled={!postponeDate || !postponeTime || createOverrideMutation.isPending}>
+-                {createOverrideMutation.isPending ? "Saving..." : "Confirm Postpone"}
+-              </Button>
+-            </DialogFooter>
+-          </DialogContent>
+-        </Dialog>
+-      </Tabs>
++              <DialogFooter>
++                <Button variant="outline" onClick={() => setPostponeClassId(null)}>Cancel</Button>
++                <Button onClick={handlePostponeSession} disabled={!postponeDate || !postponeTime || createOverrideMutation.isPending}>
++                  {createOverrideMutation.isPending ? "Saving..." : "Confirm Postpone"}
++                </Button>
++              </DialogFooter>
++            </DialogContent>
++          </Dialog>
++        </Tabs>
+       </div>
+ 
+       {/* Right Column: Upcoming Postponed Sessions */}

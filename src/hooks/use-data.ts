@@ -242,7 +242,7 @@ export function useDeleteCoach() {
 export function useCheckInCoach() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ coachId, classId }: { coachId: string, classId?: string }) => q.checkInCoach(coachId, classId),
+    mutationFn: ({ coachId, classId, checkInDate }: { coachId: string, classId?: string, checkInDate?: string }) => q.checkInCoach(coachId, classId, checkInDate),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.coachCheckIns }),
   });
 }

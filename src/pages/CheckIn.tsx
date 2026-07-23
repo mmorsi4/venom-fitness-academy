@@ -5,11 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel,
-  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
-  AlertDialogHeader, AlertDialogTitle
-} from "@/components/ui/alert-dialog";
-import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
 } from "@/components/ui/dialog";
 import {
@@ -18,7 +13,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useMembers, useCheckInMember, usePackages, useCoaches, useCheckInCoachWithDetails, useClasses, useCoachCheckInsToday, useCheckInCoach, useInvoices, useClassScheduleOverrides, useCreateClassScheduleOverride, useDeleteClassScheduleOverride, useUpdateClassScheduleOverride } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
-import type { Member, SubscriptionPackage, Coach } from "@/lib/types";
+import type { Member, Coach } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -43,14 +38,14 @@ export default function CheckIn() {
   const [postponeDate, setPostponeDate] = useState("");
   const [postponeTime, setPostponeTime] = useState("");
   const { currentUser } = useAuth();
-  
+
   const [tab, setTab] = useState("members");
   const [query, setQuery] = useState("");
   const [isScanning, setIsScanning] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const selectedMember = selectedMemberId ? members.find(m => m.uuid === selectedMemberId) || null : null;
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>("");
-  
+
   const [ptCoachId, setPtCoachId] = useState<string>("");
 
   const [successMember, setSuccessMember] = useState<Member | null>(null);
@@ -59,17 +54,18 @@ export default function CheckIn() {
   const [coachQuery, setCoachQuery] = useState("");
   const [selectedCoach, setSelectedCoach] = useState<Coach | null>(null);
   const [selectedClassId, setSelectedClassId] = useState<string>("none");
+  const [customCheckInDate, setCustomCheckInDate] = useState<string>("");
 
   const results = query.length >= 1
     ? members.filter(m =>
-        m.id.toString() === query.trim() ||
-        m.name.toLowerCase().includes(query.toLowerCase()) ||
-        m.phone.includes(query.trim())
-      ).sort((a, b) => {
-        if (a.id.toString() === query.trim()) return -1;
-        if (b.id.toString() === query.trim()) return 1;
-        return 0;
-      }).slice(0, 6)
+      m.id.toString() === query.trim() ||
+      m.name.toLowerCase().includes(query.toLowerCase()) ||
+      m.phone.includes(query.trim())
+    ).sort((a, b) => {
+      if (a.id.toString() === query.trim()) return -1;
+      if (b.id.toString() === query.trim()) return 1;
+      return 0;
+    }).slice(0, 6)
     : [];
 
   const handleSuccess = (member: Member, msg: string, desc: string) => {
@@ -109,13 +105,22 @@ export default function CheckIn() {
   const handleSelect = (member: Member) => {
     setSelectedMemberId(member.uuid);
     setSuccessMember(null);
-    const memberActiveInvoices = invoices.filter(i => 
-      i.member_id === member.uuid && 
-      (i.status === 'paid' || i.status === 'partial') && 
-      (i.sessions_remaining === undefined || i.sessions_remaining === null || i.sessions_remaining > 0) &&
-      (!member.expires_at || new Date(member.expires_at) >= new Date(new Date().setHours(0,0,0,0))) &&
-      (!i.package_name || !i.package_name.startsWith('Payment Completion'))
-    );
+    const memberActiveInvoices = invoices.filter(i => {
+      const isForMember = i.member_id === member.uuid;
+      const isPaid = i.status === 'paid' || i.status === 'partial';
+      const hasSessions = i.sessions_remaining === undefined || i.sessions_remaining === null || i.sessions_remaining > 0;
+      const isNotCompletion = !i.package_name || !i.package_name.startsWith('Payment Completion');
+      
+      let isExpired = false;
+      if (i.activation_date && i.packages?.validity_days) {
+        const expiryDate = new Date(i.activation_date);
+        expiryDate.setDate(expiryDate.getDate() + i.packages.validity_days);
+        expiryDate.setHours(23, 59, 59, 999);
+        isExpired = new Date() > expiryDate;
+      }
+
+      return isForMember && isPaid && hasSessions && isNotCompletion && !isExpired;
+    });
     if (memberActiveInvoices.length > 0) {
       setSelectedInvoiceId(memberActiveInvoices[0].uuid);
     } else {
@@ -126,11 +131,11 @@ export default function CheckIn() {
   const selectedInvoice = invoices.find(i => i.uuid === selectedInvoiceId);
   const activePackageId = selectedInvoice ? selectedInvoice.package_id : selectedMember?.package_id;
 
-  const isClinic = selectedMember 
+  const isClinic = selectedMember
     ? (selectedMember.id === -1 || (packages.find(p => p.id === activePackageId)?.is_clinic || false))
     : false;
 
-  const isPT = selectedMember 
+  const isPT = selectedMember
     ? (packages.find(p => p.id === activePackageId)?.is_pt || false)
     : false;
 
@@ -143,7 +148,7 @@ export default function CheckIn() {
     }
 
     const isFrozen = selectedMember.frozen_until && new Date(selectedMember.frozen_until) > new Date();
-    
+
     // 1. If frozen, we allow override check-in
     // 2. If sessions are 0, -1, or -2, we allow override check-in (up to -3 max)
     // 3. But NO overrides if the current package is a Clinic package
@@ -177,7 +182,7 @@ export default function CheckIn() {
     }
 
     const needsOverride = selectedMember.status === 'expired' || (selectedMember.sessions_remaining <= 0 && selectedMember.sessions_remaining > -3 && selectedMember.sessions_remaining !== 999);
-    
+
     if (needsOverride) {
       if (isClinic) {
         toast.error("Cannot override check-in for clinic packages.");
@@ -202,7 +207,7 @@ export default function CheckIn() {
       toast.error("Cannot check in: Reached max session debt (-3).");
       return;
     }
-    
+
     if (isClinic && selectedMember.sessions_remaining <= 0) {
       toast.error("Cannot check in: No sessions remaining for clinic package.");
       return;
@@ -234,27 +239,27 @@ export default function CheckIn() {
     let status = 'pending';
 
     if (overrideToday) {
-       status = overrideToday.status;
-       if (status === 'postponed' || status === 'cancelled') {
-         isScheduledToday = false;
-       }
+      status = overrideToday.status;
+      if (status === 'postponed' || status === 'cancelled') {
+        isScheduledToday = false;
+      }
     }
     if (postponedToToday) {
-       isScheduledToday = true;
-       displayTime = postponedToToday.new_time || displayTime;
-       status = 'pending';
+      isScheduledToday = true;
+      displayTime = postponedToToday.new_time || displayTime;
+      status = 'pending';
     }
 
     return {
-       ...cls,
-       isScheduledToday,
-       displayTime,
-       statusOverride: overrideToday?.status || (postponedToToday ? 'postponed_to_today' : null),
-       overrideId: overrideToday?.id || postponedToToday?.id,
-       originalDate: postponedToToday?.original_date
+      ...cls,
+      isScheduledToday,
+      displayTime,
+      statusOverride: overrideToday?.status || (postponedToToday ? 'postponed_to_today' : null),
+      overrideId: overrideToday?.id || postponedToToday?.id,
+      originalDate: postponedToToday?.original_date
     };
-  }).filter(c => c.isScheduledToday || c.statusOverride === 'cancelled').sort((a,b) => (a.displayTime || '').localeCompare(b.displayTime || ''));
-  
+  }).filter(c => c.isScheduledToday || c.statusOverride === 'cancelled').sort((a, b) => (a.displayTime || '').localeCompare(b.displayTime || ''));
+
   const handleCancelSession = (classId: string) => {
     const cls = todaysClasses.find(c => c.id === classId);
     if (cls && (cls as any).overrideId) {
@@ -267,11 +272,11 @@ export default function CheckIn() {
       });
     }
   };
-  
+
   const handlePostponeSession = () => {
     if (!postponeClassId || !postponeDate || !postponeTime) return;
     const cls = todaysClasses.find(c => c.id === postponeClassId);
-    
+
     if (cls && (cls as any).overrideId) {
       updateOverrideMutation.mutate({ id: (cls as any).overrideId, new_date: postponeDate, new_time: postponeTime, status: 'postponed' }, {
         onSuccess: () => {
@@ -312,19 +317,23 @@ export default function CheckIn() {
     }
     const classData = classes.find(c => c.id === selectedClassId);
     if (!classData) return;
-    const todayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][new Date().getDay()];
-    const scheduledSlotsForToday = classData.schedules.filter(s => s.day === todayName).length;
-    if (scheduledSlotsForToday === 0) {
-      toast.error(`This class is not scheduled for today (${todayName}).`);
+    const targetDate = customCheckInDate ? new Date(customCheckInDate) : new Date();
+    const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][targetDate.getDay()];
+    const scheduledSlotsForDay = classData.schedules.filter(s => s.day === dayName).length;
+    if (scheduledSlotsForDay === 0) {
+      toast.error(`This class is not scheduled for this date (${dayName}).`);
       return;
     }
-    const checkInsForThisClassToday = checkIns.filter(ci => ci.coach_id === selectedCoach.id && ci.class_id === selectedClassId).length;
-    if (checkInsForThisClassToday >= scheduledSlotsForToday) {
-      toast.error(`Coach has already checked in ${checkInsForThisClassToday} time(s) for this class today.`);
-      return;
+    // We skip the "already checked in" check for past dates, or we could fetch checkins for that date, but for simplicity, allow it.
+    if (!customCheckInDate) {
+      const checkInsForThisClassToday = checkIns.filter(ci => ci.coach_id === selectedCoach.id && ci.class_id === selectedClassId).length;
+      if (checkInsForThisClassToday >= scheduledSlotsForDay) {
+        toast.error(`Coach has already checked in ${checkInsForThisClassToday} time(s) for this class today.`);
+        return;
+      }
     }
-    checkInCoachStandard.mutate({ coachId: selectedCoach.id, classId: selectedClassId }, {
-      onSuccess: () => { toast.success(`${selectedCoach.name} checked in`); setSelectedCoach(null); },
+    checkInCoachStandard.mutate({ coachId: selectedCoach.id, classId: selectedClassId, checkInDate: customCheckInDate || undefined }, {
+      onSuccess: () => { toast.success(`${selectedCoach.name} checked in`); setSelectedCoach(null); setCustomCheckInDate(""); },
       onError: (err) => toast.error(`Failed to check in: ${err.message}`)
     });
   };
@@ -332,7 +341,7 @@ export default function CheckIn() {
   const coachResults = coachQuery.length >= 1
     ? coaches.filter(c => c.name.toLowerCase().includes(coachQuery.toLowerCase()) || c.phone?.includes(coachQuery)).slice(0, 6)
     : [];
-    
+
   const futurePostponed = scheduleOverrides
     .filter(o => o.status === 'postponed' && o.new_date && new Date(o.new_date) >= new Date(todayDateString))
     .sort((a, b) => new Date(a.new_date!).getTime() - new Date(b.new_date!).getTime());
@@ -504,13 +513,22 @@ export default function CheckIn() {
             )}
 
             {(() => {
-              const activeInvoices = invoices.filter(i => 
-                i.member_id === selectedMember.uuid && 
-                (i.status === 'paid' || i.status === 'partial') && 
-                (i.sessions_remaining === undefined || i.sessions_remaining === null || i.sessions_remaining > 0) &&
-                (!selectedMember.expires_at || new Date(selectedMember.expires_at) >= new Date(new Date().setHours(0,0,0,0))) &&
-                (!i.package_name || !i.package_name.startsWith('Payment Completion'))
-              );
+              const activeInvoices = invoices.filter(i => {
+                const isForMember = i.member_id === selectedMember.uuid;
+                const isPaid = i.status === 'paid' || i.status === 'partial';
+                const hasSessions = i.sessions_remaining === undefined || i.sessions_remaining === null || i.sessions_remaining > 0;
+                const isNotCompletion = !i.package_name || !i.package_name.startsWith('Payment Completion');
+                
+                let isExpired = false;
+                if (i.activation_date && i.packages?.validity_days) {
+                  const expiryDate = new Date(i.activation_date);
+                  expiryDate.setDate(expiryDate.getDate() + i.packages.validity_days);
+                  expiryDate.setHours(23, 59, 59, 999);
+                  isExpired = new Date() > expiryDate;
+                }
+
+                return isForMember && isPaid && hasSessions && isNotCompletion && !isExpired;
+              });
               
               if (activeInvoices.length > 1) {
                 return (
@@ -720,23 +738,23 @@ export default function CheckIn() {
                       <p>From: <span className="font-semibold">{format(new Date(po.original_date!), "MMM d, yyyy")}</span></p>
                       <p>To: <span className="font-semibold">{format(new Date(po.new_date!), "MMM d, yyyy")} at {formatTo12Hour(po.new_time!)}</span></p>
                     </div>
-                    
+
                     <div className="flex items-center justify-end gap-2 pt-3 mt-1 border-t border-blue-200/50">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="h-7 px-3 text-[10px] uppercase font-bold text-blue-600 border-blue-200 hover:bg-blue-100" 
-                        onClick={() => deleteOverrideMutation.mutate(po.id, { onSuccess: () => toast.success("Postponing undone") })} 
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-3 text-[10px] uppercase font-bold text-blue-600 border-blue-200 hover:bg-blue-100"
+                        onClick={() => deleteOverrideMutation.mutate(po.id, { onSuccess: () => toast.success("Postponing undone") })}
                         title={isOriginalDatePassed ? "Cannot undo because original date has passed" : "Restore class to its original date"}
                         disabled={isOriginalDatePassed}
                       >
                         Undo Postpone
                       </Button>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="h-7 px-3 text-[10px] uppercase font-bold text-red-600 border-red-200 hover:bg-red-50" 
-                        onClick={() => updateOverrideMutation.mutate({ id: po.id, status: 'cancelled' }, { onSuccess: () => toast.success("Session cancelled") })} 
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-3 text-[10px] uppercase font-bold text-red-600 border-red-200 hover:bg-red-50"
+                        onClick={() => updateOverrideMutation.mutate({ id: po.id, status: 'cancelled' }, { onSuccess: () => toast.success("Session cancelled") })}
                         title="Cancel class on the new postponed date"
                       >
                         Cancel Class

@@ -159,12 +159,22 @@ export function MemberList({
                 <TableCell>
                   <div className="space-y-1">
                     {(() => {
-                      const activeInvoices = invoices.filter(i =>
-                        i.member_id === m.uuid &&
-                        (i.status === 'paid' || i.status === 'partial') &&
-                        (i.sessions_remaining === undefined || i.sessions_remaining === null || i.sessions_remaining > 0) &&
-                        (!i.package_name || !i.package_name.startsWith('Payment Completion'))
-                      );
+                      const activeInvoices = invoices.filter(i => {
+                        const isForMember = i.member_id === m.uuid;
+                        const isPaid = i.status === 'paid' || i.status === 'partial';
+                        const hasSessions = i.sessions_remaining === undefined || i.sessions_remaining === null || i.sessions_remaining > 0;
+                        const isNotCompletion = !i.package_name || !i.package_name.startsWith('Payment Completion');
+                        
+                        let isExpired = false;
+                        if (i.activation_date && i.packages?.validity_days) {
+                          const expiryDate = new Date(i.activation_date);
+                          expiryDate.setDate(expiryDate.getDate() + i.packages.validity_days);
+                          expiryDate.setHours(23, 59, 59, 999);
+                          isExpired = new Date() > expiryDate;
+                        }
+
+                        return isForMember && isPaid && hasSessions && isNotCompletion && !isExpired;
+                      });
 
                       if (activeInvoices.length > 0) {
                         return activeInvoices.map(inv => (

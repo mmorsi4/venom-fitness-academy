@@ -34,7 +34,7 @@ export async function getMembers() {
     const { data, error } = await supabase
       .from('members')
       .select('*, classes(id, name, schedules, sports(name), coaches(name)), invoices(created_at, package_id, is_applied, activation_date)')
-      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .range(page * limit, (page + 1) * limit - 1);
 
     if (error) throw error;
@@ -329,8 +329,8 @@ export async function getInvoices() {
   await supabase.rpc('activate_pending_subscriptions');
   const { data, error } = await supabase
     .from('invoices')
-    .select('*')
-    .order('created_at', { ascending: false });
+    .select('*, packages(validity_days)')
+    .order('id', { ascending: false });
   if (error) throw error;
   return data as Invoice[];
 }
@@ -442,9 +442,9 @@ export async function getCoachCheckInsForMonth(month: number, year: number) {
   return data as CoachCheckIn[];
 }
 
-export async function checkInCoach(coachId: string, classId?: string) {
+export async function checkInCoach(coachId: string, classId?: string, checkInDate?: string) {
   const today = new Date().toISOString().split('T')[0];
-  const payload: any = { coach_id: coachId, check_in_date: today };
+  const payload: any = { coach_id: coachId, check_in_date: checkInDate ?? today };
   if (classId) payload.class_id = classId;
   const { error } = await supabase.from('coach_check_ins').insert(payload);
   if (error) throw error;
@@ -467,11 +467,12 @@ export async function checkInCoachWithDetails(args: {
   originalCoachId?: string;
   sessionType?: 'group' | 'pt';
   memberUuid?: string;
+  checkInDate?: string;
 }) {
   const today = new Date().toISOString().split('T')[0];
   const payload: any = {
     coach_id: args.coachId,
-    check_in_date: today,
+    check_in_date: args.checkInDate ?? today,
     is_substitute: args.isSubstitute ?? false,
     session_type: args.sessionType ?? 'group',
   };
