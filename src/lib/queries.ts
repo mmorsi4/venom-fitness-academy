@@ -566,7 +566,7 @@ export async function getExpenses() {
   const { data, error } = await supabase
     .from('expenses')
     .select('*')
-    .order('date', { ascending: false });
+    .order('id', { ascending: false });
   if (error) throw error;
   return data as Expense[];
 }

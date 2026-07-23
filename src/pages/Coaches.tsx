@@ -658,7 +658,7 @@ export default function Coaches() {
       
       {/* Past Check-in Dialog */}
       <Dialog open={!!pastCheckInCoach} onOpenChange={(o) => !o && setPastCheckInCoach(null)}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Past Check-in: {pastCheckInCoach?.name}</DialogTitle>
           </DialogHeader>
@@ -678,7 +678,7 @@ export default function Coaches() {
                 <SelectTrigger>
                   <SelectValue placeholder="Select Class" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-[250px]">
                   <SelectItem value="none">-- Select Class --</SelectItem>
                   {classes.map(c => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
