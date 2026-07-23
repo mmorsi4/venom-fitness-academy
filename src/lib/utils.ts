@@ -175,3 +175,38 @@ export function calculateExpenseByMethod(expenses: Expense[], method: PaymentMet
     return sum;
   }, 0);
 }
+
+export function calculateCoachWallet(
+  coach: Coach,
+  allUnpaidCheckIns: CoachCheckIn[],
+  allDeductions: CoachDeduction[]
+) {
+  const unpaidPt = allUnpaidCheckIns.filter(ci => ci.coach_id === coach.id && ci.session_type === 'pt');
+  const unpaidMain = allUnpaidCheckIns.filter(ci => ci.coach_id === coach.id && ci.session_type === 'group' && !ci.is_substitute);
+  const unpaidSub = allUnpaidCheckIns.filter(ci => ci.coach_id === coach.id && ci.session_type === 'group' && ci.is_substitute);
+
+  const ptPct = coach.pt_percentage ?? 100;
+  const actualPtRate = (coach.pt_rate || 250) * (ptPct / 100);
+  
+  let unpaidValue = 0;
+  
+  // Since all coaches are effectively treated as per-session logic now:
+  // We use their base rate for group sessions and actualPtRate for PT sessions.
+  unpaidValue = (unpaidMain.length + unpaidSub.length) * coach.rate + (unpaidPt.length * actualPtRate);
+
+  const unpaidDeductions = allDeductions.filter(d => d.coach_id === coach.id && !d.reason.startsWith('[PAID]'));
+  const netAdjustment = unpaidDeductions.reduce((s, d) => s + d.amount, 0);
+
+  const advanceBalance = coach.advance_balance || 0;
+  
+  // Wallet = (Unpaid Sessions Value) + (Net Adjustment) - Advance Balance
+  const walletBalance = unpaidValue + netAdjustment - advanceBalance;
+
+  return {
+    unpaidValue,
+    netAdjustment,
+    advanceBalance,
+    walletBalance,
+    unpaidCount: unpaidPt.length + unpaidMain.length + unpaidSub.length
+  };
+}

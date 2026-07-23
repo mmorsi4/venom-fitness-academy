@@ -20,7 +20,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useExpenses, useLiabilities, useCoaches, useClasses, useCoachCheckInsForMonth, useMembers, useCreateExpense, useUpdateExpense, useDeleteExpense, useMarkCoachSessionsPaid, useDeleteExpenseWithRollback, useEmployees, useEmployeeCheckIns, useEmployeeDeductions, useCreateEmployeeDeduction, useCoachDeductions, useDeleteCoachDeduction, useAdjustCoachAdvanceBalance } from "@/hooks/use-data";
+import { useExpenses, useLiabilities, useCoaches, useClasses, useCoachCheckInsForMonth, useMembers, useCreateExpense, useUpdateExpense, useDeleteExpense, useMarkCoachSessionsPaid, useDeleteExpenseWithRollback, useEmployees, useEmployeeCheckIns, useEmployeeDeductions, useCreateEmployeeDeduction, useCoachDeductions, useDeleteCoachDeduction, useUpdateCoachDeduction, useAdjustCoachAdvanceBalance } from "@/hooks/use-data";
 import { calculateCoachPayroll } from "@/lib/utils";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -46,7 +46,7 @@ const emptyForm = {
   employeeId: "",
   employeeBonus: 0,
   includeCoachAdjustments: false,
-  advanceConsumed: 0
+  totalSessionsValue: 0
 };
 
 export function ExpensesView() {
@@ -56,6 +56,7 @@ export function ExpensesView() {
   const markSessionsPaid = useMarkCoachSessionsPaid();
   const adjustAdvance = useAdjustCoachAdvanceBalance();
   const deleteCoachDeduction = useDeleteCoachDeduction();
+  const updateCoachDeduction = useUpdateCoachDeduction();
   const { data: coaches = [] } = useCoaches();
   const { data: classes = [] } = useClasses();
   const { data: coachCheckIns = [] } = useCoachCheckInsForMonth(new Date().getMonth(), new Date().getFullYear());
@@ -73,7 +74,6 @@ export function ExpensesView() {
   const [form, setForm] = useState({ 
     ...emptyForm, 
     salaryTarget: 'coach' as 'coach' | 'employee',
-    salaryType: 'payroll' as 'payroll' | 'advance',
     ptPayCount: 0,
     groupMainPayCount: 0,
     groupSubPayCount: 0
@@ -163,7 +163,7 @@ export function ExpensesView() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const resetForm = () => setForm({ ...emptyForm, salaryTarget: 'coach', salaryType: 'payroll', ptPayCount: 0, groupMainPayCount: 0, groupSubPayCount: 0 });
+  const resetForm = () => setForm({ ...emptyForm, salaryTarget: 'coach', ptPayCount: 0, groupMainPayCount: 0, groupSubPayCount: 0 });
 
   const handleCategoryChange = (cat: string) => {
     setForm(p => ({
@@ -211,9 +211,10 @@ export function ExpensesView() {
       split_payments: form.paymentMethod === 'Split' ? form.splitPayments.map(s => ({ method: s.method, amount: Number(s.amount) })) : null,
     };
 
-    if (form.category === 'Salaries' && form.salaryTarget === 'coach' && form.salaryType === 'advance') {
+    if (form.category === 'Coach Loan' && form.coachId) {
       const coach = coaches.find(c => c.id === form.coachId);
       payload.description = form.description || `Advance given to ${coach?.name || 'Coach'}`;
+      payload.coach_id = form.coachId;
     }
 
     if (form.category === 'Salaries' && form.salaryTarget === 'coach' && form.coachId) {
@@ -224,23 +225,25 @@ export function ExpensesView() {
 
     createExpense.mutate(payload, {
       onSuccess: (createdExpense) => {
-        if (form.category === 'Salaries' && form.salaryTarget === 'coach') {
-          if (form.salaryType === 'advance' && form.coachId) {
-            adjustAdvance.mutate({ coachId: form.coachId, amount: Number(form.amount) });
-          } else if (form.salaryType === 'payroll') {
-            if (form.advanceConsumed > 0 && form.coachId) {
-              adjustAdvance.mutate({ coachId: form.coachId, amount: -form.advanceConsumed });
-            }
-            if (form.coachUnpaidIds?.length > 0) {
-              markSessionsPaid.mutate({ ids: form.coachUnpaidIds, expenseId: createdExpense.uuid });
-            }
-            if (form.includeCoachAdjustments && form.coachId) {
-              const now = new Date();
-              const monthDeductions = coachDeductions.filter(d => d.coach_id === form.coachId && new Date(d.date).getMonth() === now.getMonth() && new Date(d.date).getFullYear() === now.getFullYear());
-              monthDeductions.forEach(d => {
-                deleteCoachDeduction.mutate(d.id);
-              });
-            }
+        if (form.category === 'Coach Loan' && form.coachId) {
+          adjustAdvance.mutate({ coachId: form.coachId, amount: Number(form.amount) });
+        }
+        if (form.category === 'Salaries' && form.salaryTarget === 'coach' && form.coachId) {
+          const advanceChange = Number(form.amount) - (form.totalSessionsValue || 0);
+          if (advanceChange !== 0) {
+            adjustAdvance.mutate({ coachId: form.coachId, amount: advanceChange });
+          }
+          if (form.coachUnpaidIds?.length > 0) {
+            markSessionsPaid.mutate({ ids: form.coachUnpaidIds, expenseId: createdExpense.uuid });
+          }
+          if (form.includeCoachAdjustments && form.coachId) {
+            const now = new Date();
+            const monthDeductions = coachDeductions.filter(d => d.coach_id === form.coachId && new Date(d.date).getMonth() === now.getMonth() && new Date(d.date).getFullYear() === now.getFullYear());
+            monthDeductions.forEach(d => {
+              if (!d.reason.startsWith('[PAID]')) {
+                updateCoachDeduction.mutate({ id: d.id, updates: { reason: `[PAID] ${d.reason}` } });
+              }
+            });
           }
         }
         if (form.category === 'Salaries' && form.salaryTarget === 'employee' && form.employeeId && form.employeeBonus > 0) {
@@ -314,7 +317,7 @@ export function ExpensesView() {
 
     const advanceBalance = coach.advance_balance || 0;
     const advanceConsumed = Math.min(Math.max(0, owed), advanceBalance);
-    owed = Math.max(0, owed - advanceConsumed);
+    const suggestedCash = Math.max(0, owed - advanceConsumed);
 
     const ids = [...selectedPt, ...selectedMain, ...selectedSub].map(ci => ci.id);
     const parts = [];
@@ -326,15 +329,12 @@ export function ExpensesView() {
     if (finalIncludeAdjustments && netAdjustment !== 0) {
       partsStr += ` + ${netAdjustment > 0 ? 'Bonus' : 'Deduction'} (${netAdjustment} EGP)`;
     }
-    if (advanceConsumed > 0) {
-      partsStr += ` - ${advanceConsumed} EGP (Advance Burned)`;
-    }
 
     setForm(p => ({
       ...p,
       coachId,
-      amount: String(Math.max(0, owed)),
-      advanceConsumed,
+      amount: String(suggestedCash),
+      totalSessionsValue: owed,
       coachUnpaidIds: ids,
       ptPayCount: finalPtCount,
       groupMainPayCount: finalMainCount,
@@ -594,18 +594,6 @@ export function ExpensesView() {
                       </SelectContent>
                     </Select>
                   </div>
-                  {form.salaryTarget === 'coach' && (
-                    <div className="flex-1">
-                      <Label>Payment Type</Label>
-                      <Select value={form.salaryType} onValueChange={(v: 'payroll'|'advance') => setForm(p => ({ ...p, salaryType: v, amount: '', description: '' }))}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="payroll">Payroll Settlement</SelectItem>
-                          <SelectItem value="advance">Upfront Advance</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
                 </div>
 
                 {form.salaryTarget === 'coach' ? (
@@ -618,7 +606,7 @@ export function ExpensesView() {
                           </SelectContent>
                         </Select>
                       </div>
-                      {form.coachId && form.salaryType === 'payroll' && (() => {
+                      {form.coachId && (() => {
                         const monthDeductions = coachDeductions.filter(d => d.coach_id === form.coachId && new Date(d.date).getMonth() === new Date().getMonth() && new Date(d.date).getFullYear() === new Date().getFullYear());
                         const netAdjustment = monthDeductions.reduce((s, d) => s + d.amount, 0);
                         return (
@@ -770,6 +758,18 @@ export function ExpensesView() {
                   value={form.customCategory}
                   onChange={e => setForm(p => ({ ...p, customCategory: e.target.value }))}
                 />
+              </div>
+            )}
+
+            {form.category === 'Coach Loan' && (
+              <div className="space-y-1.5 mt-3">
+                <Label>Select Coach *</Label>
+                <Select value={form.coachId} onValueChange={(id) => setForm(p => ({ ...p, coachId: id }))}>
+                  <SelectTrigger><SelectValue placeholder="Select a coach..." /></SelectTrigger>
+                  <SelectContent>
+                    {coaches.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
             )}
 

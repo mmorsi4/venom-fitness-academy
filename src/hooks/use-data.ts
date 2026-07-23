@@ -210,6 +210,13 @@ export function useCoachCheckInsForMonth(month: number, year: number) {
   });
 }
 
+export function useAllUnpaidCoachCheckIns() {
+  return useQuery({
+    queryKey: ['unpaidCoachCheckIns'],
+    queryFn: q.getAllUnpaidCoachCheckIns
+  });
+}
+
 export function useCreateCoach() {
   const qc = useQueryClient();
   return useMutation({
@@ -618,6 +625,14 @@ export function useCreateCoachDeduction() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (deduction: Parameters<typeof q.createCoachDeduction>[0]) => q.createCoachDeduction(deduction),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['coachDeductions'] }),
+  });
+}
+
+export function useUpdateCoachDeduction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<Parameters<typeof q.createCoachDeduction>[0]> }) => q.updateCoachDeduction(id, updates),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['coachDeductions'] }),
   });
 }

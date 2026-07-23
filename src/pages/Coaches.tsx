@@ -16,13 +16,13 @@ import {
   useCoaches, useInvoices, useMembers, 
   useCreateCoach, useUpdateCoach, useDeleteCoach, 
   useCoachCheckInsToday,
-  useCoachCheckInsForMonth, useCoachHistory, useClasses,
+  useCoachCheckInsForMonth, useAllUnpaidCoachCheckIns, useCoachHistory, useClasses,
   useCoachDeductions, useCreateCoachDeduction, useDeleteCoachDeduction,
   useCreateExpense, useAdjustCoachAdvanceBalance, useExpenses, useDeleteExpense,
   useUpdateCoachCheckInTime, useDeleteCoachCheckIn, useCheckInCoach
 } from "@/hooks/use-data";
 import { toast } from "sonner";
-import { calculateCoachPayroll, validateEgyptPhone } from "@/lib/utils";
+import { calculateCoachPayroll, calculateCoachWallet, validateEgyptPhone } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import type { Coach } from "@/lib/types";
 
@@ -52,6 +52,7 @@ export default function Coaches() {
   const { data: members = [] } = useMembers();
   const { data: checkIns = [] } = useCoachCheckInsToday();
   const { data: checkInsThisMonth = [] } = useCoachCheckInsForMonth(new Date().getMonth(), new Date().getFullYear());
+  const { data: allUnpaidCheckIns = [] } = useAllUnpaidCoachCheckIns();
   const { data: classes = [] } = useClasses();
   const { data: coachDeductions = [] } = useCoachDeductions();
 
@@ -395,16 +396,23 @@ export default function Coaches() {
                       <p className="mb-0.5 opacity-80">Paid</p>
                       <p className="font-semibold">{(stats as any).paidAmount?.toLocaleString() || 0} EGP</p>
                     </div>
-                    <div className="bg-amber-500/10 text-amber-700 p-2 rounded-md">
-                      <p className="mb-0.5 opacity-80">Owed</p>
-                      <p className="font-bold">{stats.calculatedAmount.toLocaleString()} EGP</p>
-                    </div>
-                    {coach.advance_balance ? (
-                      <div className="bg-blue-500/10 text-blue-700 p-2 rounded-md">
-                        <p className="mb-0.5 opacity-80">Advance</p>
-                        <p className="font-bold">{coach.advance_balance.toLocaleString()} EGP</p>
-                      </div>
-                    ) : null}
+                    {(() => {
+                      const wallet = calculateCoachWallet(coach, allUnpaidCheckIns, coachDeductions);
+                      return (
+                        <>
+                          <div className={`p-2 rounded-md ${wallet.walletBalance >= 0 ? 'bg-amber-500/10 text-amber-700' : 'bg-red-500/10 text-red-700'}`}>
+                            <p className="mb-0.5 opacity-80">Owed (Wallet)</p>
+                            <p className="font-bold">{wallet.walletBalance.toLocaleString()} EGP</p>
+                          </div>
+                          {coach.advance_balance ? (
+                            <div className="bg-blue-500/10 text-blue-700 p-2 rounded-md">
+                              <p className="mb-0.5 opacity-80">Advance</p>
+                              <p className="font-bold">{coach.advance_balance.toLocaleString()} EGP</p>
+                            </div>
+                          ) : null}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               );
@@ -423,9 +431,9 @@ export default function Coaches() {
                 </span>
               </div>
               <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">Total Owed</span>
+                <span className="text-xs text-muted-foreground">Total Owed (Wallet)</span>
                 <span className="text-sm font-bold text-amber-600">
-                  {coaches.reduce((s, c) => s + calculateCoachPayroll(c, new Date().getMonth(), new Date().getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth, coachDeductions).calculatedAmount, 0).toLocaleString()} EGP
+                  {coaches.reduce((s, c) => s + calculateCoachWallet(c, allUnpaidCheckIns, coachDeductions).walletBalance, 0).toLocaleString()} EGP
                 </span>
               </div>
               <div className="flex flex-col">

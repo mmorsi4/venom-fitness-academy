@@ -442,6 +442,15 @@ export async function getCoachCheckInsForMonth(month: number, year: number) {
   return data as CoachCheckIn[];
 }
 
+export async function getAllUnpaidCoachCheckIns() {
+  const { data, error } = await supabase
+    .from('coach_check_ins')
+    .select('*')
+    .eq('is_paid', false);
+  if (error) throw error;
+  return data as CoachCheckIn[];
+}
+
 export async function checkInCoach(coachId: string, classId?: string, checkInDate?: string) {
   const today = new Date().toISOString().split('T')[0];
   const payload: any = { coach_id: coachId, check_in_date: checkInDate ?? today };
@@ -947,6 +956,12 @@ export async function getCoachDeductions() {
 
 export async function createCoachDeduction(deduction: Omit<CoachDeduction, 'id' | 'created_at'>) {
   const { data, error } = await supabase.from('coach_deductions').insert(deduction).select().single();
+  if (error) throw error;
+  return data as CoachDeduction;
+}
+
+export async function updateCoachDeduction(id: string, updates: Partial<CoachDeduction>) {
+  const { data, error } = await supabase.from('coach_deductions').update(updates).eq('id', id).select().single();
   if (error) throw error;
   return data as CoachDeduction;
 }
