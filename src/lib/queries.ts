@@ -733,7 +733,10 @@ export async function deleteClass(id: string) {
 
 
 export async function adjustCoachAdvanceBalance(id: string, amount: number) {
-  const { error } = await supabase.rpc('adjust_coach_advance', { coach_id: id, amount });
+  const { data: coach, error: fetchError } = await supabase.from('coaches').select('advance_balance').eq('id', id).single();
+  if (fetchError) throw fetchError;
+  const newBalance = (coach.advance_balance || 0) + amount;
+  const { error } = await supabase.from('coaches').update({ advance_balance: newBalance }).eq('id', id);
   if (error) throw error;
 }
 
