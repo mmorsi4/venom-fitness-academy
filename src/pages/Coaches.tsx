@@ -386,7 +386,7 @@ export default function Coaches() {
                       )}
                     </div>
                   )}
-                  <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className={`grid ${coach.advance_balance && coach.advance_balance > 0 ? 'grid-cols-4' : 'grid-cols-3'} gap-2 text-xs`}>
                     <div className="bg-muted/50 p-2 rounded-md">
                       <p className="text-muted-foreground mb-0.5">Expected</p>
                       <p className="font-semibold">{(stats as any).expectedAmount?.toLocaleString() || 0} EGP</p>
@@ -399,11 +399,17 @@ export default function Coaches() {
                       <p className="mb-0.5 opacity-80">Owed</p>
                       <p className="font-bold">{stats.calculatedAmount.toLocaleString()} EGP</p>
                     </div>
+                    {coach.advance_balance ? (
+                      <div className="bg-blue-500/10 text-blue-700 p-2 rounded-md">
+                        <p className="mb-0.5 opacity-80">Advance</p>
+                        <p className="font-bold">{coach.advance_balance.toLocaleString()} EGP</p>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               );
             })}
-            <div className="grid grid-cols-3 gap-2 pt-4 border-t border-border mt-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-4 border-t border-border mt-2">
               <div className="flex flex-col">
                 <span className="text-xs text-muted-foreground">Total Expected</span>
                 <span className="text-sm font-bold text-foreground">
@@ -418,8 +424,14 @@ export default function Coaches() {
               </div>
               <div className="flex flex-col">
                 <span className="text-xs text-muted-foreground">Total Owed</span>
-                <span className="text-base font-bold text-amber-600">
+                <span className="text-sm font-bold text-amber-600">
                   {coaches.reduce((s, c) => s + calculateCoachPayroll(c, new Date().getMonth(), new Date().getFullYear(), classes, checkInsThisMonth, monthlyRevenue, newMembersThisMonth, coachDeductions).calculatedAmount, 0).toLocaleString()} EGP
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs text-muted-foreground">Total Advances</span>
+                <span className="text-sm font-bold text-blue-600">
+                  {coaches.reduce((s, c) => s + (c.advance_balance || 0), 0).toLocaleString()} EGP
                 </span>
               </div>
             </div>
