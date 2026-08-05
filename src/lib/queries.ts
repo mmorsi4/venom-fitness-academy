@@ -425,19 +425,20 @@ export async function getCoachHistory(coachId: string) {
     .from('coach_check_ins')
     .select('*')
     .eq('coach_id', coachId)
+    .order('check_in_date', { ascending: false })
     .order('created_at', { ascending: false });
   if (error) throw error;
   return data as CoachCheckIn[];
 }
 
 export async function getCoachCheckInsForMonth(month: number, year: number) {
-  const startDate = new Date(year, month, 1).toISOString();
-  const endDate = new Date(year, month + 1, 0, 23, 59, 59).toISOString();
+  const startStr = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const endStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(new Date(year, month + 1, 0).getDate()).padStart(2, '0')}`;
   const { data, error } = await supabase
     .from('coach_check_ins')
     .select('*')
-    .gte('created_at', startDate)
-    .lte('created_at', endDate);
+    .gte('check_in_date', startStr)
+    .lte('check_in_date', endStr);
   if (error) throw error;
   return data as CoachCheckIn[];
 }

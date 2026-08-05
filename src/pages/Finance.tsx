@@ -47,6 +47,7 @@ export default function Finance() {
   const [isCoachPayrollExpanded, setIsCoachPayrollExpanded] = useState(false);
   const [isLiabilityExpanded, setIsLiabilityExpanded] = useState(false);
   const [clinicOnly, setClinicOnly] = useState(false);
+  const [showEomHistory, setShowEomHistory] = useState(false);
 
   // New Account Adjustments state
   const createInvoice = useCreateInvoice();
@@ -120,6 +121,45 @@ export default function Finance() {
   const globalCashBalance = (globalSettings?.finance_start_cash || 0) + calculateIncomeByMethod(applicableInvoices, 'Cash') - calculateExpenseByMethod(applicableExpenses, 'Cash') + calculateTransferNet('Cash');
   const globalVisaBalance = (globalSettings?.finance_start_visa || 0) + calculateIncomeByMethod(applicableInvoices, 'Visa') - calculateExpenseByMethod(applicableExpenses, 'Visa') + calculateTransferNet('Visa');
   const globalInstapayBalance = (globalSettings?.finance_start_instapay || 0) + calculateIncomeByMethod(applicableInvoices, 'InstaPay') - calculateExpenseByMethod(applicableExpenses, 'InstaPay') + calculateTransferNet('InstaPay');
+
+  // End of Selected Month Account Balances
+  const endOfSelectedMonth = new Date(filterYear, filterMonth + 1, 0, 23, 59, 59);
+  const eomInvoices = applicableInvoices.filter(i => new Date(i.created_at) <= endOfSelectedMonth);
+  const eomExpenses = applicableExpenses.filter(e => new Date(e.date) <= endOfSelectedMonth);
+  const eomTransfers = applicableTransfers.filter(t => new Date(t.date) <= endOfSelectedMonth);
+
+  const calculateEOMTransferNet = (method: 'Cash'|'Visa'|'InstaPay') => {
+    const transfersIn = eomTransfers.filter((t: any) => t.to_account === method).reduce((s: number, t: any) => s + t.amount, 0);
+    const transfersOut = eomTransfers.filter((t: any) => t.from_account === method).reduce((s: number, t: any) => s + t.amount, 0);
+    return transfersIn - transfersOut;
+  };
+
+  const eomCashBalance = (globalSettings?.finance_start_cash || 0) + calculateIncomeByMethod(eomInvoices, 'Cash') - calculateExpenseByMethod(eomExpenses, 'Cash') + calculateEOMTransferNet('Cash');
+  const eomVisaBalance = (globalSettings?.finance_start_visa || 0) + calculateIncomeByMethod(eomInvoices, 'Visa') - calculateExpenseByMethod(eomExpenses, 'Visa') + calculateEOMTransferNet('Visa');
+  const eomInstapayBalance = (globalSettings?.finance_start_instapay || 0) + calculateIncomeByMethod(eomInvoices, 'InstaPay') - calculateExpenseByMethod(eomExpenses, 'InstaPay') + calculateEOMTransferNet('InstaPay');
+  const eomTotalBalance = eomCashBalance + eomVisaBalance + eomInstapayBalance;
+  const globalTotalBalance = globalCashBalance + globalVisaBalance + globalInstapayBalance;
+
+  // Monthly closing balances for the selected year
+  const monthlyClosingBalances = MONTHS.map((monthName, mIdx) => {
+    const mDate = new Date(filterYear, mIdx + 1, 0, 23, 59, 59);
+    const isFuture = (mDate > new Date() && mIdx > new Date().getMonth() && filterYear === new Date().getFullYear()) || filterYear > new Date().getFullYear();
+    if (isFuture) {
+      return { month: monthName, cash: null, visa: null, instapay: null, total: null, isFuture: true };
+    }
+    const mInvoices = applicableInvoices.filter(i => new Date(i.created_at) <= mDate);
+    const mExpenses = applicableExpenses.filter(e => new Date(e.date) <= mDate);
+    const mTransfers = applicableTransfers.filter(t => new Date(t.date) <= mDate);
+    const calcMTransfer = (method: 'Cash'|'Visa'|'InstaPay') => {
+      const tin = mTransfers.filter((t: any) => t.to_account === method).reduce((s: number, t: any) => s + t.amount, 0);
+      const tout = mTransfers.filter((t: any) => t.from_account === method).reduce((s: number, t: any) => s + t.amount, 0);
+      return tin - tout;
+    };
+    const cBal = (globalSettings?.finance_start_cash || 0) + calculateIncomeByMethod(mInvoices, 'Cash') - calculateExpenseByMethod(mExpenses, 'Cash') + calcMTransfer('Cash');
+    const vBal = (globalSettings?.finance_start_visa || 0) + calculateIncomeByMethod(mInvoices, 'Visa') - calculateExpenseByMethod(mExpenses, 'Visa') + calcMTransfer('Visa');
+    const iBal = (globalSettings?.finance_start_instapay || 0) + calculateIncomeByMethod(mInvoices, 'InstaPay') - calculateExpenseByMethod(mExpenses, 'InstaPay') + calcMTransfer('InstaPay');
+    return { month: monthName, cash: cBal, visa: vBal, instapay: iBal, total: cBal + vBal + iBal, isFuture: false };
+  });
 
   // Filter invoices and expenses by selected month/year
   const filteredInvoices = invoices.filter(i => {
@@ -526,25 +566,119 @@ export default function Finance() {
       </div>
 
       {/* Global Account Balances */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="border-amber-200 shadow-sm bg-amber-50/30 cursor-pointer hover:bg-amber-50/60 transition-colors" onClick={() => openAdjustDialog('Cash')}>
-          <CardContent className="p-5">
-            <p className="text-sm font-semibold text-amber-800 uppercase tracking-wider mb-1">Cash Balance (All-Time)</p>
-            <p className="text-3xl font-bold text-amber-700">{globalCashBalance.toLocaleString()} EGP</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="border-amber-200 shadow-sm bg-amber-50/30 cursor-pointer hover:bg-amber-50/60 transition-colors text-amber-800" onClick={() => openAdjustDialog('Cash')}>
+          <CardContent className="p-4.5 flex flex-col justify-between h-full">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider mb-1 opacity-90">Cash Balance (Live)</p>
+              <p className="text-2xl lg:text-3xl font-bold text-amber-700">{globalCashBalance.toLocaleString()} EGP</p>
+            </div>
+            <div className="mt-3 pt-2.5 border-t border-amber-300/50 flex justify-between items-center text-xs font-medium text-amber-900">
+              <span className="opacity-80">End of {format(new Date(filterYear, filterMonth), 'MMM yyyy')}:</span>
+              <span className="font-bold">{eomCashBalance.toLocaleString()} EGP</span>
+            </div>
           </CardContent>
         </Card>
-        <Card className="border-blue-200 shadow-sm bg-blue-50/30 cursor-pointer hover:bg-blue-50/60 transition-colors" onClick={() => openAdjustDialog('Visa')}>
-          <CardContent className="p-5">
-            <p className="text-sm font-semibold text-blue-800 uppercase tracking-wider mb-1">Visa Balance (All-Time)</p>
-            <p className="text-3xl font-bold text-blue-700">{globalVisaBalance.toLocaleString()} EGP</p>
+        <Card className="border-blue-200 shadow-sm bg-blue-50/30 cursor-pointer hover:bg-blue-50/60 transition-colors text-blue-800" onClick={() => openAdjustDialog('Visa')}>
+          <CardContent className="p-4.5 flex flex-col justify-between h-full">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider mb-1 opacity-90">Visa Balance (Live)</p>
+              <p className="text-2xl lg:text-3xl font-bold text-blue-700">{globalVisaBalance.toLocaleString()} EGP</p>
+            </div>
+            <div className="mt-3 pt-2.5 border-t border-blue-300/50 flex justify-between items-center text-xs font-medium text-blue-900">
+              <span className="opacity-80">End of {format(new Date(filterYear, filterMonth), 'MMM yyyy')}:</span>
+              <span className="font-bold">{eomVisaBalance.toLocaleString()} EGP</span>
+            </div>
           </CardContent>
         </Card>
-        <Card className="border-violet-200 shadow-sm bg-violet-50/30 cursor-pointer hover:bg-violet-50/60 transition-colors" onClick={() => openAdjustDialog('InstaPay')}>
-          <CardContent className="p-5">
-            <p className="text-sm font-semibold text-violet-800 uppercase tracking-wider mb-1">InstaPay Balance (All-Time)</p>
-            <p className="text-3xl font-bold text-violet-700">{globalInstapayBalance.toLocaleString()} EGP</p>
+        <Card className="border-violet-200 shadow-sm bg-violet-50/30 cursor-pointer hover:bg-violet-50/60 transition-colors text-violet-800" onClick={() => openAdjustDialog('InstaPay')}>
+          <CardContent className="p-4.5 flex flex-col justify-between h-full">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider mb-1 opacity-90">InstaPay Balance (Live)</p>
+              <p className="text-2xl lg:text-3xl font-bold text-violet-700">{globalInstapayBalance.toLocaleString()} EGP</p>
+            </div>
+            <div className="mt-3 pt-2.5 border-t border-violet-300/50 flex justify-between items-center text-xs font-medium text-violet-900">
+              <span className="opacity-80">End of {format(new Date(filterYear, filterMonth), 'MMM yyyy')}:</span>
+              <span className="font-bold">{eomInstapayBalance.toLocaleString()} EGP</span>
+            </div>
           </CardContent>
         </Card>
+        <Card className="border-emerald-200 shadow-sm bg-emerald-50/30 text-emerald-800">
+          <CardContent className="p-4.5 flex flex-col justify-between h-full">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider mb-1 opacity-90">Total Portfolio (Live)</p>
+              <p className="text-2xl lg:text-3xl font-bold text-emerald-700">{globalTotalBalance.toLocaleString()} EGP</p>
+            </div>
+            <div className="mt-3 pt-2.5 border-t border-emerald-300/50 flex justify-between items-center text-xs font-medium text-emerald-900">
+              <span className="opacity-80">End of {format(new Date(filterYear, filterMonth), 'MMM yyyy')}:</span>
+              <span className="font-bold">{eomTotalBalance.toLocaleString()} EGP</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Monthly Account Balances Table */}
+      <div className="my-2">
+        <Button 
+          variant="outline" 
+          onClick={() => setShowEomHistory(prev => !prev)} 
+          className="w-full justify-between py-5 border-border/80 hover:bg-muted/50 transition-colors bg-card/60 shadow-sm"
+        >
+          <span className="font-semibold text-sm flex items-center gap-2 text-foreground">
+            <Activity className="w-4 h-4 text-primary" />
+            End-of-Month Closing Balances Table ({filterYear})
+          </span>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground font-normal">
+            <span>{showEomHistory ? 'Hide Table' : 'Show All Months'}</span>
+            {showEomHistory ? <ChevronDown className="w-4 h-4 rotate-180 transition-transform" /> : <ChevronDown className="w-4 h-4 transition-transform" />}
+          </div>
+        </Button>
+
+        {showEomHistory && (
+          <Card className="mt-3 overflow-hidden border-border shadow-sm animate-in fade-in-50 duration-200">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left border-collapse">
+                <thead className="bg-muted/60 text-muted-foreground text-xs uppercase font-medium border-b border-border">
+                  <tr>
+                    <th className="py-3 px-4">Month</th>
+                    <th className="py-3 px-4 text-right text-amber-700">Cash Closing</th>
+                    <th className="py-3 px-4 text-right text-blue-700">Visa Closing</th>
+                    <th className="py-3 px-4 text-right text-violet-700">InstaPay Closing</th>
+                    <th className="py-3 px-4 text-right text-emerald-700 font-bold">Total Portfolio</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {monthlyClosingBalances.map((m, idx) => {
+                    const isSelected = idx === filterMonth;
+                    if (m.isFuture) {
+                      return (
+                        <tr key={m.month} className="bg-muted/10 text-muted-foreground/50">
+                          <td className="py-2.5 px-4 font-medium">{m.month} {filterYear}</td>
+                          <td className="py-2.5 px-4 text-right">—</td>
+                          <td className="py-2.5 px-4 text-right">—</td>
+                          <td className="py-2.5 px-4 text-right">—</td>
+                          <td className="py-2.5 px-4 text-right">—</td>
+                        </tr>
+                      );
+                    }
+                    return (
+                      <tr key={m.month} className={`hover:bg-muted/40 transition-colors ${isSelected ? 'bg-primary/5 font-medium' : ''}`}>
+                        <td className="py-2.5 px-4 flex items-center gap-2">
+                          <span className="font-semibold">{m.month} {filterYear}</span>
+                          {isSelected && <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded font-bold">Selected</span>}
+                        </td>
+                        <td className="py-2.5 px-4 text-right font-medium text-amber-700">{m.cash?.toLocaleString()} EGP</td>
+                        <td className="py-2.5 px-4 text-right font-medium text-blue-700">{m.visa?.toLocaleString()} EGP</td>
+                        <td className="py-2.5 px-4 text-right font-medium text-violet-700">{m.instapay?.toLocaleString()} EGP</td>
+                        <td className="py-2.5 px-4 text-right font-bold text-emerald-700">{m.total?.toLocaleString()} EGP</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
       </div>
 
       {/* Global Yearly Line Chart (Top) */}
