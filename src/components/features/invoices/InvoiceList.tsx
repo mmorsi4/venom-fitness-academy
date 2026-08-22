@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { Invoice, Member } from "@/lib/types";
+import type { Invoice, Member, Class } from "@/lib/types";
+import { useClasses } from "@/hooks/use-data";
 
 interface InvoiceListProps {
   paginatedInvoices: Invoice[];
@@ -27,6 +28,7 @@ export function InvoiceList({
   pageSize, setPageSize, currentPage, setCurrentPage, totalPages,
   openEditInvoice, setConfirmDelete, setPaymentModalInvoice
 }: InvoiceListProps) {
+  const { data: classes = [] } = useClasses();
 
   const getActualPaidAmount = (inv: Invoice) => {
     const childrenPaid = invoices
@@ -54,6 +56,7 @@ export function InvoiceList({
             <TableHead>Member ID</TableHead>
             <TableHead>Member Name</TableHead>
             <TableHead>Package</TableHead>
+            <TableHead>Coach</TableHead>
             <TableHead>Creation Date</TableHead>
             <TableHead>Status & Payment</TableHead>
             <TableHead className="text-right">Amount</TableHead>
@@ -104,6 +107,9 @@ export function InvoiceList({
                   {inv.activation_date && (
                     <p className="text-[10px] text-blue-600 mt-0.5">Starts: {format(new Date(inv.activation_date), "dd MMM yyyy")}</p>
                   )}
+                </TableCell>
+                <TableCell>
+                  <p className="text-sm font-semibold">{classes.find(c => c.id === inv.class_id)?.coach_name || '-'}</p>
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {format(new Date(inv.created_at), "dd MMM yyyy")}

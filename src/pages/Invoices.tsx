@@ -40,6 +40,12 @@ const paymentStatuses: Record<string, string> = {
   unpaid: "bg-red-100 text-red-700 border-red-200",
 };
 
+function getSafeActivationDate(dateStr: string | undefined): string {
+  if (!dateStr) return new Date().toISOString();
+  if (dateStr === format(new Date(), "yyyy-MM-dd")) return new Date().toISOString();
+  return new Date(dateStr + 'T12:00:00').toISOString();
+}
+
 type DiscountMode = 'none' | 'group' | 'custom';
 type CustomDiscountType = 'fixed' | 'percentage';
 
@@ -473,7 +479,7 @@ export default function Invoices() {
           notes: form.notes.trim() || null,
           split_payments: memPaymentMethod === 'Split' ? memSplitPayments.map((sp: any) => ({ method: sp.method as any, amount: Number(sp.amount) || 0 })) : null,
           created_at: data.invoiceDate ? new Date(data.invoiceDate).toISOString() : new Date().toISOString(),
-          activation_date: data.activationDate ? new Date(data.activationDate).toISOString() : (data.invoiceDate ? new Date(data.invoiceDate).toISOString() : new Date().toISOString()),
+          activation_date: getSafeActivationDate(data.activationDate || data.invoiceDate),
           joint_invoice_group_id: jointGroupId,
           sessions_remaining: memPkg ? memPkg.sessions : null,
           freeze_days_remaining: memPkg ? memPkg.freeze_days : null,
@@ -558,7 +564,7 @@ export default function Invoices() {
       discount_amount: 0,
       discount_id: null,
       discount_description: null,
-      activation_date: paymentDate ? new Date(paymentDate).toISOString() : new Date().toISOString(),
+      activation_date: getSafeActivationDate(paymentDate),
       ...(paymentCustomId.trim() ? { id: paymentCustomId.trim() } : {}),
       ...(paymentDate ? { created_at: new Date(paymentDate).toISOString() } : {})
     } as any, {
@@ -655,7 +661,7 @@ export default function Invoices() {
         split_payments: editForm.paymentMethod === 'Split' ? editForm.splitPayments.map((sp: any) => ({ method: sp.method as any, amount: Number(sp.amount) || 0 })) : null,
         notes: editForm.notes.trim() || null,
         status: newStatus,
-        activation_date: editForm.activationDate ? new Date(editForm.activationDate).toISOString() : editInvoice.activation_date,
+        activation_date: editForm.activationDate ? getSafeActivationDate(editForm.activationDate) : editInvoice.activation_date,
         created_at: editForm.invoiceDate ? new Date(editForm.invoiceDate).toISOString() : editInvoice.created_at,
         id: editForm.customId.trim() || undefined,
       }

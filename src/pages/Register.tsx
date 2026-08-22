@@ -29,7 +29,7 @@ export default function Register() {
   const [isValid, setIsValid] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  const { data: classes = [] } = useClasses();
+
   const createMember = useCreateMember();
 
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
@@ -286,23 +286,6 @@ export default function Register() {
             </div>
           </div>
 
-          {/* Class */}
-          <div className="space-y-1.5">
-            <Label htmlFor="m-class">Class</Label>
-            <Select value={form.classId} onValueChange={v => setForm(p => ({ ...p, classId: v }))}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select Class" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">None</SelectItem>
-                {classes.map(c => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name ?? 'Class Name'} - {c.coach_name ?? 'Coach'}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
 
           <Button 
             className="w-full mt-6" 
