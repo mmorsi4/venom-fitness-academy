@@ -278,7 +278,7 @@ export function MemberList({
                         <Snowflake className="w-4 h-4" />
                       </button>
                     ) : null}
-                    {m.last_subscription_date && new Date(m.last_subscription_date).getTime() > Date.now() - 7 * 86400000 && (
+                    {m.last_subscription_date && (
                       <button
                         data-testid={`btn-upgrade-member-${m.uuid}`}
                         onClick={() => setUpgradeMemberState(m)}
