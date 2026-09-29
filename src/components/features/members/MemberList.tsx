@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import StatusBadge from "@/components/StatusBadge";
 import type { Member } from "@/lib/types";
+import { formatTo12Hour } from "@/lib/utils";
 
 function calcAge(birthDate?: string | null) {
   if (!birthDate) return null;
@@ -158,7 +159,7 @@ export function MemberList({
                         <span className="text-muted-foreground mx-1">-</span>
                         <span>{m.class_info.coach_name ?? 'No Coach'}</span>
                         <div className="text-xs text-muted-foreground mt-1">
-                          {m.class_info.schedules?.map(s => `${s?.day?.slice(0, 3)} ${s?.time}`).join(', ')}
+                          {m.class_info.schedules?.map(s => `${s?.day?.slice(0, 3)} ${formatTo12Hour(s?.time)}`).join(', ')}
                         </div>
                       </div>
                     ) : (

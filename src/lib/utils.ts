@@ -12,6 +12,18 @@ export function validateEgyptPhone(phone: string): boolean {
   return /^\d{11}$/.test(phone.trim());
 }
 
+export function formatTo12Hour(time24: string | undefined | null): string {
+  if (!time24) return '';
+  const parts = time24.split(':');
+  if (parts.length < 2) return time24;
+  let hour = parseInt(parts[0], 10);
+  if (isNaN(hour)) return time24;
+  const minutes = parts[1] || '00';
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  hour = hour % 12 || 12;
+  return `${hour}:${minutes.padStart(2, '0')} ${ampm}`;
+}
+
 export function calculateCoachPayroll(
   coach: Coach,
   month: number, // 0-indexed

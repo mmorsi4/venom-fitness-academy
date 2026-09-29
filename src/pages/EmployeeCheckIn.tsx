@@ -145,7 +145,7 @@ export default function EmployeeCheckIn() {
                           </Badge>
                         )}
                         <span className="text-xs text-muted-foreground">
-                          {format(new Date(ci.checked_in_at || ci.check_in_time || ci.created_at || ""), "HH:mm")}
+                          {format(new Date(ci.checked_in_at || ci.check_in_time || ci.created_at || ""), "hh:mm a")}
                         </span>
                       </div>
                     </div>

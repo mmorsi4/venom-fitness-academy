@@ -4,7 +4,7 @@ import {
   CalendarDays, Users, DollarSign, TrendingDown, TrendingUp,
   Clock, CheckCircle2, CreditCard, AlertTriangle
 } from "lucide-react";
-import { calculateIncomeByMethod, calculateExpenseByMethod } from "../lib/utils";
+import { calculateIncomeByMethod, calculateExpenseByMethod, formatTo12Hour } from "../lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -277,12 +277,12 @@ export default function DailyReport() {
               <div className="space-y-2">
                 {classesForDay.map(cls => {
                   const pct = Math.round((cls.attendance_count / cls.capacity) * 100);
-                  // Find the schedule for this day to show the time
-                  const time = cls.schedules?.find(s => s.day === dayOfWeek)?.time ?? '--:--';
+                  const rawTime = cls.schedules?.find(s => s.day === dayOfWeek)?.time;
+                  const time = rawTime ? formatTo12Hour(rawTime) : '--:--';
                   return (
                     <div key={cls.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border">
-                      <div className="text-center min-w-[44px]">
-                        <p className="text-sm font-bold text-foreground">{time}</p>
+                      <div className="text-center min-w-[70px]">
+                        <p className="text-xs font-bold text-foreground">{time}</p>
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-foreground">{cls.name}</p>

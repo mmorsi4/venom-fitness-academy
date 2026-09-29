@@ -349,7 +349,7 @@ export default function Employees() {
                                 className="h-8 text-xs max-w-[200px]" 
                               />
                             ) : (
-                              format(new Date(ci.checked_in_at || ci.check_in_time || ci.created_at || ""), "dd MMM yyyy HH:mm")
+                              format(new Date(ci.checked_in_at || ci.check_in_time || ci.created_at || ""), "dd MMM yyyy hh:mm a")
                             )}
                           </td>
                           <td className="p-3">
@@ -361,7 +361,7 @@ export default function Employees() {
                                 className="h-8 text-xs max-w-[200px]" 
                               />
                             ) : (
-                              ci.check_out_time ? format(new Date(ci.check_out_time), "dd MMM yyyy HH:mm") : "—"
+                              ci.check_out_time ? format(new Date(ci.check_out_time), "dd MMM yyyy hh:mm a") : "—"
                             )}
                           </td>
                           <td className="p-3">
