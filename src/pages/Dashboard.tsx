@@ -19,10 +19,7 @@ export default function Dashboard() {
   const expired = members.filter(m => m.status === 'expired');
   const withDebt = members.filter(m => m.status === 'has_debt');
   const newLeads = leads.filter(l => l.status === 'New');
-  const unpaidInvoices = invoices.filter(i => {
-    const remaining = (i.total_amount || 0) - (i.paid_amount || 0);
-    return remaining > 0 || i.status === 'partial' || i.status === 'unpaid';
-  });
+  const unpaidInvoices = invoices.filter(i => i.status !== 'paid');
   const outstandingAmount = unpaidInvoices.reduce((sum, i) => sum + Math.max(0, (i.total_amount || 0) - (i.paid_amount || 0)), 0);
 
   const todayClasses = classes.slice(0, 4);

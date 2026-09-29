@@ -32,20 +32,19 @@ export default function CheckIn() {
   const memberDebts = useMemo(() => {
     const map = new Map<string, { totalDebt: number; unpaidInvoices: typeof invoices }>();
     for (const inv of invoices) {
-      const paid = Number(inv.paid_amount) || 0;
-      const total = Number(inv.total_amount) || 0;
-      const remaining = Math.max(0, total - paid);
-      if (remaining > 0 || inv.status === 'unpaid' || inv.status === 'partial') {
-        const debtAmt = remaining > 0 ? remaining : total;
-        const addDebt = (key: string) => {
-          if (!key) return;
-          const current = map.get(key) || { totalDebt: 0, unpaidInvoices: [] };
-          current.totalDebt += debtAmt;
-          current.unpaidInvoices.push(inv);
-          map.set(key, current);
-        };
-        if (inv.member_id) addDebt(String(inv.member_id));
-        if (inv.member_name) addDebt(inv.member_name.toLowerCase().trim());
+      if (inv.status !== 'paid') {
+        const remaining = Math.max(0, (Number(inv.total_amount) || 0) - (Number(inv.paid_amount) || 0));
+        if (remaining > 0) {
+          const addDebt = (key: string) => {
+            if (!key) return;
+            const current = map.get(key) || { totalDebt: 0, unpaidInvoices: [] };
+            current.totalDebt += remaining;
+            current.unpaidInvoices.push(inv);
+            map.set(key, current);
+          };
+          if (inv.member_id) addDebt(String(inv.member_id));
+          if (inv.member_name) addDebt(inv.member_name.toLowerCase().trim());
+        }
       }
     }
     return map;

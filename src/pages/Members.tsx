@@ -122,17 +122,12 @@ export default function Members() {
   const memberDebts = useMemo(() => {
     const map = new Map<string, number>();
     for (const inv of invoices) {
-      const paid = Number(inv.paid_amount) || 0;
-      const total = Number(inv.total_amount) || 0;
-      const remaining = Math.max(0, total - paid);
-      if (remaining > 0 || inv.status === 'unpaid' || inv.status === 'partial') {
-        const debtAmt = remaining > 0 ? remaining : total;
-        const addDebt = (key: string) => {
-          if (!key) return;
-          map.set(key, (map.get(key) || 0) + debtAmt);
-        };
-        if (inv.member_id) addDebt(String(inv.member_id));
-        if (inv.member_name) addDebt(inv.member_name.toLowerCase().trim());
+      if (inv.status !== 'paid') {
+        const remaining = Math.max(0, (Number(inv.total_amount) || 0) - (Number(inv.paid_amount) || 0));
+        if (remaining > 0) {
+          if (inv.member_id) map.set(String(inv.member_id), (map.get(String(inv.member_id)) || 0) + remaining);
+          if (inv.member_name) map.set(inv.member_name.toLowerCase().trim(), (map.get(inv.member_name.toLowerCase().trim()) || 0) + remaining);
+        }
       }
     }
     return map;
