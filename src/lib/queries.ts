@@ -488,3 +488,279 @@ export async function deleteClass(id: string) {
   const { error } = await supabase.from('classes').delete().eq('id', id);
   if (error) throw error;
 }
+
+// ── Employees ───────────────────────────────────────────────
+
+export async function getEmployees() {
+  const { data, error } = await supabase
+    .from('employees')
+    .select('*')
+    .order('name');
+  if (error) throw error;
+  return data as Employee[];
+}
+
+export async function createEmployee(emp: Omit<Employee, 'id' | 'created_at'>) {
+  const { data, error } = await supabase
+    .from('employees')
+    .insert(emp)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Employee;
+}
+
+export async function updateEmployee(id: string, updates: Partial<Employee>) {
+  const { data, error } = await supabase
+    .from('employees')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Employee;
+}
+
+export async function deleteEmployee(id: string) {
+  const { error } = await supabase
+    .from('employees')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
+// ── Employee Lateness Rules ─────────────────────────────────
+
+export async function getEmployeeLatenessRules() {
+  const { data, error } = await supabase
+    .from('employee_lateness_rules')
+    .select('*')
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) {
+    // Return default rules if table empty
+    return {
+      id: 'default',
+      grace_period_minutes: 15,
+      deduction_15m_days: 0.25,
+      deduction_20m_days: 0.50,
+      deduction_30m_plus_days: 1.00,
+      updated_at: new Date().toISOString(),
+    } as EmployeeLatenessRules;
+  }
+  return data as EmployeeLatenessRules;
+}
+
+export async function updateEmployeeLatenessRules(updates: Partial<EmployeeLatenessRules>) {
+  const { id, updated_at, ...clean } = updates as any;
+  // If id is default or doesn't exist, try upsert
+  const { data: existing } = await supabase
+    .from('employee_lateness_rules')
+    .select('id')
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from('employee_lateness_rules')
+      .update({ ...clean, updated_at: new Date().toISOString() })
+      .eq('id', existing.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as EmployeeLatenessRules;
+  } else {
+    const { data, error } = await supabase
+      .from('employee_lateness_rules')
+      .insert({ ...clean, updated_at: new Date().toISOString() })
+      .select()
+      .single();
+    if (error) throw error;
+    return data as EmployeeLatenessRules;
+  }
+}
+
+// ── Employee Attendance ─────────────────────────────────────
+
+export async function getEmployeeAttendances(date?: string) {
+  let query = supabase
+    .from('employee_attendances')
+    .select('*, employees(*)');
+
+  if (date) {
+    query = query.eq('date', date);
+  }
+
+  const { data, error } = await query.order('check_in_time', { ascending: false });
+  if (error) throw error;
+
+  return (data ?? []).map((row: any) => ({
+    ...row,
+    employee: row.employees,
+    employees: undefined,
+  })) as EmployeeAttendance[];
+}
+
+export async function checkInEmployee(args: {
+  employeeId: string;
+  minutesLate?: number;
+  status?: AttendanceStatus;
+  notes?: string;
+  autoDeduct?: {
+    daysDeducted: number;
+    amountDeducted: number;
+    reason: string;
+  };
+}) {
+  const today = new Date().toISOString().split('T')[0];
+  const { data: attendance, error: attError } = await supabase
+    .from('employee_attendances')
+    .insert({
+      employee_id: args.employeeId,
+      check_in_time: new Date().toISOString(),
+      date: today,
+      minutes_late: args.minutesLate ?? 0,
+      status: args.status ?? 'on_time',
+      notes: args.notes ?? null,
+    })
+    .select()
+    .single();
+
+  if (attError) throw attError;
+
+  // If there is an auto-deduction, insert into employee_deduction_logs
+  if (args.autoDeduct && args.autoDeduct.daysDeducted > 0) {
+    await supabase.from('employee_deduction_logs').insert({
+      employee_id: args.employeeId,
+      attendance_id: attendance.id,
+      deduction_type: 'auto_late',
+      days_deducted: args.autoDeduct.daysDeducted,
+      amount_deducted: args.autoDeduct.amountDeducted,
+      reason: args.autoDeduct.reason,
+      date: today,
+      is_reverted: false,
+    });
+  }
+
+  return attendance as EmployeeAttendance;
+}
+
+export async function checkOutEmployee(attendanceId: string) {
+  const { data, error } = await supabase
+    .from('employee_attendances')
+    .update({ check_out_time: new Date().toISOString() })
+    .eq('id', attendanceId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as EmployeeAttendance;
+}
+
+// ── Employee Deduction Logs ─────────────────────────────────
+
+export async function getEmployeeDeductionLogs() {
+  const { data, error } = await supabase
+    .from('employee_deduction_logs')
+    .select('*, employees(*)')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+
+  return (data ?? []).map((row: any) => ({
+    ...row,
+    employee: row.employees,
+    employees: undefined,
+  })) as EmployeeDeductionLog[];
+}
+
+export async function createEmployeeDeductionLog(deduction: Omit<EmployeeDeductionLog, 'id' | 'created_at' | 'employee' | 'is_reverted' | 'reverted_by' | 'reverted_at' | 'revert_reason'>) {
+  const { data, error } = await supabase
+    .from('employee_deduction_logs')
+    .insert({
+      ...deduction,
+      is_reverted: false,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as EmployeeDeductionLog;
+}
+
+export async function revertEmployeeDeductionLog(args: {
+  id: string;
+  revertedBy?: string;
+  revertReason?: string;
+}) {
+  const { data, error } = await supabase
+    .from('employee_deduction_logs')
+    .update({
+      is_reverted: true,
+      reverted_by: args.revertedBy ?? null,
+      reverted_at: new Date().toISOString(),
+      revert_reason: args.revertReason ?? 'Reverted by Admin',
+    })
+    .eq('id', args.id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as EmployeeDeductionLog;
+}
+
+// ── Employee Payroll Settlements ───────────────────────────
+
+export async function getEmployeePayrollSettlements() {
+  const { data, error } = await supabase
+    .from('employee_payroll_settlements')
+    .select('*')
+    .order('settled_at', { ascending: false });
+  if (error) throw error;
+  return data as EmployeePayrollSettlement[];
+}
+
+export async function createEmployeePayrollSettlement(settlement: {
+  employee_id: string;
+  employee_name: string;
+  period_month: number;
+  period_year: number;
+  base_salary: number;
+  total_days_deducted: number;
+  total_deductions_amount: number;
+  bonus_amount: number;
+  net_salary: number;
+  payment_method: PaymentMethod;
+  settled_by?: string;
+  notes?: string;
+}) {
+  const today = new Date().toISOString().split('T')[0];
+  
+  // 1. Create an official Expense record in public.expenses
+  const { data: exp, error: expErr } = await supabase
+    .from('expenses')
+    .insert({
+      category: 'Salaries',
+      amount: settlement.net_salary,
+      description: `Payroll settlement for ${settlement.employee_name} (${settlement.period_month}/${settlement.period_year}) - Base: ${settlement.base_salary} EGP, Deductions: -${settlement.total_deductions_amount} EGP, Bonus: +${settlement.bonus_amount} EGP`,
+      date: today,
+      liability_id: null,
+    })
+    .select()
+    .single();
+
+  if (expErr) throw expErr;
+
+  // 2. Insert the settlement linking to the expense
+  const { data, error } = await supabase
+    .from('employee_payroll_settlements')
+    .insert({
+      ...settlement,
+      expense_id: exp.id,
+      settled_by: settlement.settled_by ?? null,
+      settled_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  return { settlement: data as EmployeePayrollSettlement, expense: exp };
+}

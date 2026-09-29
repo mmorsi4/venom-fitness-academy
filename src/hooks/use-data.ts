@@ -19,11 +19,16 @@ export const queryKeys = {
   leads:          ['leads']         as const,
   expenses:       ['expenses']      as const,
   liabilities:    ['liabilities']   as const,
-  auditLogs: ['auditLogs'] as const,
-  todayCheckIns: ['todayCheckIns'] as const,
-  classes: ['classes'] as const,
-  sports: ['sports'] as const,
-  profiles: ['profiles'] as const,
+  auditLogs:      ['auditLogs']     as const,
+  todayCheckIns:  ['todayCheckIns'] as const,
+  classes:        ['classes']       as const,
+  sports:         ['sports']        as const,
+  profiles:       ['profiles']      as const,
+  employees:      ['employees']     as const,
+  employeeLatenessRules: ['employeeLatenessRules'] as const,
+  employeeAttendances: ['employeeAttendances'] as const,
+  employeeDeductionLogs: ['employeeDeductionLogs'] as const,
+  employeePayrollSettlements: ['employeePayrollSettlements'] as const,
 };
 
 // ── Members ─────────────────────────────────────────────────
@@ -370,3 +375,118 @@ export function useDeleteClass() {
 export function useProfiles() {
   return useQuery({ queryKey: queryKeys.profiles, queryFn: q.getProfiles });
 }
+
+// ── Employees ───────────────────────────────────────────────
+
+export function useEmployees() {
+  return useQuery({ queryKey: queryKeys.employees, queryFn: q.getEmployees });
+}
+
+export function useCreateEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (emp: Parameters<typeof q.createEmployee>[0]) => q.createEmployee(emp),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.employees }),
+  });
+}
+
+export function useUpdateEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Parameters<typeof q.updateEmployee>[1] }) =>
+      q.updateEmployee(id, updates),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.employees }),
+  });
+}
+
+export function useDeleteEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => q.deleteEmployee(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.employees }),
+  });
+}
+
+// ── Employee Lateness Rules ─────────────────────────────────
+
+export function useEmployeeLatenessRules() {
+  return useQuery({ queryKey: queryKeys.employeeLatenessRules, queryFn: q.getEmployeeLatenessRules });
+}
+
+export function useUpdateEmployeeLatenessRules() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (updates: Parameters<typeof q.updateEmployeeLatenessRules>[0]) =>
+      q.updateEmployeeLatenessRules(updates),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.employeeLatenessRules }),
+  });
+}
+
+// ── Employee Attendances ────────────────────────────────────
+
+export function useEmployeeAttendances(date?: string) {
+  return useQuery({
+    queryKey: date ? [...queryKeys.employeeAttendances, date] : queryKeys.employeeAttendances,
+    queryFn: () => q.getEmployeeAttendances(date),
+  });
+}
+
+export function useCheckInEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: q.checkInEmployee,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.employeeAttendances });
+      qc.invalidateQueries({ queryKey: queryKeys.employeeDeductionLogs });
+    },
+  });
+}
+
+export function useCheckOutEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: q.checkOutEmployee,
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.employeeAttendances }),
+  });
+}
+
+// ── Employee Deduction Logs ─────────────────────────────────
+
+export function useEmployeeDeductionLogs() {
+  return useQuery({ queryKey: queryKeys.employeeDeductionLogs, queryFn: q.getEmployeeDeductionLogs });
+}
+
+export function useCreateEmployeeDeductionLog() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: q.createEmployeeDeductionLog,
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.employeeDeductionLogs }),
+  });
+}
+
+export function useRevertEmployeeDeductionLog() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: q.revertEmployeeDeductionLog,
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.employeeDeductionLogs }),
+  });
+}
+
+// ── Employee Payroll Settlements ───────────────────────────
+
+export function useEmployeePayrollSettlements() {
+  return useQuery({ queryKey: queryKeys.employeePayrollSettlements, queryFn: q.getEmployeePayrollSettlements });
+}
+
+export function useCreateEmployeePayrollSettlement() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: q.createEmployeePayrollSettlement,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.employeePayrollSettlements });
+      qc.invalidateQueries({ queryKey: queryKeys.expenses });
+      qc.invalidateQueries({ queryKey: queryKeys.employeeDeductionLogs });
+    },
+  });
+}
+

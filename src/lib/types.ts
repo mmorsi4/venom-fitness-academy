@@ -6,7 +6,7 @@
 // ── Enums ──────────────────────────────────────────────────────
 
 export type UserRole = 'admin' | 'reception' | 'sales';
-export type MemberStatus = 'active' | 'expired' | 'expiring_soon' | 'has_debt' | 'new';
+export type MemberStatus = 'active' | 'inactive' | 'expired' | 'expiring_soon' | 'has_debt' | 'new' | 'frozen';
 export type Gender = 'male' | 'female' | 'other';
 export type InvoiceStatus = 'paid' | 'partial' | 'unpaid';
 export type PaymentMethod = 'Cash' | 'Visa' | 'InstaPay';
@@ -218,6 +218,89 @@ export interface DiscountInvoice {
   invoice_id: string;
 }
 
+// ── Employee Module Types ─────────────────────────────────────
+
+export type EmployeeSalaryType = 'monthly' | 'hourly' | 'daily';
+export type EmployeeStatus = 'active' | 'inactive';
+export type AttendanceStatus = 'on_time' | 'late' | 'excused' | 'absent';
+export type DeductionType = 'auto_late' | 'manual' | 'absence';
+
+export interface Employee {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string;
+  job_title: string;
+  salary_type: EmployeeSalaryType;
+  base_salary: number;
+  shift_start: string; // e.g. "09:00"
+  shift_end: string;   // e.g. "17:00"
+  work_days_per_month: number;
+  status: EmployeeStatus;
+  created_at: string;
+}
+
+export interface EmployeeLatenessRules {
+  id: string;
+  grace_period_minutes: number;
+  deduction_15m_days: number;
+  deduction_20m_days: number;
+  deduction_30m_plus_days: number;
+  updated_at: string;
+}
+
+export interface EmployeeAttendance {
+  id: string;
+  employee_id: string;
+  check_in_time: string;
+  check_out_time: string | null;
+  date: string;
+  minutes_late: number;
+  status: AttendanceStatus;
+  notes: string | null;
+  created_at: string;
+  // Joined
+  employee?: Employee;
+}
+
+export interface EmployeeDeductionLog {
+  id: string;
+  employee_id: string;
+  attendance_id: string | null;
+  deduction_type: DeductionType;
+  days_deducted: number;
+  amount_deducted: number;
+  reason: string;
+  date: string;
+  is_reverted: boolean;
+  reverted_by: string | null;
+  reverted_at: string | null;
+  revert_reason: string | null;
+  created_by: string | null;
+  created_at: string;
+  // Joined
+  employee?: Employee;
+}
+
+export interface EmployeePayrollSettlement {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  period_month: number;
+  period_year: number;
+  base_salary: number;
+  total_days_deducted: number;
+  total_deductions_amount: number;
+  bonus_amount: number;
+  net_salary: number;
+  expense_id: string;
+  payment_method: PaymentMethod;
+  settled_by: string | null;
+  settled_at: string;
+  notes: string | null;
+  created_at: string;
+}
+
 // ── Supabase Database type (for typed client) ──────────────────
 
 export interface Database {
@@ -236,9 +319,14 @@ export interface Database {
       check_ins: { Row: CheckIn; Insert: Omit<CheckIn, 'id' | 'created_at'>; Update: never };
       coach_check_ins: { Row: CoachCheckIn; Insert: Omit<CoachCheckIn, 'id' | 'created_at'>; Update: never };
       classes: { Row: Class; Insert: Omit<Class, 'id' | 'created_at' | 'sport_name' | 'coach_name'>; Update: Partial<Omit<Class, 'id' | 'created_at' | 'sport_name' | 'coach_name'>> };
-      sports: { Row: Sport; Insert: Omit<Sport, 'id' | 'created_at'>; Update: Partial<Omit<Sport, 'id' | 'created_at'>> };
+      sports: { Row: Sport; Insert: Omit<Sport, 'id' | 'created_at'>; Update: Partial<Sport>; };
       discount_members: { Row: DiscountMember; Insert: DiscountMember; Update: never };
       discount_invoices: { Row: DiscountInvoice; Insert: DiscountInvoice; Update: never };
+      employees: { Row: Employee; Insert: Omit<Employee, 'id' | 'created_at'>; Update: Partial<Omit<Employee, 'id' | 'created_at'>> };
+      employee_lateness_rules: { Row: EmployeeLatenessRules; Insert: Omit<EmployeeLatenessRules, 'id' | 'updated_at'>; Update: Partial<Omit<EmployeeLatenessRules, 'id' | 'updated_at'>> };
+      employee_attendances: { Row: EmployeeAttendance; Insert: Omit<EmployeeAttendance, 'id' | 'created_at'>; Update: Partial<Omit<EmployeeAttendance, 'id' | 'created_at'>> };
+      employee_deduction_logs: { Row: EmployeeDeductionLog; Insert: Omit<EmployeeDeductionLog, 'id' | 'created_at'>; Update: Partial<Omit<EmployeeDeductionLog, 'id' | 'created_at'>> };
+      employee_payroll_settlements: { Row: EmployeePayrollSettlement; Insert: Omit<EmployeePayrollSettlement, 'id' | 'created_at'>; Update: Partial<Omit<EmployeePayrollSettlement, 'id' | 'created_at'>> };
     };
     Functions: {
       check_in_member: {

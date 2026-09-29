@@ -22,6 +22,7 @@ const ALL_NAV_ITEMS = [
   { href: "/finance", label: "Finance", icon: DollarSign },
   { href: "/daily", label: "Daily Report", icon: CalendarDays },
   { href: "/reports", label: "Member Reports", icon: BarChart2 },
+  { href: "/employees", label: "Employees", icon: UserCheck },
   { href: "/coaches", label: "Coaches", icon: Dumbbell },
   { href: "/classes", label: "Classes", icon: Calendar },
   { href: "/sports", label: "Sports", icon: Trophy },

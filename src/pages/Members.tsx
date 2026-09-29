@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { Plus, Search, Phone, Calendar, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,9 +26,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog } from "@/hooks/use-data";
+import { useMembers, useCoaches, useClasses, useInvoices, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
-import type { Member, Gender } from "@/lib/types";
+import type { Member, Gender, MemberStatus } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import { toast } from "sonner";
 import { format, differenceInYears, parseISO } from "date-fns";
@@ -39,12 +39,23 @@ const GENDERS: { value: Gender; label: string }[] = [
   { value: "other", label: "Other" },
 ];
 
+const MEMBER_STATUS_OPTIONS: { value: MemberStatus; label: string }[] = [
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+  { value: "expiring_soon", label: "Expiring Soon" },
+  { value: "expired", label: "Expired" },
+  { value: "has_debt", label: "Has Debt" },
+  { value: "new", label: "New" },
+  { value: "frozen", label: "Frozen" },
+];
+
 interface MemberForm {
   name: string;
   phone: string;
   parentPhone: string;
   birthDate: string;
   gender: Gender | "";
+  status: MemberStatus;
   id: number;
   classId: string;
   isClinicVisitor: boolean;
@@ -60,7 +71,7 @@ interface MemberForm {
 
 const emptyForm: MemberForm = {
   name: "", phone: "", parentPhone: "", birthDate: "",
-  gender: "", classId: "", id: 0, isClinicVisitor: false,
+  gender: "", status: "new", classId: "", id: 0, isClinicVisitor: false,
   sessions_remaining: "0", total_sessions: "0",
   freeze_days_used: "0", freeze_days_total: "0",
   invitations_remaining: "0", inbody_sessions_remaining: "0"
@@ -70,6 +81,7 @@ function memberToForm(m: Member): MemberForm {
   return {
     name: m.name, phone: m.phone, parentPhone: m.parent_phone ?? "",
     birthDate: m.birth_date ?? "", gender: m.gender ?? "",
+    status: m.status || "active",
     id: m.id,
     classId: m.class_id ?? "",
     isClinicVisitor: m.id === -1,
@@ -91,6 +103,7 @@ export default function Members() {
   const { data: members = [] } = useMembers();
   const { data: coaches = [] } = useCoaches();
   const { data: classes = [] } = useClasses();
+  const { data: invoices = [] } = useInvoices();
   const createMember = useCreateMember();
   const updateMember = useUpdateMember();
   const deleteMember = useDeleteMember();
@@ -105,23 +118,44 @@ export default function Members() {
   const [form, setForm] = useState<MemberForm>(emptyForm);
   const [confirmDelete, setConfirmDelete] = useState<Member | null>(null);
 
+  // Calculate outstanding debts per member from unpaid/partial invoices
+  const memberDebts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const inv of invoices) {
+      if (inv.status !== 'paid') {
+        const remaining = Math.max(0, inv.total_amount - inv.paid_amount);
+        if (remaining > 0) {
+          map.set(inv.member_id, (map.get(inv.member_id) || 0) + remaining);
+        }
+      }
+    }
+    return map;
+  }, [invoices]);
+
   const filtered = members.filter(m => {
     const q = query.toLowerCase();
     let matchSearch = m.name.toLowerCase().includes(q) || m.phone.includes(query);
     // Allow ID search only for non-clinic visitors
     if (m.id !== -1) {
-      matchSearch = matchSearch || m.id.toString().includes(q)
+      matchSearch = matchSearch || m.id.toString().includes(q);
     }
-    const matchStatus = statusFilter === "all" || m.status === statusFilter;
+    const hasDebt = m.status === 'has_debt' || (memberDebts.get(m.uuid) || 0) > 0;
+    const matchStatus =
+      statusFilter === "all" ? true :
+      statusFilter === "has_debt" ? hasDebt :
+      m.status === statusFilter;
+
     return matchSearch && matchStatus;
   });
 
   const counts: Record<string, number> = {
     all: members.length,
     active: members.filter(m => m.status === 'active').length,
+    inactive: members.filter(m => m.status === 'inactive').length,
     expiring_soon: members.filter(m => m.status === 'expiring_soon').length,
     expired: members.filter(m => m.status === 'expired').length,
-    has_debt: members.filter(m => m.status === 'has_debt').length,
+    has_debt: members.filter(m => m.status === 'has_debt' || (memberDebts.get(m.uuid) || 0) > 0).length,
+    frozen: members.filter(m => m.status === 'frozen').length,
     new: members.filter(m => m.status === 'new').length,
   };
 
@@ -153,6 +187,7 @@ export default function Members() {
         parent_phone: form.parentPhone.trim() || null,
         birth_date: form.birthDate || null,
         gender: (form.gender as Gender) || null,
+        status: form.status,
         class_id: form.isClinicVisitor || form.classId === '__none__' ? null : (form.classId || null),
         sessions_remaining: Number(form.sessions_remaining) || 0,
         total_sessions: Number(form.total_sessions) || 0,
@@ -181,7 +216,7 @@ export default function Members() {
         birth_date: form.birthDate || null,
         gender: (form.gender as Gender) || null,
         class_id: form.isClinicVisitor || form.classId === '__none__' ? null : (form.classId || null),
-        status: 'new',
+        status: form.status || 'new',
         sessions_remaining: 0,
         total_sessions: 0,
         expires_at: null,
@@ -251,9 +286,11 @@ export default function Members() {
           <TabsList className="h-9 flex-wrap">
             <TabsTrigger value="all" className="text-xs">All ({counts.all})</TabsTrigger>
             <TabsTrigger value="active" className="text-xs">Active ({counts.active})</TabsTrigger>
+            <TabsTrigger value="inactive" className="text-xs">Inactive ({counts.inactive})</TabsTrigger>
             <TabsTrigger value="expiring_soon" className="text-xs">Expiring ({counts.expiring_soon})</TabsTrigger>
             <TabsTrigger value="expired" className="text-xs">Expired ({counts.expired})</TabsTrigger>
             <TabsTrigger value="has_debt" className="text-xs">Debt ({counts.has_debt})</TabsTrigger>
+            <TabsTrigger value="frozen" className="text-xs">Frozen ({counts.frozen})</TabsTrigger>
             <TabsTrigger value="new" className="text-xs">New ({counts.new})</TabsTrigger>
           </TabsList>
         </Tabs>
@@ -283,6 +320,7 @@ export default function Members() {
               {filtered.map(m => {
                 const age = calcAge(m.birth_date);
                 const freezeRemaining = (m.freeze_days_total || 0) - (m.freeze_days_used || 0);
+                const debtAmount = memberDebts.get(m.uuid) || 0;
                 return (
                   <TableRow key={m.uuid} data-testid={`member-row-${m.uuid}`}>
                     <TableCell>
@@ -291,9 +329,14 @@ export default function Members() {
                           <span className="text-sm font-bold">{m.name.charAt(0)}</span>
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-semibold text-foreground text-sm">{m.name}</p>
                             <StatusBadge status={m.status} />
+                            {debtAmount > 0 && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200">
+                                Due: {debtAmount.toLocaleString()} EGP
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-muted-foreground">
                             {m.id === -1 ? (
@@ -488,6 +531,23 @@ export default function Members() {
                       <SelectItem key={c.id} value={c.id}>
                         {c.sport_name ?? 'Sport'} - {c.coach_name ?? 'Coach'} ({c.schedules?.length || 0} slots)
                       </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Member Status (for editing) */}
+            {editMember && (
+              <div className="space-y-1.5">
+                <Label htmlFor="m-status">Membership Status</Label>
+                <Select value={form.status} onValueChange={v => setForm(p => ({ ...p, status: v as MemberStatus }))}>
+                  <SelectTrigger data-testid="select-member-status">
+                    <SelectValue placeholder="Select Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MEMBER_STATUS_OPTIONS.map(s => (
+                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

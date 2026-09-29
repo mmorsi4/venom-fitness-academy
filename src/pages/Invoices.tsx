@@ -88,6 +88,11 @@ export default function Invoices() {
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null);
   const [editForm, setEditForm] = useState({ paidAmount: "", paymentMethod: "Cash" });
 
+  // Discount authorization for sales/reception roles
+  const [discountAuthGranted, setDiscountAuthGranted] = useState(false);
+  const [showPasscodeModal, setShowPasscodeModal] = useState(false);
+  const [passcodeInput, setPasscodeInput] = useState("");
+
   // Delete invoice state
   const [confirmDelete, setConfirmDelete] = useState<Invoice | null>(null);
 
@@ -166,6 +171,13 @@ export default function Invoices() {
 
     const invStatus: 'paid' | 'partial' | 'unpaid' =
       paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
+
+    // Prevent non-admin roles from applying discounts without authorization
+    if (discountAmount > 0 && (currentUser?.role === 'sales' || currentUser?.role === 'reception') && !discountAuthGranted) {
+      // Open passcode modal to allow immediate approval or let user notify admin
+      setShowPasscodeModal(true);
+      return;
+    }
 
     createInvoice.mutate({
       member_id: form.memberId,
@@ -254,6 +266,35 @@ export default function Invoices() {
     });
   };
 
+  // Discount approval helpers
+  const handlePasscodeSubmit = () => {
+    const secret = (import.meta as any).env?.VITE_DISCOUNT_PASSCODE ?? '';
+    if (passcodeInput && passcodeInput === secret) {
+      setDiscountAuthGranted(true);
+      setShowPasscodeModal(false);
+      setPasscodeInput("");
+      // Retry creation now that auth is granted
+      handleCreate();
+      return;
+    }
+    toast.error('Invalid passcode');
+  };
+
+  const notifyAdminAboutDiscount = () => {
+    createAuditLog.mutate({
+      action: 'Discount Request',
+      action_type: 'apply_discount',
+      performed_by: currentUser?.id ?? null,
+      performer_name: currentUser?.name ?? 'System',
+      member_id: form.memberId || null,
+      member_name: selectedMember?.name ?? null,
+      timestamp: new Date().toISOString(),
+      details: `Requested discount ${discountAmount} EGP on package ${selectedPackage?.name} for member ${selectedMember?.name} (${selectedMember?.id}). Reason: ${form.customDiscountDescription || selectedGroup?.name || 'N/A'}`,
+    });
+    toast.success('Admin notified about discount request');
+    setShowPasscodeModal(false);
+  };
+
   const counts = {
     all: invoices.length,
     paid: invoices.filter(i => i.status === 'paid').length,
@@ -334,58 +375,65 @@ export default function Invoices() {
         <Card><CardContent className="py-12 text-center"><p className="text-muted-foreground">No invoices</p></CardContent></Card>
       ) : (
         <div className="space-y-3">
-          {filtered.map(inv => (
-            <Card key={inv.uuid} data-testid={`invoice-${inv.uuid}`} className="hover:shadow-sm transition-shadow">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    <FileText className="w-4 h-4 text-primary" />
-                  </div>
-                  <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2 items-center">
-                    <div><p className="text-xs text-muted-foreground">Invoice</p><p className="text-sm font-bold">{inv.id}</p></div>
-                    <div><p className="text-xs text-muted-foreground">Member</p><p className="text-sm font-medium">{inv.member_name}</p></div>
-                    <div><p className="text-xs text-muted-foreground">Package</p><p className="text-sm">{inv.package_name}</p></div>
-                    <div><p className="text-xs text-muted-foreground">Date</p><p className="text-sm">{format(new Date(inv.created_at), "dd MMM yyyy")}</p></div>
-                  </div>
-                  <div className="text-right flex-shrink-0 space-y-1">
-                    <p className="text-base font-bold">{inv.total_amount.toLocaleString()} EGP</p>
-                    {inv.discount_amount > 0 && (
-                      <div className="flex items-center gap-1 justify-end">
-                        <Tag className="w-3 h-3 text-muted-foreground" />
-                        <p className="text-xs text-muted-foreground">
-                          -{inv.discount_amount} EGP
-                          {inv.discount_description && ` · ${inv.discount_description}`}
-                        </p>
+          {filtered.map(inv => {
+            const memberNumeric = members.find(m => m.uuid === inv.member_id)?.id;
+            return (
+              <Card key={inv.uuid} data-testid={`invoice-${inv.uuid}`} className="hover:shadow-sm transition-shadow">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-4 h-4 text-primary" />
+                    </div>
+                    <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2 items-center">
+                      <div><p className="text-xs text-muted-foreground">Invoice</p><p className="text-sm font-bold">{inv.id}</p></div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Member</p>
+                        <p className="text-sm font-medium">{inv.member_name}</p>
+                        {memberNumeric != null && <p className="text-xs text-muted-foreground">ID: {memberNumeric}</p>}
                       </div>
-                    )}
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${paymentStatuses[inv.status]}`}>{inv.status}</span>
-                      <Badge variant="outline" className="text-xs gap-1"><CreditCard className="w-3 h-3" />{inv.payment_method}</Badge>
+                      <div><p className="text-xs text-muted-foreground">Package</p><p className="text-sm">{inv.package_name}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Date</p><p className="text-sm">{format(new Date(inv.created_at), "dd MMM yyyy")}</p></div>
                     </div>
-                    {inv.status === 'partial' && (
-                      <p className="text-xs text-muted-foreground">Paid: {inv.paid_amount} / {inv.total_amount}</p>
-                    )}
-                    <div className="flex items-center gap-1 justify-end mt-1">
-                      <button
-                        data-testid={`btn-edit-invoice-${inv.uuid}`}
-                        onClick={() => openEditInvoice(inv)}
-                        className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        data-testid={`btn-delete-invoice-${inv.uuid}`}
-                        onClick={() => setConfirmDelete(inv)}
-                        className="p-1 rounded hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                    <div className="text-right flex-shrink-0 space-y-1">
+                      <p className="text-base font-bold">{inv.total_amount.toLocaleString()} EGP</p>
+                      {inv.discount_amount > 0 && (
+                        <div className="flex items-center gap-1 justify-end">
+                          <Tag className="w-3 h-3 text-muted-foreground" />
+                          <p className="text-xs text-muted-foreground">
+                            -{inv.discount_amount} EGP
+                            {inv.discount_description && ` · ${inv.discount_description}`}
+                          </p>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${paymentStatuses[inv.status]}`}>{inv.status}</span>
+                        <Badge variant="outline" className="text-xs gap-1"><CreditCard className="w-3 h-3" />{inv.payment_method}</Badge>
+                      </div>
+                      {inv.status === 'partial' && (
+                        <p className="text-xs text-muted-foreground">Paid: {inv.paid_amount} / {inv.total_amount}</p>
+                      )}
+                      <div className="flex items-center gap-1 justify-end mt-1">
+                        <button
+                          data-testid={`btn-edit-invoice-${inv.uuid}`}
+                          onClick={() => openEditInvoice(inv)}
+                          className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          data-testid={`btn-delete-invoice-${inv.uuid}`}
+                          onClick={() => setConfirmDelete(inv)}
+                          className="p-1 rounded hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
@@ -552,6 +600,25 @@ export default function Invoices() {
         </DialogContent>
       </Dialog>
 
+      {/* Discount passcode / admin notify modal */}
+      <Dialog open={showPasscodeModal} onOpenChange={setShowPasscodeModal}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Discount Authorization</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">You don't have permission to apply discounts. Enter admin passcode to approve immediately, or notify an admin to approve this request.</p>
+            <div className="space-y-1">
+              <Label>Admin Passcode</Label>
+              <Input type="password" value={passcodeInput} onChange={e => setPasscodeInput(e.target.value)} />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => { setShowPasscodeModal(false); setPasscodeInput(''); }}>Cancel</Button>
+              <Button onClick={handlePasscodeSubmit}>Enter Passcode</Button>
+              <Button variant="secondary" onClick={notifyAdminAboutDiscount}>Notify Admin</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Edit Invoice Dialog */}
       <Dialog open={!!editInvoice} onOpenChange={o => !o && setEditInvoice(null)}>
         <DialogContent className="max-w-sm">
@@ -612,4 +679,4 @@ export default function Invoices() {
       </AlertDialog>
     </div>
   );
-}
+} 

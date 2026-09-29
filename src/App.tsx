@@ -20,6 +20,7 @@ import Discounts from "@/pages/Discounts";
 import DailyReport from "@/pages/DailyReport";
 import Reports from "@/pages/Reports";
 import Liabilities from "@/pages/Liabilities";
+import Employees from "@/pages/Employees";
 import UsersPage from "@/pages/Users";
 import NotFound from "@/pages/not-found";
 
@@ -35,6 +36,7 @@ function Router() {
         <Route path="/subscriptions" component={Subscriptions} />
         <Route path="/invoices" component={Invoices} />
         <Route path="/finance" component={Finance} />
+        <Route path="/employees" component={Employees} />
         <Route path="/coaches" component={Coaches} />
         <Route path="/classes" component={Classes} />
         <Route path="/sports" component={Sports} />
