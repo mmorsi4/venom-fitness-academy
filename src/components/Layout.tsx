@@ -45,7 +45,8 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   if (!currentUser) return <>{children}</>;
 
-  const allowedHrefs = ROLE_NAV[currentUser.role];
+  const userRole = (currentUser.role ? String(currentUser.role).toLowerCase() : 'admin') as UserRole;
+  const allowedHrefs = ROLE_NAV[userRole] || ROLE_NAV.admin || ALL_NAV_ITEMS.map(item => item.href);
   const navItems = ALL_NAV_ITEMS.filter(item => allowedHrefs.includes(item.href));
   
   const canViewLiabilities = allowedHrefs.includes('/finance') || allowedHrefs.includes('/liabilities');
