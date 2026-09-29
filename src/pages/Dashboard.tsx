@@ -1,14 +1,20 @@
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { Users, LogIn, AlertTriangle, DollarSign, UserPlus, Clock, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useMembers, useInvoices, useLeads, useClasses } from "@/hooks/use-data";
+import { useMembers, useInvoices, useLeads, useClasses, useCoaches, useTodayCheckIns, useCheckInCoach, useCoachCheckInsToday, useEmployees, useEmployeeCheckInsToday, useClockInEmployee, useClockOutEmployee } from "@/hooks/use-data";
 import StatusBadge from "@/components/StatusBadge";
 import { format } from "date-fns";
+import { useAuth } from "@/lib/auth";
+import { toast } from "sonner";
+import { Pagination } from "@/components/Pagination";
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
+  const [expiringPage, setExpiringPage] = useState(1);
+  const expiringPageSize = 5;
   const { data: members = [] } = useMembers();
   const { data: invoices = [] } = useInvoices();
   const { data: leads = [] } = useLeads();
@@ -16,11 +22,15 @@ export default function Dashboard() {
 
   const activeMembers = members.filter(m => m.status === 'active').length;
   const expiringSoon = members.filter(m => m.status === 'expiring_soon');
+  
+  const totalExpiringPages = Math.ceil(expiringSoon.length / expiringPageSize) || 1;
+  const paginatedExpiring = expiringSoon.slice((expiringPage - 1) * expiringPageSize, expiringPage * expiringPageSize);
+  
   const expired = members.filter(m => m.status === 'expired');
-  const withDebt = members.filter(m => m.status === 'has_debt');
   const newLeads = leads.filter(l => l.status === 'New');
-  const unpaidInvoices = invoices.filter(i => i.status !== 'paid');
-  const outstandingAmount = unpaidInvoices.reduce((sum, i) => sum + Math.max(0, (i.total_amount || 0) - (i.paid_amount || 0)), 0);
+  const outstandingAmount = invoices
+    .filter(i => i.status === 'partial' || i.status === 'unpaid')
+    .reduce((sum, i) => sum + (i.total_amount - i.paid_amount), 0);
 
   const todayClasses = classes.slice(0, 4);
 
@@ -38,7 +48,7 @@ export default function Dashboard() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{format(new Date(), "EEEE, MMMM d, yyyy")}</p>
+          <p className="text-sm text-muted-foreground mt-0.5">{format(new Date(), "EEEE, dd/MM/yyyy")}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button data-testid="btn-quick-checkin" onClick={() => setLocation("/checkin")} className="gap-2">
@@ -105,19 +115,22 @@ export default function Dashboard() {
               Expiring Memberships
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 pt-0">
-            {[...expiringSoon, ...expired].slice(0, 5).length === 0 ? (
+          <CardContent className="space-y-2 pt-0 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+            {expiringSoon.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">No expiring memberships</p>
             ) : (
-              [...expiringSoon, ...expired].slice(0, 5).map(m => (
-                <div key={m.uuid} data-testid={`expiring-${m.uuid}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{m.name}</p>
-                    <p className="text-xs text-muted-foreground">{m.sessions_remaining} sessions left</p>
+              <>
+                {paginatedExpiring.map(m => (
+                  <div key={m.uuid} data-testid={`expiring-${m.uuid}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">#{m.id} - {m.name}</p>
+                      <p className="text-xs text-muted-foreground">{m.sessions_remaining} sessions left</p>
+                    </div>
+                    <StatusBadge status={m.status} />
                   </div>
-                  <StatusBadge status={m.status} />
-                </div>
-              ))
+                ))}
+                <Pagination page={expiringPage} totalPages={totalExpiringPages} onPageChange={setExpiringPage} />
+              </>
             )}
           </CardContent>
         </Card>
@@ -130,18 +143,18 @@ export default function Dashboard() {
               Outstanding Payments
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 pt-0 max-h-[300px] overflow-y-auto">
-            {unpaidInvoices.length === 0 ? (
+          <CardContent className="space-y-2 pt-0">
+            {invoices.filter(i => i.status !== 'paid').length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">No outstanding payments</p>
             ) : (
-              unpaidInvoices.map((inv, idx) => (
-                <div key={inv.id || idx} data-testid={`outstanding-${inv.id || idx}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
+              invoices.filter(i => i.status !== 'paid').map(inv => (
+                <div key={inv.uuid} data-testid={`outstanding-${inv.uuid}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{inv.member_name}</p>
-                    <p className="text-xs text-muted-foreground">#{inv.id} · {inv.package_name || 'Package'}</p>
+                    <p className="text-xs text-muted-foreground">{inv.id}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-bold text-foreground">{Math.max(0, (inv.total_amount || 0) - (inv.paid_amount || 0)).toLocaleString()} EGP</p>
+                    <p className="text-sm font-bold text-foreground">{(inv.total_amount - inv.paid_amount).toLocaleString()} EGP</p>
                     <Badge variant={inv.status === 'partial' ? 'secondary' : 'destructive'} className="text-xs capitalize">{inv.status}</Badge>
                   </div>
                 </div>

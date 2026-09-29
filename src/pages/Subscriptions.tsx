@@ -11,6 +11,7 @@ import {
 import { usePackages, useMembers, useCreatePackage, useUpdatePackage, useDeletePackage } from "@/hooks/use-data";
 import type { SubscriptionPackage } from "@/lib/types";
 import { toast } from "sonner";
+import { useAuth } from "@/lib/auth";
 
 interface PkgForm {
   name: string;
@@ -20,11 +21,12 @@ interface PkgForm {
   freezeDays: string;
   invitations: string;
   inBodySessions: string;
+  category: 'PT' | 'Clinic' | 'Normal';
 }
 
 const emptyForm: PkgForm = {
   name: "", sessions: "", price: "", validityDays: "30",
-  freezeDays: "7", invitations: "1", inBodySessions: "1",
+  freezeDays: "7", invitations: "1", inBodySessions: "1", category: "Normal",
 };
 
 function pkgToForm(p: SubscriptionPackage): PkgForm {
@@ -32,11 +34,12 @@ function pkgToForm(p: SubscriptionPackage): PkgForm {
     name: p.name, sessions: p.sessions === 999 ? "0" : String(p.sessions),
     price: String(p.price), validityDays: String(p.validity_days),
     freezeDays: String(p.freeze_days), invitations: String(p.invitations),
-    inBodySessions: String(p.inbody_sessions),
+    inBodySessions: String(p.inbody_sessions), category: p.category || 'Normal',
   };
 }
 
 export default function Subscriptions() {
+  const { isAdmin } = useAuth();
   const { data: packages = [] } = usePackages();
   const { data: members = [] } = useMembers();
   const createPackage = useCreatePackage();
@@ -72,10 +75,13 @@ export default function Subscriptions() {
           name: form.name.trim(),
           sessions,
           price: Number(form.price),
-          validity_days: Number(form.validityDays) || 30,
-          freeze_days: Number(form.freezeDays) || 7,
-          invitations: Number(form.invitations) || 0,
-          inbody_sessions: Number(form.inBodySessions) || 0,
+          validity_days: form.validityDays === "" ? 30 : Number(form.validityDays),
+          freeze_days: form.freezeDays === "" ? 0 : Number(form.freezeDays),
+          invitations: form.invitations === "" ? 0 : Number(form.invitations),
+          inbody_sessions: form.inBodySessions === "" ? 0 : Number(form.inBodySessions),
+          category: form.category,
+          is_clinic: form.category === 'Clinic',
+          is_pt: form.category === 'PT',
         }
       }, {
         onSuccess: () => {
@@ -89,10 +95,13 @@ export default function Subscriptions() {
         name: form.name.trim(),
         sessions,
         price: Number(form.price),
-        validity_days: Number(form.validityDays) || 30,
-        freeze_days: Number(form.freezeDays) || 7,
-        invitations: Number(form.invitations) || 0,
-        inbody_sessions: Number(form.inBodySessions) || 0,
+        validity_days: form.validityDays === "" ? 30 : Number(form.validityDays),
+        freeze_days: form.freezeDays === "" ? 0 : Number(form.freezeDays),
+        invitations: form.invitations === "" ? 0 : Number(form.invitations),
+        inbody_sessions: form.inBodySessions === "" ? 0 : Number(form.inBodySessions),
+        category: form.category,
+        is_clinic: form.category === 'Clinic',
+        is_pt: form.category === 'PT',
       }, {
         onSuccess: () => {
           toast.success(`Package created: ${form.name}`);
@@ -126,39 +135,49 @@ export default function Subscriptions() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Subscription Packages</h1>
           <p className="text-sm text-muted-foreground">Manage available packages and their details</p>
         </div>
-        <Button onClick={openCreate} className="gap-2">
-          <Plus className="w-4 h-4" /> New Package
-        </Button>
+        {isAdmin && (
+          <Button onClick={openCreate} className="gap-2 w-full sm:w-auto">
+            <Plus className="w-4 h-4" /> New Package
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {packageUsage.map(pkg => (
           <Card key={pkg.id} data-testid={`package-${pkg.id}`} className="hover:shadow-md transition-shadow">
             <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                     <Package className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <CardTitle className="text-base">{pkg.name}</CardTitle>
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-base">{pkg.name}</CardTitle>
+                      {pkg.category === 'Clinic' && <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Clinic</Badge>}
+                      {pkg.category === 'PT' && <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">PT</Badge>}
+                    </div>
                     <p className="text-sm text-muted-foreground mt-0.5">{pkg.validity_days}-day validity</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <p className="text-2xl font-bold text-foreground">{pkg.price}<span className="text-sm font-normal text-muted-foreground ml-1">EGP</span></p>
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(pkg)} className="h-7 w-7 p-0">
-                      <Pencil className="w-3.5 h-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(pkg)} className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
+                    {isAdmin && (
+                      <>
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(pkg)} className="h-7 w-7 p-0">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(pkg)} className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -239,6 +258,19 @@ export default function Subscriptions() {
               <Input placeholder="e.g. 12 Sessions" value={form.name} onChange={f('name')} />
             </div>
 
+            <div className="space-y-1.5">
+              <Label>Category</Label>
+              <select
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                value={form.category}
+                onChange={(e) => setForm(p => ({ ...p, category: e.target.value as any }))}
+              >
+                <option value="Normal">Normal</option>
+                <option value="PT">PT (Personal Training)</option>
+                <option value="Clinic">Clinic</option>
+              </select>
+            </div>
+
             <div className="space-y-2">
               <div className="flex items-center gap-3">
                 <Label>Sessions</Label>
@@ -269,15 +301,15 @@ export default function Subscriptions() {
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label>Freeze Days</Label>
-                <Input type="number" placeholder="7" value={form.freezeDays} onChange={f('freezeDays')} />
+                <Input type="number" placeholder="0" value={form.freezeDays} onChange={f('freezeDays')} />
               </div>
               <div className="space-y-1.5">
                 <Label>Invitations</Label>
-                <Input type="number" placeholder="1" value={form.invitations} onChange={f('invitations')} />
+                <Input type="number" placeholder="0" value={form.invitations} onChange={f('invitations')} />
               </div>
               <div className="space-y-1.5">
                 <Label>InBody Sessions</Label>
-                <Input type="number" placeholder="1" value={form.inBodySessions} onChange={f('inBodySessions')} />
+                <Input type="number" placeholder="0" value={form.inBodySessions} onChange={f('inBodySessions')} />
               </div>
             </div>
 
@@ -289,7 +321,9 @@ export default function Subscriptions() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>Cancel</Button>
-            <Button onClick={handleSave}>{editPkg ? 'Save Changes' : 'Create Package'}</Button>
+            <Button onClick={handleSave} disabled={createPackage.isPending || updatePackage.isPending}>
+              {createPackage.isPending || updatePackage.isPending ? "Saving..." : editPkg ? 'Save Changes' : 'Create Package'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -306,7 +340,9 @@ export default function Subscriptions() {
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmDelete(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => confirmDelete && handleDelete(confirmDelete)}>Delete</Button>
+            <Button variant="destructive" onClick={() => confirmDelete && handleDelete(confirmDelete)} disabled={deletePackage.isPending}>
+              {deletePackage.isPending ? "Deleting..." : "Delete"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

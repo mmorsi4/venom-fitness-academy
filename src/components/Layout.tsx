@@ -4,10 +4,10 @@ import {
   LayoutDashboard, Users, LogIn, Package, FileText, DollarSign,
   Dumbbell, Calendar, UserPlus, ClipboardList, Tag,
   ChevronRight, CalendarDays, BarChart2, AlertCircle, Landmark,
-  UserCog, LogOut, Menu, X, Trophy, UserCheck
+  UserCog, LogOut, Menu, X, Trophy, Shield
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useAuth, ROLE_NAV } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import { useLiabilities } from "@/hooks/use-data";
 import { differenceInDays, parseISO } from "date-fns";
 import { toast } from "sonner";
@@ -17,23 +17,24 @@ const ALL_NAV_ITEMS = [
   { href: "/checkin", label: "Check-In", icon: LogIn, highlight: true },
   { href: "/members", label: "Members", icon: Users },
   { href: "/subscriptions", label: "Subscriptions", icon: Package },
-  { href: "/invoices", label: "Invoices", icon: FileText },
+  { href: "/invoices", label: "Accounting", icon: FileText },
   { href: "/discounts", label: "Discounts", icon: Tag },
   { href: "/finance", label: "Finance", icon: DollarSign },
   { href: "/daily", label: "Daily Report", icon: CalendarDays },
   { href: "/reports", label: "Member Reports", icon: BarChart2 },
-  { href: "/employees", label: "Employees", icon: UserCheck },
   { href: "/coaches", label: "Coaches", icon: Dumbbell },
   { href: "/classes", label: "Classes", icon: Calendar },
   { href: "/sports", label: "Sports", icon: Trophy },
-  { href: "/leads", label: "Leads (CRM)", icon: UserPlus },
+  { href: "/leads", label: "Leads", icon: UserPlus },
   { href: "/liabilities", label: "Liabilities", icon: Landmark },
   { href: "/audit", label: "Audit Log", icon: ClipboardList },
   { href: "/users", label: "User Management", icon: UserCog },
+  { href: "/employees", label: "Employees", icon: Users },
+  { href: "/employee-checkin", label: "Staff Check-In", icon: Shield },
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const { currentUser, logout } = useAuth();
   const { data: liabilities = [] } = useLiabilities();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -45,10 +46,21 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   if (!currentUser) return <>{children}</>;
 
-  const userRole = (currentUser.role ? String(currentUser.role).toLowerCase() : 'admin') as UserRole;
-  const allowedHrefs = ROLE_NAV[userRole] || ROLE_NAV.admin || ALL_NAV_ITEMS.map(item => item.href);
+  const allowedHrefs = Array.from(new Set([...currentUser.roles.flatMap(r => r.tabs), '/employee-checkin']));
   const navItems = ALL_NAV_ITEMS.filter(item => allowedHrefs.includes(item.href));
   
+  // Route protection
+  useEffect(() => {
+    if (location === '/' && !allowedHrefs.includes('/')) {
+      if (allowedHrefs.length > 0) {
+        setLocation(allowedHrefs[0]);
+      }
+    }
+  }, [location, allowedHrefs, setLocation]);
+
+  const isKnownRoute = ALL_NAV_ITEMS.some(item => item.href === location);
+  const isAllowed = !isKnownRoute || allowedHrefs.includes(location);
+
   const canViewLiabilities = allowedHrefs.includes('/finance') || allowedHrefs.includes('/liabilities');
 
   const dueLiabilities = liabilities.filter(l => {
@@ -63,18 +75,18 @@ export default function Layout({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background w-full">
+    <div className="flex h-screen print:h-auto overflow-hidden print:overflow-visible bg-background w-full">
       {/* Mobile Backdrop */}
       {isMobileMenuOpen && (
         <div 
-          className="fixed inset-0 bg-black/80 z-40 md:hidden"
+          className="fixed inset-0 bg-black/80 z-40 md:hidden print:hidden"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed inset-y-0 left-0 z-50 w-64 bg-sidebar flex flex-col transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0",
+        "fixed inset-y-0 left-0 z-50 w-64 bg-sidebar flex flex-col transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 print:hidden",
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         {/* Mobile close button */}
@@ -128,7 +140,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-white truncate">{currentUser.name}</p>
-              <p className="text-xs text-sidebar-foreground/50 truncate capitalize">{currentUser.role}</p>
+              <p className="text-xs text-sidebar-foreground/50 truncate capitalize">{currentUser.roles.map(r => r.name).join(', ')}</p>
             </div>
             <button
               onClick={handleLogout}
@@ -142,9 +154,9 @@ export default function Layout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto flex flex-col relative w-full min-w-0">
+      <main className="flex-1 overflow-y-auto print:overflow-visible flex flex-col relative w-full min-w-0">
         {/* Mobile Header */}
-        <div className="md:hidden flex items-center justify-between p-4 bg-sidebar border-b border-sidebar-border flex-shrink-0 sticky top-0 z-30">
+        <div className="md:hidden print:hidden flex items-center justify-between p-4 bg-sidebar border-b border-sidebar-border flex-shrink-0 sticky top-0 z-30">
           <button 
             onClick={() => setIsMobileMenuOpen(true)}
             className="p-2 -ml-2 text-sidebar-foreground hover:bg-sidebar-accent rounded-md transition-colors"
@@ -184,7 +196,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                 )}
                 {allowedHrefs.includes('/finance') && (
                   <Link
-                    href="/finance"
+                    href={`/invoices?action=add-expense&category=Liability+Payment&liability_id=${l.id}&amount=${l.installment_amount}`}
                     className="flex-shrink-0 px-3 py-1.5 md:py-1 rounded bg-white text-red-700 text-xs font-semibold hover:bg-white/90 transition-colors text-center flex-1 md:flex-none"
                   >
                     Pay Now →
@@ -196,7 +208,25 @@ export default function Layout({ children }: { children: ReactNode }) {
         })}
 
         <div className="flex-1">
-          {children}
+          {isAllowed ? children : (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center p-8 bg-white border border-gray-200 rounded-xl shadow-sm max-w-md">
+                <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                <h2 className="text-xl font-bold text-gray-900 mb-2">Access Denied</h2>
+                <p className="text-gray-500 mb-6">
+                  You do not have permission to view this page. If you believe this is an error, please contact your administrator.
+                </p>
+                {allowedHrefs.length > 0 && (
+                  <button
+                    onClick={() => setLocation(allowedHrefs[0])}
+                    className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 transition-colors"
+                  >
+                    Go to {ALL_NAV_ITEMS.find(i => i.href === allowedHrefs[0])?.label || 'Homepage'}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>
