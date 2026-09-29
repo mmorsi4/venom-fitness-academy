@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Invoice, Member, Class } from "@/lib/types";
-import { useClasses } from "@/hooks/use-data";
+import { useClasses, useCoaches } from "@/hooks/use-data";
 
 interface InvoiceListProps {
   paginatedInvoices: Invoice[];
@@ -29,6 +29,7 @@ export function InvoiceList({
   openEditInvoice, setConfirmDelete, setPaymentModalInvoice
 }: InvoiceListProps) {
   const { data: classes = [] } = useClasses();
+  const { data: coaches = [] } = useCoaches();
 
   const getActualPaidAmount = (inv: Invoice) => {
     const childrenPaid = invoices
@@ -56,6 +57,7 @@ export function InvoiceList({
             <TableHead>Member ID</TableHead>
             <TableHead>Member Name</TableHead>
             <TableHead>Package</TableHead>
+            <TableHead>Class</TableHead>
             <TableHead>Coach</TableHead>
             <TableHead>Creation Date</TableHead>
             <TableHead>Status & Payment</TableHead>
@@ -65,8 +67,24 @@ export function InvoiceList({
         </TableHeader>
         <TableBody>
           {paginatedInvoices.map((inv: any) => {
-            const shortId = members.find(m => m.uuid === inv.member_id)?.id;
+            const member = members.find(m => m.uuid === inv.member_id);
+            const shortId = member?.id;
             const jointRelated = inv.joint_invoice_group_id ? invoices.filter((i: any) => i.joint_invoice_group_id === inv.joint_invoice_group_id && i.uuid !== inv.uuid) : [];
+
+            // Resolve assigned class
+            const targetClassId = inv.class_id || member?.class_id;
+            const assignedClass = (targetClassId ? classes.find(c => c.id === targetClassId) : null) || member?.class_info;
+            const className = assignedClass?.name || (inv.class_id ? `Class #${inv.class_id}` : null);
+            const sportName = assignedClass?.sport_name;
+
+            // Resolve assigned coach
+            let coachName = assignedClass?.coach_name || member?.coach_name;
+            if (!coachName && assignedClass?.coach_id) {
+              coachName = coaches.find(c => c.id === assignedClass.coach_id)?.name;
+            }
+            if (!coachName && inv.coach_id) {
+              coachName = coaches.find(c => c.id === inv.coach_id)?.name;
+            }
 
             return (
               <TableRow key={inv.uuid} data-testid={`invoice-${inv.uuid}`}>
@@ -109,7 +127,23 @@ export function InvoiceList({
                   )}
                 </TableCell>
                 <TableCell>
-                  <p className="text-sm font-semibold">{classes.find(c => c.id === inv.class_id)?.coach_name || '-'}</p>
+                  {className ? (
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{className}</p>
+                      {sportName && (
+                        <p className="text-xs text-muted-foreground">{sportName}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">-</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {coachName ? (
+                    <p className="text-sm font-medium text-foreground">{coachName}</p>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">-</span>
+                  )}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {format(new Date(inv.created_at), "dd MMM yyyy")}
