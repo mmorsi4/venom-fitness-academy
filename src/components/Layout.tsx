@@ -182,7 +182,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                   <strong>{l.installment_amount.toLocaleString()} EGP</strong> due{' '}
                   {daysUntil === 0 ? 'today' : `in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}`}
                   {' '}
-                  <span className="hidden md:inline">· Pay via Finance → Add Expense → Liability Payment</span>
+                  <span className="hidden md:inline">· Pay via Accounting → Add Expense → Liability Payment</span>
                 </span>
               </div>
               <div className="flex items-center gap-2 md:pl-0 pl-8">
@@ -194,7 +194,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                     View Details
                   </Link>
                 )}
-                {allowedHrefs.includes('/finance') && (
+                {allowedHrefs.includes('/invoices') && (
                   <Link
                     href={`/invoices?action=add-expense&category=Liability+Payment&liability_id=${l.id}&amount=${l.installment_amount}`}
                     className="flex-shrink-0 px-3 py-1.5 md:py-1 rounded bg-white text-red-700 text-xs font-semibold hover:bg-white/90 transition-colors text-center flex-1 md:flex-none"
