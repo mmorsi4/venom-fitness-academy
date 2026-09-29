@@ -19,9 +19,11 @@ export default function Dashboard() {
   const expired = members.filter(m => m.status === 'expired');
   const withDebt = members.filter(m => m.status === 'has_debt');
   const newLeads = leads.filter(l => l.status === 'New');
-  const outstandingAmount = invoices
-    .filter(i => i.status === 'partial' || i.status === 'unpaid')
-    .reduce((sum, i) => sum + (i.total_amount - i.paid_amount), 0);
+  const unpaidInvoices = invoices.filter(i => {
+    const remaining = (i.total_amount || 0) - (i.paid_amount || 0);
+    return remaining > 0 || i.status === 'partial' || i.status === 'unpaid';
+  });
+  const outstandingAmount = unpaidInvoices.reduce((sum, i) => sum + Math.max(0, (i.total_amount || 0) - (i.paid_amount || 0)), 0);
 
   const todayClasses = classes.slice(0, 4);
 
@@ -131,18 +133,18 @@ export default function Dashboard() {
               Outstanding Payments
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 pt-0">
-            {invoices.filter(i => i.status !== 'paid').length === 0 ? (
+          <CardContent className="space-y-2 pt-0 max-h-[300px] overflow-y-auto">
+            {unpaidInvoices.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">No outstanding payments</p>
             ) : (
-              invoices.filter(i => i.status !== 'paid').map(inv => (
-                <div key={inv.uuid} data-testid={`outstanding-${inv.uuid}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
+              unpaidInvoices.map((inv, idx) => (
+                <div key={inv.id || idx} data-testid={`outstanding-${inv.id || idx}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{inv.member_name}</p>
-                    <p className="text-xs text-muted-foreground">{inv.id}</p>
+                    <p className="text-xs text-muted-foreground">#{inv.id} · {inv.package_name || 'Package'}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-bold text-foreground">{(inv.total_amount - inv.paid_amount).toLocaleString()} EGP</p>
+                    <p className="text-sm font-bold text-foreground">{Math.max(0, (inv.total_amount || 0) - (inv.paid_amount || 0)).toLocaleString()} EGP</p>
                     <Badge variant={inv.status === 'partial' ? 'secondary' : 'destructive'} className="text-xs capitalize">{inv.status}</Badge>
                   </div>
                 </div>

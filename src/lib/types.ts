@@ -58,9 +58,9 @@ export interface Member {
   invitations_remaining: number;
   inbody_sessions_remaining: number;
   sport: string | null;
+  photo_url?: string | null;
   created_at: string;
-  // Joined field (populated via query)
-  coach_name?: string;
+  coach_name?: string | null;
 }
 
 export interface SubscriptionPackage {

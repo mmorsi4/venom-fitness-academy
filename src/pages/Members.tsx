@@ -341,8 +341,12 @@ export default function Members() {
                   <TableRow key={m.uuid} data-testid={`member-row-${m.uuid}`}>
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${m.id === -1 ? 'bg-teal-100 text-teal-600' : 'bg-primary/10 text-primary'}`}>
-                          <span className="text-sm font-bold">{m.name.charAt(0)}</span>
+                        <div className={`w-10 h-10 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0 ${m.id === -1 ? 'bg-teal-100 text-teal-600' : 'bg-primary/10 text-primary'}`}>
+                          {m.photo_url ? (
+                            <img src={m.photo_url} alt={m.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-sm font-bold">{m.name.charAt(0)}</span>
+                          )}
                         </div>
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">

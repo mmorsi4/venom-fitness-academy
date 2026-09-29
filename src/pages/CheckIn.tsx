@@ -160,8 +160,12 @@ export default function CheckIn() {
                 onClick={() => handleSelect(m)}
                 className="w-full text-left p-3 rounded-lg border bg-card hover:bg-accent transition-colors flex items-center gap-4"
               >
-                <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  <span className="text-sm font-bold text-primary">{m.name.charAt(0)}</span>
+                <div className="w-9 h-9 rounded-full overflow-hidden bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  {m.photo_url ? (
+                    <img src={m.photo_url} alt={m.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-sm font-bold text-primary">{m.name.charAt(0)}</span>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-foreground">{m.name}</p>
@@ -193,8 +197,12 @@ export default function CheckIn() {
           }>
             <CardHeader className="pb-3 border-b border-border/40">
               <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center flex-shrink-0 shadow-sm border">
-                  <span className="text-lg font-bold text-primary">{selectedMember.name.charAt(0)}</span>
+                <div className="w-12 h-12 rounded-full overflow-hidden bg-white flex items-center justify-center flex-shrink-0 shadow-sm border">
+                  {selectedMember.photo_url ? (
+                    <img src={selectedMember.photo_url} alt={selectedMember.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-lg font-bold text-primary">{selectedMember.name.charAt(0)}</span>
+                  )}
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
