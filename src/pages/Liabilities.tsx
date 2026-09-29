@@ -73,7 +73,7 @@ export default function Liabilities() {
       toast.error("Installment amount is required");
       return;
     }
-
+    
     if (editLiability) {
       updateLiability.mutate({
         id: editLiability.id,
@@ -97,7 +97,7 @@ export default function Liabilities() {
     } else {
       createLiability.mutate({
         name: form.name.trim(),
-        description: form.description.trim() || "",
+        description: form.description.trim() || null,
         type: form.type,
         total_amount: total,
         paid_amount: 0,
@@ -125,12 +125,12 @@ export default function Liabilities() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Liabilities</h1>
           <p className="text-sm text-muted-foreground">Track installment plans and one-time obligations</p>
         </div>
-        <Button onClick={openCreate} className="gap-2 w-full sm:w-auto">
+        <Button onClick={openCreate} className="gap-2">
           <Plus className="w-4 h-4" /> New Liability
         </Button>
       </div>
@@ -140,6 +140,7 @@ export default function Liabilities() {
         <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
         <span>
           To record a payment, go to <strong>Finance → Add Expense → Liability Payment</strong> and select the liability.
+          Payments are automatically reflected in the progress bars below.
         </span>
         <Link href="/finance" className="ml-auto flex-shrink-0 underline text-xs font-medium hover:text-blue-900">Go to Finance →</Link>
       </div>
@@ -168,7 +169,7 @@ export default function Liabilities() {
               <div>
                 <p className="text-sm font-bold text-foreground">{nextDue ? nextDue.name : '—'}</p>
                 <p className="text-xs text-muted-foreground">
-                  {nextDue ? `Next: ${format(parseISO(nextDue.next_due_date), 'dd/MM/yyyy')}` : 'No upcoming payments'}
+                  {nextDue ? `Next: ${format(parseISO(nextDue.next_due_date), 'dd MMM yyyy')}` : 'No upcoming payments'}
                 </p>
               </div>
             </div>
@@ -366,9 +367,7 @@ export default function Liabilities() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>Cancel</Button>
-            <Button onClick={handleSave} disabled={createLiability.isPending || updateLiability.isPending}>
-              {createLiability.isPending || updateLiability.isPending ? "Saving..." : editLiability ? 'Save Changes' : 'Create Liability'}
-            </Button>
+            <Button onClick={handleSave} disabled={createLiability.isPending || updateLiability.isPending}>{editLiability ? 'Save Changes' : 'Create Liability'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

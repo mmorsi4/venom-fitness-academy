@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
-import { useLocation, useSearch } from "wouter";
-import { Plus, Search, Phone, Calendar, Pencil, Trash2, Snowflake, Unlock, ArrowUpCircle, BicepsFlexed, Mail, Clock, Camera, QrCode } from "lucide-react";
+import { useState, useMemo } from "react";
+import { useLocation } from "wouter";
+import { Plus, Search, Phone, Calendar, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,9 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { validateEgyptPhone } from "@/lib/utils";
-import { SearchableSelect } from "@/components/SearchableSelect";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -28,172 +26,216 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog, useFreezeMember, useUnfreezeMember, usePackages, useCreateInvoice, useAuditLogs, useInvoices, useUpdateInvoice, useMemberCheckIns, useDeleteMemberCheckIn, useUpdateMemberCheckIn, useUpdateLead } from "@/hooks/use-data";
-import { uploadMemberPhoto } from "@/lib/queries";
-import { CameraCapture } from "@/components/CameraCapture";
-import { processImageFile } from "@/lib/imageUtils";
+import { useMembers, useCoaches, useClasses, useInvoices, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
-import { supabase } from "@/lib/supabase";
-import type { Member, Gender } from "@/lib/types";
+import type { Member, Gender, MemberStatus } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import { toast } from "sonner";
 import { format, differenceInYears, parseISO } from "date-fns";
-import QRCode from "react-qr-code";
-import { MemberFilters } from "@/components/features/members/MemberFilters";
-import { MemberList } from "@/components/features/members/MemberList";
 
 const GENDERS: { value: Gender; label: string }[] = [
   { value: "male", label: "Male" },
   { value: "female", label: "Female" },
+  { value: "other", label: "Other" },
 ];
+
+const MEMBER_STATUS_OPTIONS: { value: MemberStatus; label: string }[] = [
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+  { value: "expiring_soon", label: "Expiring Soon" },
+  { value: "expired", label: "Expired" },
+  { value: "has_debt", label: "Has Debt" },
+  { value: "new", label: "New" },
+  { value: "frozen", label: "Frozen" },
+];
+
+interface MemberForm {
+  name: string;
+  phone: string;
+  parentPhone: string;
+  birthDate: string;
+  gender: Gender | "";
+  status: MemberStatus;
+  id: number;
+  classId: string;
+  isClinicVisitor: boolean;
+  
+  // Custom edit fields
+  sessions_remaining: string;
+  total_sessions: string;
+  freeze_days_used: string;
+  freeze_days_total: string;
+  invitations_remaining: string;
+  inbody_sessions_remaining: string;
+}
+
+const emptyForm: MemberForm = {
+  name: "", phone: "", parentPhone: "", birthDate: "",
+  gender: "", status: "new", classId: "", id: 0, isClinicVisitor: false,
+  sessions_remaining: "0", total_sessions: "0",
+  freeze_days_used: "0", freeze_days_total: "0",
+  invitations_remaining: "0", inbody_sessions_remaining: "0"
+};
+
+function memberToForm(m: Member): MemberForm {
+  return {
+    name: m.name, phone: m.phone, parentPhone: m.parent_phone ?? "",
+    birthDate: m.birth_date ?? "", gender: m.gender ?? "",
+    status: m.status || "active",
+    id: m.id,
+    classId: m.class_id ?? "",
+    isClinicVisitor: m.id === -1,
+    sessions_remaining: String(m.sessions_remaining ?? 0),
+    total_sessions: String(m.total_sessions ?? 0),
+    freeze_days_used: String(m.freeze_days_used ?? 0),
+    freeze_days_total: String(m.freeze_days_total ?? 0),
+    invitations_remaining: String(m.invitations_remaining ?? 0),
+    inbody_sessions_remaining: String(m.inbody_sessions_remaining ?? 0),
+  };
+}
+
+function calcAge(birthDate?: string | null) {
+  if (!birthDate) return null;
+  try { return differenceInYears(new Date(), parseISO(birthDate)); } catch { return null; }
+}
 
 export default function Members() {
   const { data: members = [] } = useMembers();
-  const { data: invoices = [] } = useInvoices();
-  const updateInvoice = useUpdateInvoice();
   const { data: coaches = [] } = useCoaches();
   const { data: classes = [] } = useClasses();
+  const { data: invoices = [] } = useInvoices();
   const createMember = useCreateMember();
   const updateMember = useUpdateMember();
   const deleteMember = useDeleteMember();
   const createAuditLog = useCreateAuditLog();
-  const freezeMember = useFreezeMember();
-  const unfreezeMember = useUnfreezeMember();
-  const { data: packages = [] } = usePackages();
-  const { data: auditLogs = [] } = useAuditLogs();
-  const createInvoice = useCreateInvoice();
-  const updateLead = useUpdateLead();
   const { currentUser } = useAuth();
   const [, navigate] = useLocation();
-  const searchString = useSearch();
-  const hasConsumedParams = useRef(false);
 
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [showAdd, setShowAdd] = useState(false);
-  const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
-  const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
-  const [isCapturing, setIsCapturing] = useState(false);
   const [editMember, setEditMember] = useState<Member | null>(null);
   const [form, setForm] = useState<MemberForm>(emptyForm);
   const [confirmDelete, setConfirmDelete] = useState<Member | null>(null);
-  const [freezeMemberState, setFreezeMemberState] = useState<Member | null>(null);
-  const [freezeDaysInput, setFreezeDaysInput] = useState("");
-  const [upgradeMemberState, setUpgradeMemberState] = useState<Member | null>(null);
-  const [upgradePackageId, setUpgradePackageId] = useState("");
-  const [upgradePaymentMethod, setUpgradePaymentMethod] = useState("Cash");
-  const [upgradeInvoiceId, setUpgradeInvoiceId] = useState("");
-  const [upgradePaymentDate, setUpgradePaymentDate] = useState("");
-  const [upgradeDiscount, setUpgradeDiscount] = useState("");
-  const [upgradePaidAmount, setUpgradePaidAmount] = useState("");
-  const [upgradePackageCategoryFilter, setUpgradePackageCategoryFilter] = useState<string>("All");
-  const [historyMember, setHistoryMember] = useState<Member | null>(null);
-  const { data: checkInHistory = [] } = useMemberCheckIns(historyMember?.uuid || "");
-  const deleteMemberCheckIn = useDeleteMemberCheckIn(historyMember?.uuid || "");
-  const updateMemberCheckInTime = useUpdateMemberCheckIn();
-  const [editingLogId, setEditingLogId] = useState<string | null>(null);
-  const [editLogTime, setEditLogTime] = useState("");
-  const [qrMember, setQrMember] = useState<Member | null>(null);
-  const [registrationLinkQr, setRegistrationLinkQr] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (hasConsumedParams.current) return;
-    const params = new URLSearchParams(searchString);
-    const createLeadId = params.get("createLeadId");
-    const leadName = params.get("leadName");
-    const leadPhone = params.get("leadPhone");
-    const searchId = params.get("search");
-
-    if (searchId) {
-      setQuery(searchId);
-      setSearchField("all");
-      hasConsumedParams.current = true;
-    } else if (createLeadId && !showAdd) {
-      setShowAdd(true);
-      setForm(prev => ({
-        ...prev,
-        name: leadName || "",
-        phone: leadPhone || ""
-      }));
-      hasConsumedParams.current = true;
+  // Calculate outstanding debts per member from unpaid/partial invoices
+  const memberDebts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const inv of invoices) {
+      if (inv.status !== 'paid') {
+        const remaining = Math.max(0, inv.total_amount - inv.paid_amount);
+        if (remaining > 0) {
+          map.set(inv.member_id, (map.get(inv.member_id) || 0) + remaining);
+        }
+      }
     }
-  }, [searchString, showAdd]);
-
-  const generateSelfRegistrationLink = async () => {
-    try {
-      const id = crypto.randomUUID();
-      const url = `${window.location.origin}/register/${id}`;
-      setRegistrationLinkQr(url);
-    } catch (err: any) {
-      toast.error(`Error generating link: ${err.message}`);
-    }
-  };
-
-
-  const [searchField, setSearchField] = useState<string>("all");
-  const [classFilter, setClassFilter] = useState<string>("all");
-  const [packageFilter, setPackageFilter] = useState<string>("all");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+    return map;
+  }, [invoices]);
 
   const filtered = members.filter(m => {
     const q = query.toLowerCase();
-    let matchSearch = false;
-
-    const isNumeric = /^\d+$/.test(query.trim());
-    if (searchField === "all") {
-      matchSearch = m.name.toLowerCase().includes(q) || m.phone.includes(query) || m.uuid === query.trim();
-      if (m.id !== -1 && isNumeric) {
-        // Only do EXACT match for ID if user typed a number
-        matchSearch = matchSearch || m.id.toString() === query.trim();
-      }
-    } else if (searchField === "id" && m.id !== -1) {
-      matchSearch = m.id.toString() === query.trim();
-    } else if (searchField === "name") {
-      matchSearch = m.name.toLowerCase().includes(q);
-    } else if (searchField === "phone") {
-      matchSearch = m.phone.includes(query.trim());
+    let matchSearch = m.name.toLowerCase().includes(q) || m.phone.includes(query);
+    // Allow ID search only for non-clinic visitors
+    if (m.id !== -1) {
+      matchSearch = matchSearch || m.id.toString().includes(q);
     }
+    const hasDebt = m.status === 'has_debt' || (memberDebts.get(m.uuid) || 0) > 0;
+    const matchStatus =
+      statusFilter === "all" ? true :
+      statusFilter === "has_debt" ? hasDebt :
+      m.status === statusFilter;
 
-    const isFrozen = m.frozen_until ? new Date(m.frozen_until) > new Date() : false;
-    let matchStatus = false;
-    if (statusFilter === "all") matchStatus = true;
-    else if (statusFilter === "frozen") matchStatus = isFrozen;
-    else if (statusFilter === "active") matchStatus = m.status === 'active' && !isFrozen;
-    else matchStatus = m.status === statusFilter;
-
-    const matchClass = classFilter === "all" || m.class_id === classFilter;
-    const matchPackage = packageFilter === "all" || m.package_id === packageFilter;
-
-    return matchSearch && matchStatus && matchClass && matchPackage;
-  }).sort((a, b) => {
-    const isNumeric = /^\d+$/.test(query.trim());
-    if (isNumeric) {
-      if (a.id.toString() === query.trim() && b.id.toString() !== query.trim()) return -1;
-      if (b.id.toString() === query.trim() && a.id.toString() !== query.trim()) return 1;
-    }
-    return 0;
+    return matchSearch && matchStatus;
   });
-
-  const totalPages = Math.ceil(filtered.length / pageSize);
-  const paginatedMembers = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const counts: Record<string, number> = {
     all: members.length,
-    active: members.filter(m => m.status === 'active' && !(m.frozen_until && new Date(m.frozen_until) > new Date())).length,
-    frozen: members.filter(m => m.frozen_until && new Date(m.frozen_until) > new Date()).length,
+    active: members.filter(m => m.status === 'active').length,
+    inactive: members.filter(m => m.status === 'inactive').length,
     expiring_soon: members.filter(m => m.status === 'expiring_soon').length,
     expired: members.filter(m => m.status === 'expired').length,
-    has_debt: members.filter(m => m.status === 'has_debt').length,
+    has_debt: members.filter(m => m.status === 'has_debt' || (memberDebts.get(m.uuid) || 0) > 0).length,
+    frozen: members.filter(m => m.status === 'frozen').length,
     new: members.filter(m => m.status === 'new').length,
   };
 
-  const openAdd = () => { setForm(emptyForm); setShowAdd(true); setPhotoBlob(null); setPhotoDataUrl(null); setIsCapturing(false); };
-  const openEdit = (m: Member) => { setEditMember(m); setForm(memberToForm(m)); setPhotoBlob(null); setPhotoDataUrl(m.photo_url || null); setIsCapturing(false); };
-  const closeDialogs = () => { setShowAdd(false); setEditMember(null); setPhotoBlob(null); setPhotoDataUrl(null); setIsCapturing(false); };
+  const openAdd = () => { setForm(emptyForm); setShowAdd(true); };
+  const openEdit = (m: Member) => { setEditMember(m); setForm(memberToForm(m)); };
+  const closeDialogs = () => { setShowAdd(false); setEditMember(null); };
+
+  const handleSave = async () => {
+    if (!form.name.trim() || !form.phone.trim()) {
+      toast.error("Name and phone are required");
+      return;
+    }
+
+    const phoneRegex = /^\d{11}$/;
+    if (!phoneRegex.test(form.phone.trim())) {
+      toast.error("Phone number must be exactly 11 digits");
+      return;
+    }
+    
+    if (form.parentPhone.trim() && !phoneRegex.test(form.parentPhone.trim())) {
+      toast.error("Parent phone number must be exactly 11 digits");
+      return;
+    }
+
+    if (editMember) {
+      const updates: Partial<Member> = {
+        name: form.name.trim(),
+        phone: form.phone.trim(),
+        parent_phone: form.parentPhone.trim() || null,
+        birth_date: form.birthDate || null,
+        gender: (form.gender as Gender) || null,
+        status: form.status,
+        class_id: form.isClinicVisitor || form.classId === '__none__' ? null : (form.classId || null),
+        sessions_remaining: Number(form.sessions_remaining) || 0,
+        total_sessions: Number(form.total_sessions) || 0,
+        freeze_days_used: Number(form.freeze_days_used) || 0,
+        freeze_days_total: Number(form.freeze_days_total) || 0,
+        invitations_remaining: Number(form.invitations_remaining) || 0,
+        inbody_sessions_remaining: Number(form.inbody_sessions_remaining) || 0,
+      };
+
+      if (!form.isClinicVisitor && editMember.id === -1) {
+        updates.id = 0; // Signals queries.ts to auto-assign a new ID
+      }
+
+      updateMember.mutate({ id: editMember.uuid, updates }, {
+        onSuccess: () => {
+          toast.success(`${form.name} updated`);
+          closeDialogs();
+        },
+        onError: (err) => toast.error(`Error updating: ${err.message}`)
+      });
+    } else {
+      createMember.mutate({
+        name: form.name.trim(),
+        phone: form.phone.trim(),
+        parent_phone: form.parentPhone.trim() || null,
+        birth_date: form.birthDate || null,
+        gender: (form.gender as Gender) || null,
+        class_id: form.isClinicVisitor || form.classId === '__none__' ? null : (form.classId || null),
+        status: form.status || 'new',
+        sessions_remaining: 0,
+        total_sessions: 0,
+        expires_at: null,
+        member_since: new Date().toISOString(),
+        package_name: "None",
+        freeze_days_used: 0,
+        freeze_days_total: 0,
+        id: form.isClinicVisitor ? -1 : 0,
+      }, {
+        onSuccess: () => {
+          toast.success(`Member ${form.name} created`);
+          closeDialogs();
+        },
+        onError: (err) => toast.error(`Error creating: ${err.message}`)
+      });
+    }
+  };
 
   const handleDelete = (member: Member) => {
-    if (!confirm("Are you sure you want to permanently delete this member?")) return;
     deleteMember.mutate(member.uuid, {
       onSuccess: () => {
         createAuditLog.mutate({
@@ -209,172 +251,7 @@ export default function Members() {
         toast.success(`Member ${member.name} deleted`);
         setConfirmDelete(null);
       },
-      onError: (err) => toast.error(`Error deleting: ${err.message}`)
-    });
-  };
-
-  const handleDecrement = (member: Member, field: 'invitations_remaining' | 'inbody_sessions_remaining') => {
-    const currentVal = member[field] ?? 0;
-    if (currentVal <= 0) return;
-    updateMember.mutate({
-      id: member.uuid,
-      updates: { [field]: currentVal - 1 }
-    }, {
-      onSuccess: () => {
-        const typeStr = field === 'invitations_remaining' ? 'invitation' : 'InBody session';
-        toast.success(`Used 1 ${typeStr} for ${member.name}`);
-        createAuditLog.mutate({
-          action: `Decrement ${typeStr}`,
-          action_type: 'other',
-          performed_by: currentUser?.id ?? null,
-          performer_name: currentUser?.name ?? 'System',
-          member_id: member.uuid,
-          member_name: member.name,
-          timestamp: new Date().toISOString(),
-          details: `Decremented ${typeStr} for member ${member.id} (${member.name}). Remaining: ${currentVal - 1}`,
-        });
-      },
-      onError: (err) => toast.error(`Error: ${err.message}`)
-    });
-  };
-
-  const handleFreeze = () => {
-    if (!freezeMemberState) return;
-    const days = Number(freezeDaysInput);
-    if (!days || days <= 0 || days % 7 !== 0) {
-      toast.error("Please select a valid freeze duration (multiples of 7)");
-      return;
-    }
-    if (days > freezeMemberState.freeze_days_remaining) {
-      toast.error(`Cannot freeze for more than ${freezeMemberState.freeze_days_remaining} days`);
-      return;
-    }
-
-    freezeMember.mutate({ memberId: freezeMemberState.uuid, days }, {
-      onSuccess: () => {
-        createAuditLog.mutate({
-          action: 'Freeze Member',
-          action_type: 'other',
-          performed_by: currentUser?.id ?? null,
-          performer_name: currentUser?.name ?? 'System',
-          member_id: freezeMemberState.uuid,
-          member_name: freezeMemberState.name,
-          timestamp: new Date().toISOString(),
-          details: `Froze membership for ${days} days. Previous expires_at: ${freezeMemberState.expires_at ? format(new Date(freezeMemberState.expires_at), 'dd/MM/yyyy') : 'N/A'}`,
-        });
-        toast.success(`Membership frozen for ${days} days`);
-        setFreezeMemberState(null);
-        setFreezeDaysInput("");
-      },
-      onError: (err: any) => toast.error(`Error freezing: ${err.message}`)
-    });
-  };
-
-  const handleUnfreeze = (m: Member) => {
-    unfreezeMember.mutate(m.uuid, {
-      onSuccess: () => {
-        createAuditLog.mutate({
-          action: 'Unfreeze Member',
-          action_type: 'other',
-          performed_by: currentUser?.id ?? null,
-          performer_name: currentUser?.name ?? 'System',
-          member_id: m.uuid,
-          member_name: m.name,
-          timestamp: new Date().toISOString(),
-          details: `Manually unfroze membership early.`,
-        });
-        toast.success(`Membership for ${m.name} unfrozen.`);
-      },
-      onError: (err: any) => toast.error(`Error unfreezing: ${err.message}`)
-    });
-  };
-
-  const handleUpgrade = async () => {
-    if (!upgradeMemberState || !upgradePackageId) return;
-    const currentPkg = packages.find(p => p.name === upgradeMemberState.package_name);
-    const newPkg = packages.find(p => p.id.toString() === upgradePackageId);
-    if (!currentPkg || !newPkg) {
-      toast.error("Package data missing");
-      return;
-    }
-
-    const activeInvoice = invoices.filter(i => i.member_id === upgradeMemberState.uuid && i.package_name === upgradeMemberState.package_name).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-
-    let usedSessions = 0;
-    if (currentPkg.sessions !== 999 && upgradeMemberState.sessions_remaining !== 999) {
-      usedSessions = Math.max(0, currentPkg.sessions - upgradeMemberState.sessions_remaining);
-    }
-
-    const newSessions = newPkg.sessions === 999 ? 999 : Math.max(0, newPkg.sessions - usedSessions);
-
-    const activationDateStr = activeInvoice?.activation_date || activeInvoice?.created_at || new Date().toISOString();
-    const actDate = new Date(activationDateStr);
-    const newExpiresAt = new Date(actDate.getTime() + newPkg.validity_days * 86400000).toISOString();
-
-    const priceDiff = Math.max(0, newPkg.price - currentPkg.price);
-    const discountAmt = Number(upgradeDiscount) || 0;
-    const finalExpected = Math.max(0, priceDiff - discountAmt);
-    const actualPaid = upgradePaidAmount !== "" ? Number(upgradePaidAmount) : finalExpected;
-
-    if (activeInvoice) {
-      updateInvoice.mutate({
-        uuid: activeInvoice.uuid,
-        updates: { sessions_remaining: 0 }
-      });
-    }
-
-    createInvoice.mutate({
-      member_id: upgradeMemberState.uuid,
-      member_name: upgradeMemberState.name,
-      class_id: upgradeMemberState.class_id || null,
-      package_id: newPkg.id,
-      package_name: newPkg.name,
-      total_amount: newPkg.price,
-      paid_amount: actualPaid,
-      status: actualPaid >= finalExpected ? 'paid' : (actualPaid > 0 ? 'partial' : 'unpaid'),
-      discount_id: null,
-      discount_description: discountAmt > 0 ? 'Upgrade Discount' : null,
-      discount_amount: discountAmt,
-      payment_method: upgradePaymentMethod as any,
-      activation_date: activationDateStr,
-      ...(upgradePaymentDate ? { created_at: new Date(upgradePaymentDate).toISOString() } : {}),
-      ...(upgradeInvoiceId.trim() ? { id: upgradeInvoiceId.trim() } : {})
-    }, {
-      onSuccess: () => {
-        updateMember.mutate({
-          id: upgradeMemberState.uuid,
-          updates: {
-            package_name: newPkg.name,
-            package_id: newPkg.id,
-            sessions_remaining: newSessions,
-            expires_at: newExpiresAt,
-            status: 'active'
-          }
-        }, {
-          onSuccess: () => {
-            createAuditLog.mutate({
-              action: 'Upgrade Package',
-              action_type: 'edit_payment',
-              performed_by: currentUser?.id ?? null,
-              performer_name: currentUser?.name ?? 'System',
-              member_id: upgradeMemberState.uuid,
-              member_name: upgradeMemberState.name,
-              timestamp: new Date().toISOString(),
-              details: `Upgraded from ${currentPkg.name} to ${newPkg.name}. Difference paid: ${priceDiff} EGP`,
-            });
-            toast.success("Package upgraded successfully");
-            setUpgradeMemberState(null);
-            setUpgradePackageId("");
-            setUpgradePaymentMethod("Cash");
-            setUpgradeInvoiceId("");
-            setUpgradePaymentDate("");
-            setUpgradeDiscount("");
-            setUpgradePaidAmount("");
-            setUpgradePackageCategoryFilter("All");
-          }
-        });
-      },
-      onError: (err: any) => toast.error(`Error upgrading: ${err.message}`)
+      onError: (err) => toast.error(`Error deleting: ${err.message}`),
     });
   };
 
@@ -383,64 +260,377 @@ export default function Members() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Members</h1>
           <p className="text-sm text-muted-foreground">{members.length} total members</p>
         </div>
-        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-          <Button 
-            variant="outline" 
-            onClick={generateSelfRegistrationLink} 
-            className="flex-1 sm:flex-none gap-2"
-            title="Generate One-Time Link"
-          >
-            <QrCode className="w-4 h-4" /> Self-Registration QR
-          </Button>
-          <Button data-testid="btn-add-member" onClick={openAdd} className="flex-1 sm:flex-none gap-2">
-            <Plus className="w-4 h-4" /> New Member
-          </Button>
-        </div>
+        <Button data-testid="btn-add-member" onClick={openAdd} className="gap-2">
+          <Plus className="w-4 h-4" /> New Member
+        </Button>
       </div>
 
-      <MemberFilters 
-        searchField={searchField} setSearchField={setSearchField}
-        query={query} setQuery={setQuery} setCurrentPage={setCurrentPage}
-        statusFilter={statusFilter} setStatusFilter={setStatusFilter}
-        counts={counts}
-        classFilter={classFilter} setClassFilter={setClassFilter} classes={classes}
-        packageFilter={packageFilter} setPackageFilter={setPackageFilter} packages={packages}
-      />
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            data-testid="input-member-search"
+            placeholder="Search by name, ID, or phone..."
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Tabs value={statusFilter} onValueChange={setStatusFilter}>
+          <TabsList className="h-9 flex-wrap">
+            <TabsTrigger value="all" className="text-xs">All ({counts.all})</TabsTrigger>
+            <TabsTrigger value="active" className="text-xs">Active ({counts.active})</TabsTrigger>
+            <TabsTrigger value="inactive" className="text-xs">Inactive ({counts.inactive})</TabsTrigger>
+            <TabsTrigger value="expiring_soon" className="text-xs">Expiring ({counts.expiring_soon})</TabsTrigger>
+            <TabsTrigger value="expired" className="text-xs">Expired ({counts.expired})</TabsTrigger>
+            <TabsTrigger value="has_debt" className="text-xs">Debt ({counts.has_debt})</TabsTrigger>
+            <TabsTrigger value="frozen" className="text-xs">Frozen ({counts.frozen})</TabsTrigger>
+            <TabsTrigger value="new" className="text-xs">New ({counts.new})</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
 
-      <MemberList 
-        paginatedMembers={paginatedMembers} invoices={invoices} members={members}
-        filteredLength={filtered.length} pageSize={pageSize} setPageSize={setPageSize}
-        currentPage={currentPage} setCurrentPage={setCurrentPage} totalPages={totalPages}
-        unfreezeIsPending={unfreezeMember.isPending} setQrMember={setQrMember}
-        handleDecrement={handleDecrement} handleUnfreeze={handleUnfreeze}
-        setFreezeMemberState={setFreezeMemberState} setFreezeDaysInput={setFreezeDaysInput}
-        setUpgradeMemberState={setUpgradeMemberState} setHistoryMember={setHistoryMember}
-        openEdit={openEdit} setConfirmDelete={setConfirmDelete}
-      />
+      {/* Members grid */}
+      {filtered.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-muted-foreground">No members found</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="rounded-md border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Member</TableHead>
+                <TableHead>Contact Info</TableHead>
+                <TableHead>Class</TableHead>
+                <TableHead>Subscription</TableHead>
+                <TableHead>Balances</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map(m => {
+                const age = calcAge(m.birth_date);
+                const freezeRemaining = (m.freeze_days_total || 0) - (m.freeze_days_used || 0);
+                const debtAmount = memberDebts.get(m.uuid) || 0;
+                return (
+                  <TableRow key={m.uuid} data-testid={`member-row-${m.uuid}`}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${m.id === -1 ? 'bg-teal-100 text-teal-600' : 'bg-primary/10 text-primary'}`}>
+                          <span className="text-sm font-bold">{m.name.charAt(0)}</span>
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-semibold text-foreground text-sm">{m.name}</p>
+                            <StatusBadge status={m.status} />
+                            {debtAmount > 0 && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200">
+                                Due: {debtAmount.toLocaleString()} EGP
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {m.id === -1 ? (
+                              <span className="text-amber-600 font-medium">Clinic Visitor</span>
+                            ) : (
+                              <>#{m.id ?? '?'}</>
+                            )}
+                            {m.gender && ` · ${m.gender}`}
+                            {age !== null && ` · ${age}y`}
+                          </p>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Phone className="w-3 h-3" /> {m.phone}
+                        </div>
+                        {m.parent_phone && (
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className="w-3 h-3 flex items-center justify-center font-bold text-[10px]">P</span> {m.parent_phone}
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        {m.class_info ? (
+                          <div className="text-sm">
+                            <span className="font-semibold text-primary">{m.class_info.sport_name ?? 'No Sport'}</span>
+                            <span className="text-muted-foreground mx-1">-</span>
+                            <span>{m.class_info.coach_name ?? 'No Coach'}</span>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {m.class_info.schedules?.map(s => `${s.day.slice(0,3)} ${s.time}`).join(', ')}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">-</span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">{m.package_name || 'None'}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          Last Subscription: {m.last_subscription_date ? format(new Date(m.last_subscription_date), "dd MMM yyyy") : 'Never'}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          Expires: {m.expires_at ? format(new Date(m.expires_at), "dd MMM yyyy") : 'N/A'}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1 text-xs">
+                        <div className="flex justify-between w-32">
+                          <span className="text-muted-foreground">Sessions:</span>
+                          <span className="font-medium">{m.sessions_remaining === 999 ? "∞" : m.sessions_remaining}</span>
+                        </div>
+                        <div className="flex justify-between w-32">
+                          <span className="text-muted-foreground">Freezes:</span>
+                          <span className="font-medium">{m.freeze_days_total - m.freeze_days_used}</span>
+                        </div>
+                        <div className="flex justify-between w-32">
+                          <span className="text-muted-foreground">Invites:</span>
+                          <span className="font-medium">{m.invitations_remaining ?? 0}</span>
+                        </div>
+                        <div className="flex justify-between w-32">
+                          <span className="text-muted-foreground">InBody:</span>
+                          <span className="font-medium">{m.inbody_sessions_remaining ?? 0}</span>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <button
+                          data-testid={`btn-edit-member-${m.uuid}`}
+                          onClick={() => openEdit(m)}
+                          className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                          title="Edit"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          data-testid={`btn-delete-member-${m.uuid}`}
+                          onClick={() => setConfirmDelete(m)}
+                          className="p-1.5 rounded-md hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
-      <MemberFormDialog
-        showAdd={showAdd}
-        editMember={editMember}
-        form={form}
-        setForm={setForm}
-        closeDialogs={closeDialogs}
-        invoices={invoices || []}
-        classes={classes || []}
-        currentUser={currentUser}
-        searchString={searchString}
-        auditLogs={auditLogs || []}
-        isCapturing={isCapturing}
-        setIsCapturing={setIsCapturing}
-        photoBlob={photoBlob}
-        setPhotoBlob={setPhotoBlob}
-        photoDataUrl={photoDataUrl}
-        setPhotoDataUrl={setPhotoDataUrl}
-      />
+      {/* Add / Edit Member Dialog */}
+      <Dialog open={showAdd || !!editMember} onOpenChange={o => !o && closeDialogs()}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editMember ? `Edit: ${editMember.name}` : "New Member"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-1">
+            {/* Clinic Visitor Checkbox */}
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="is-clinic-visitor"
+                checked={form.isClinicVisitor}
+                onCheckedChange={(c) => setForm(p => ({ ...p, isClinicVisitor: !!c }))}
+              />
+              <Label htmlFor="is-clinic-visitor" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                This is a Clinic Visitor
+              </Label>
+            </div>
+
+            {/* Name */}
+            <div className="space-y-1.5">
+              <Label htmlFor="m-name">Full Name *</Label>
+              <Input
+                data-testid="input-new-member-name"
+                id="m-name"
+                placeholder="Full name"
+                value={form.name}
+                onChange={f('name')}
+              />
+            </div>
+
+            {/* Phone + Parent Phone */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="m-phone">Phone *</Label>
+                <Input
+                  data-testid="input-new-member-phone"
+                  id="m-phone"
+                  placeholder="01XXXXXXXXX"
+                  value={form.phone}
+                  onChange={f('phone')}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="m-parent-phone">Parent Phone</Label>
+                <Input
+                  data-testid="input-new-member-parent-phone"
+                  id="m-parent-phone"
+                  placeholder="01XXXXXXXXX"
+                  value={form.parentPhone}
+                  onChange={f('parentPhone')}
+                />
+              </div>
+            </div>
+
+            {/* Birth date + Gender */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="m-birth">Date of Birth</Label>
+                <Input
+                  data-testid="input-new-member-birthdate"
+                  id="m-birth"
+                  type="date"
+                  value={form.birthDate}
+                  onChange={f('birthDate')}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Gender</Label>
+                <Select value={form.gender} onValueChange={v => setForm(p => ({ ...p, gender: v as Gender }))}>
+                  <SelectTrigger data-testid="select-member-gender">
+                    <SelectValue placeholder="Select..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GENDERS.map(g => <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Class (Hidden for clinic visitors) */}
+            {!form.isClinicVisitor && (
+              <div className="space-y-1.5">
+                <Label htmlFor="m-class">Class</Label>
+                <Select value={form.classId} onValueChange={v => setForm(p => ({ ...p, classId: v }))}>
+                  <SelectTrigger data-testid="select-member-class">
+                    <SelectValue placeholder="Select Class" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None</SelectItem>
+                    {classes.map(c => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.sport_name ?? 'Sport'} - {c.coach_name ?? 'Coach'} ({c.schedules?.length || 0} slots)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Member Status (for editing) */}
+            {editMember && (
+              <div className="space-y-1.5">
+                <Label htmlFor="m-status">Membership Status</Label>
+                <Select value={form.status} onValueChange={v => setForm(p => ({ ...p, status: v as MemberStatus }))}>
+                  <SelectTrigger data-testid="select-member-status">
+                    <SelectValue placeholder="Select Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MEMBER_STATUS_OPTIONS.map(s => (
+                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Custom Session Edits */}
+            {editMember && (
+              <div className="pt-4 mt-4 border-t space-y-4">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Custom Adjustments</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>Sessions Remaining</Label>
+                    <Input type="number" value={form.sessions_remaining} onChange={e => setForm(p => ({ ...p, sessions_remaining: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Total Sessions</Label>
+                    <Input type="number" value={form.total_sessions} onChange={e => setForm(p => ({ ...p, total_sessions: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Freeze Days Used</Label>
+                    <Input type="number" value={form.freeze_days_used} onChange={e => setForm(p => ({ ...p, freeze_days_used: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Freeze Days Total</Label>
+                    <Input type="number" value={form.freeze_days_total} onChange={e => setForm(p => ({ ...p, freeze_days_total: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Invitations</Label>
+                    <Input type="number" value={form.invitations_remaining} onChange={e => setForm(p => ({ ...p, invitations_remaining: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>InBody Sessions</Label>
+                    <Input type="number" value={form.inbody_sessions_remaining} onChange={e => setForm(p => ({ ...p, inbody_sessions_remaining: e.target.value }))} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+
+            {/* Subscription Package — read-only display + change via invoice */}
+            {editMember && (
+              <div className="space-y-1.5">
+                <Label>Subscription Package</Label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 px-3 py-2 rounded-md border bg-muted/50 text-sm text-foreground">
+                    {editMember.package_name || "None"}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => {
+                      closeDialogs();
+                      navigate(`/invoices?memberId=${editMember.uuid}`);
+                    }}
+                  >
+                    Change Subscription
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  To change the subscription, create a new invoice with the desired package.
+                </p>
+              </div>
+            )}
+
+            {/* Preview age if birthdate set */}
+            {form.birthDate && (
+              <div className="px-3 py-2 rounded-lg bg-muted/50 text-xs text-muted-foreground">
+                Age: {calcAge(form.birthDate) ?? '—'} years old
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDialogs}>Cancel</Button>
+            <Button data-testid="btn-save-member" onClick={handleSave}>
+              {editMember ? "Save Changes" : "Create Member"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Delete Member Confirmation */}
       <AlertDialog open={!!confirmDelete} onOpenChange={o => !o && setConfirmDelete(null)}>
         <AlertDialogContent>
@@ -458,258 +648,12 @@ export default function Members() {
             <AlertDialogAction
               onClick={() => confirmDelete && handleDelete(confirmDelete)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={deleteMember.isPending}
             >
-              {deleteMember.isPending ? "Deleting..." : "Delete Permanently"}
+              Delete Permanently
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <Dialog open={!!historyMember} onOpenChange={(o) => !o && setHistoryMember(null)}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Session History: {historyMember?.name}</DialogTitle>
-          </DialogHeader>
-          <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-2 py-2">
-            {checkInHistory.filter(ci => {
-              if (!historyMember?.last_subscription_date) return true;
-              return new Date(ci.created_at) >= new Date(historyMember.last_subscription_date);
-            }).length === 0 ? (
-              <p className="text-center text-muted-foreground py-6">No sessions recorded in current subscription.</p>
-            ) : checkInHistory.filter(ci => {
-              if (!historyMember?.last_subscription_date) return true;
-              return new Date(ci.created_at) >= new Date(historyMember.last_subscription_date);
-            }).map(ci => {
-              return (
-                <div key={ci.id} className="flex flex-col p-3 rounded-lg border bg-card">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex flex-col">
-                      <p className="font-semibold text-sm">Session</p>
-                      {editingLogId === ci.id ? (
-                        <div className="flex items-center gap-2 mt-1">
-                          <Input 
-                            type="datetime-local" 
-                            value={editLogTime} 
-                            onChange={e => setEditLogTime(e.target.value)} 
-                            className="h-8 text-xs max-w-[200px]" 
-                          />
-                          <Button size="sm" onClick={() => {
-                            updateMemberCheckInTime.mutate({ id: ci.id, newTime: new Date(editLogTime).toISOString() });
-                            setEditingLogId(null);
-                          }}>Save</Button>
-                          <Button size="sm" variant="ghost" onClick={() => setEditingLogId(null)}>Cancel</Button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <p className="text-xs text-muted-foreground">
-                            {format(parseISO(ci.created_at), "MMM d, yyyy h:mm a")}
-                          </p>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => { 
-                            setEditingLogId(ci.id); 
-                            setEditLogTime(format(parseISO(ci.created_at), "yyyy-MM-dd'T'HH:mm")); 
-                          }}>
-                            <Pencil className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      )}
-                      {ci.is_override && (
-                        <Badge variant="outline" className="text-[10px] mt-1 bg-amber-50 text-amber-600 border-amber-200 w-max">Manual Override</Badge>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-end border-t pt-2">
-                    <p className="text-xs text-muted-foreground">Checked in by: <span className="font-medium text-foreground">{ci.checked_in_by_name || 'System'}</span></p>
-                    <Button variant="ghost" size="sm" className="h-6 text-destructive text-xs hover:bg-destructive/10" onClick={() => {
-                      if(confirm("Are you sure you want to delete this check-in? The session will be refunded to the member.")) {
-                        deleteMemberCheckIn.mutate(ci.id);
-                      }
-                    }}>
-                      <Trash2 className="h-3 w-3 mr-1" /> Delete
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Freeze Member Dialog */}
-      <Dialog open={!!freezeMemberState} onOpenChange={o => { if (!o) { setFreezeMemberState(null); setFreezeDaysInput(""); } }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Freeze Membership</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="px-3 py-2 rounded-lg bg-muted/50 text-sm space-y-1">
-              <div className="flex justify-between"><span className="text-muted-foreground">Member</span><span>{freezeMemberState?.name}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Freeze Days Remaining</span><span className="font-bold text-blue-600">{freezeMemberState?.freeze_days_remaining} days</span></div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Days to Freeze</Label>
-              <Select value={freezeDaysInput} onValueChange={setFreezeDaysInput}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select duration" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: Math.floor((freezeMemberState?.freeze_days_remaining || 0) / 7) }).map((_, i) => {
-                    const d = (i + 1) * 7;
-                    return <SelectItem key={d} value={d.toString()}>{d} Days</SelectItem>
-                  })}
-                </SelectContent>
-              </Select>
-              {(!freezeMemberState?.freeze_days_remaining || freezeMemberState.freeze_days_remaining < 7) && (
-                <p className="text-xs text-red-500">Not enough freeze days remaining (minimum 7).</p>
-              )}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setFreezeMemberState(null); setFreezeDaysInput(""); }}>Cancel</Button>
-            <Button onClick={handleFreeze} disabled={freezeMember.isPending}>
-              {freezeMember.isPending ? "Freezing..." : "Freeze Membership"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Upgrade Member Dialog */}
-      <Dialog open={!!upgradeMemberState} onOpenChange={o => { if (!o) { setUpgradeMemberState(null); setUpgradePackageId(""); setUpgradePaymentMethod("Cash"); setUpgradeInvoiceId(""); setUpgradePaymentDate(""); setUpgradeDiscount(""); setUpgradePaidAmount(""); setUpgradePackageCategoryFilter("All"); } }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Upgrade Package</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="px-3 py-2 rounded-lg bg-muted/50 text-sm space-y-1">
-              <div className="flex justify-between"><span className="text-muted-foreground">Member</span><span>{upgradeMemberState?.name}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Current Package</span><span className="font-bold">{upgradeMemberState?.package_name}</span></div>
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label>Select New Package</Label>
-                <Tabs value={upgradePackageCategoryFilter} onValueChange={(v: any) => setUpgradePackageCategoryFilter(v)} className="w-[150px]">
-                  <TabsList className="grid w-full grid-cols-3 h-7 text-[10px]">
-                    <TabsTrigger value="All" className="text-[10px]">All</TabsTrigger>
-                    <TabsTrigger value="Normal" className="text-[10px]">Gym</TabsTrigger>
-                    <TabsTrigger value="PT" className="text-[10px]">PT</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
-              <SearchableSelect
-                options={packages.filter(p => p.name !== upgradeMemberState?.package_name && p.category !== 'Clinic' && (upgradePackageCategoryFilter === "All" || p.category === upgradePackageCategoryFilter)).map(p => ({
-                  value: p.id.toString(),
-                  label: `${p.name} - ${p.price} EGP`,
-                  searchTerms: p.category
-                }))}
-                value={upgradePackageId}
-                onValueChange={setUpgradePackageId}
-                placeholder="Select package..."
-                searchPlaceholder="Search packages..."
-              />
-            </div>
-            {upgradePackageId && upgradeMemberState?.package_name && (
-              <>
-                <div className="grid grid-cols-2 gap-3 mt-4">
-                  <div className="space-y-1.5">
-                    <Label>Payment Method</Label>
-                    <Select value={upgradePaymentMethod} onValueChange={setUpgradePaymentMethod}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Cash">Cash</SelectItem>
-                        <SelectItem value="Visa">Visa</SelectItem>
-                        <SelectItem value="InstaPay">InstaPay</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Custom Invoice ID <span className="text-muted-foreground text-xs">(optional)</span></Label>
-                    <Input placeholder="e.g. INV-123" value={upgradeInvoiceId} onChange={e => setUpgradeInvoiceId(e.target.value)} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>Payment Date</Label>
-                    <Input type="date" value={upgradePaymentDate} onChange={e => setUpgradePaymentDate(e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Discount <span className="text-muted-foreground text-xs">(optional)</span></Label>
-                    <Input type="number" min="0" placeholder="0 EGP" value={upgradeDiscount} onChange={e => setUpgradeDiscount(e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Paid Amount (EGP)</Label>
-                    <Input type="number" min="0" placeholder={`Full Amount (${Math.max(0, (packages.find(p => p.id.toString() === upgradePackageId)?.price || 0) - (packages.find(p => p.name === upgradeMemberState.package_name)?.price || 0) - Number(upgradeDiscount))} EGP)`} value={upgradePaidAmount} onChange={e => setUpgradePaidAmount(e.target.value)} />
-                  </div>
-                </div>
-                <div className="px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100 text-sm space-y-1 mt-2">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Difference to Pay</span>
-                    <span className="font-bold text-emerald-600">
-                      {Math.max(0, (packages.find(p => p.id.toString() === upgradePackageId)?.price || 0) - (packages.find(p => p.name === upgradeMemberState.package_name)?.price || 0))} EGP
-                    </span>
-                  </div>
-                  {(Number(upgradeDiscount) > 0) && (
-                    <div className="flex justify-between"><span className="text-muted-foreground">After Discount</span>
-                      <span className="font-bold text-emerald-600">
-                        {Math.max(0, (packages.find(p => p.id.toString() === upgradePackageId)?.price || 0) - (packages.find(p => p.name === upgradeMemberState.package_name)?.price || 0) - Number(upgradeDiscount))} EGP
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setUpgradeMemberState(null); setUpgradePackageId(""); setUpgradePaymentMethod("Cash"); setUpgradeInvoiceId(""); setUpgradePaymentDate(""); setUpgradeDiscount(""); setUpgradePaidAmount(""); setUpgradePackageCategoryFilter("All"); }}>Cancel</Button>
-            <Button onClick={handleUpgrade} disabled={createInvoice.isPending || updateMember.isPending}>
-              {createInvoice.isPending || updateMember.isPending ? "Upgrading..." : "Upgrade Now"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* QR Code Dialog */}
-      <Dialog open={!!qrMember} onOpenChange={(open) => !open && setQrMember(null)}>
-        <DialogContent className="sm:max-w-md text-center">
-          <DialogHeader>
-            <DialogTitle>QR Code</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col items-center justify-center p-6 space-y-4">
-            {qrMember && (
-              <div className="bg-white p-4 rounded-xl shadow-sm">
-                <QRCode value={qrMember.uuid} size={256} />
-              </div>
-            )}
-            <p className="text-sm font-medium">{qrMember?.name}</p>
-            <p className="text-xs text-muted-foreground">Scan this code to check in.</p>
-          </div>
-          <DialogFooter className="sm:justify-center">
-            <Button variant="secondary" onClick={() => setQrMember(null)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Registration Link QR Dialog */}
-      <Dialog open={!!registrationLinkQr} onOpenChange={(open) => !open && setRegistrationLinkQr(null)}>
-        <DialogContent className="sm:max-w-md text-center">
-          <DialogHeader>
-            <DialogTitle>Self-Registration QR</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col items-center justify-center p-6 space-y-4">
-            {registrationLinkQr && (
-              <div className="bg-white p-4 rounded-xl shadow-sm">
-                <QRCode value={registrationLinkQr} size={256} />
-              </div>
-            )}
-            <p className="text-sm font-medium">One-Time Registration Link</p>
-            <p className="text-xs text-muted-foreground">Scan this to register a new member. The link closes automatically upon completion.</p>
-          </div>
-          <DialogFooter className="sm:justify-center">
-            <Button variant="secondary" onClick={() => setRegistrationLinkQr(null)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
-import { Badge } from "@/components/ui/badge";
-import { MemberFormDialog, memberToForm, emptyForm, type MemberForm } from "@/components/features/members/MemberFormDialog";
-

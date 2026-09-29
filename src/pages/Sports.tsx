@@ -9,10 +9,8 @@ import { Plus, Pencil, Trash2, Trophy, Search } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import type { Sport } from "@/lib/types";
-import { useAuth } from "@/lib/auth";
 
 export default function Sports() {
-  const { isAdmin } = useAuth();
   const { data: sports = [], isLoading } = useSports();
   const createSport = useCreateSport();
   const updateSport = useUpdateSport();
@@ -59,14 +57,12 @@ export default function Sports() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Sports</h1>
           <p className="text-sm text-muted-foreground">{sports.length} total sports</p>
         </div>
-        {isAdmin && (
-          <Button onClick={openAdd} className="gap-2 shrink-0 w-full sm:w-auto"><Plus className="w-4 h-4" /> Add Sport</Button>
-        )}
+        <Button onClick={openAdd} className="gap-2 shrink-0"><Plus className="w-4 h-4" /> Add Sport</Button>
       </div>
 
       {/* Filters */}
@@ -102,14 +98,12 @@ export default function Sports() {
                   {filtered.map(s => (
                     <TableRow key={s.id}>
                       <TableCell className="font-medium">{s.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{format(new Date(s.created_at), 'dd/MM/yyyy')}</TableCell>
+                      <TableCell className="text-muted-foreground">{format(new Date(s.created_at), 'dd MMM yyyy')}</TableCell>
                       <TableCell className="text-right">
-                        {isAdmin && (
-                          <div className="flex items-center justify-end gap-2">
-                            <button onClick={() => openEdit(s)} className="p-2 hover:bg-muted rounded-md text-muted-foreground hover:text-foreground transition-colors"><Pencil className="w-4 h-4" /></button>
-                            <button onClick={() => setConfirmDelete(s)} className="p-2 hover:bg-red-50 rounded-md text-muted-foreground hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
-                          </div>
-                        )}
+                        <div className="flex items-center justify-end gap-2">
+                          <button onClick={() => openEdit(s)} className="p-2 hover:bg-muted rounded-md text-muted-foreground hover:text-foreground transition-colors"><Pencil className="w-4 h-4" /></button>
+                          <button onClick={() => setConfirmDelete(s)} className="p-2 hover:bg-red-50 rounded-md text-muted-foreground hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -132,9 +126,7 @@ export default function Sports() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialogs}>Cancel</Button>
-            <Button onClick={handleSave} disabled={createSport.isPending || updateSport.isPending}>
-              {createSport.isPending || updateSport.isPending ? "Saving..." : editSport ? "Save" : "Add Sport"}
-            </Button>
+            <Button onClick={handleSave} disabled={createSport.isPending || updateSport.isPending}>{editSport ? "Save" : "Add Sport"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,15 +1,13 @@
-import { useState, useMemo, useEffect } from "react";
-import { useSearch, useLocation } from "wouter";
+import { useState, useMemo } from "react";
 import {
   CalendarDays, Users, DollarSign, TrendingDown, TrendingUp,
   Clock, CheckCircle2, CreditCard, AlertTriangle
 } from "lucide-react";
-import { calculateIncomeByMethod, calculateExpenseByMethod } from "../lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { useAuditLogs, useInvoices, useExpenses, useClasses, useInvoicePayments, useCheckInsByDate, useMembers, useClassScheduleOverrides } from "@/hooks/use-data";
+import { useAuditLogs, useInvoices, useExpenses, useClasses } from "@/hooks/use-data";
 import { format, isSameDay, subDays, addDays, parseISO } from "date-fns";
 
 function isoToDate(s: string) {
@@ -23,57 +21,23 @@ export default function DailyReport() {
   const { data: invoices = [] } = useInvoices();
   const { data: expenses = [] } = useExpenses();
   const { data: classes = [] } = useClasses();
-  const { data: invoicePayments = [] } = useInvoicePayments();
-  const { data: members = [] } = useMembers();
-  const { data: scheduleOverrides = [] } = useClassScheduleOverrides();
-  const searchParams = useSearch();
-  const [, setLocation] = useLocation();
 
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  
-  useEffect(() => {
-    const params = new URLSearchParams(searchParams);
-    const dateParam = params.get("date");
-    if (dateParam) {
-      const d = parseISO(dateParam);
-      if (!isNaN(d.getTime())) {
-        setSelectedDate(d);
-        params.delete("date");
-        const newSearch = params.toString();
-        const newUrl = newSearch ? window.location.pathname + "?" + newSearch : window.location.pathname;
-        setLocation(newUrl);
-      }
-    }
-  }, [searchParams, setLocation]);
+  const [selectedDate, setSelectedDate] = useState(new Date());
 
-  const dateString = format(selectedDate, "yyyy-MM-dd");
-  const { data: checkInsData = [] } = useCheckInsByDate(selectedDate);
-
-  // Memoized values for the selected day
   const dayOfWeek = DAYS_OF_WEEK[selectedDate.getDay()];
   const isToday = isSameDay(selectedDate, new Date());
 
-  const classesForDay = classes.filter(cls => {
-    const regularSchedule = (cls.schedules || []).find(s => s.day === dayOfWeek);
-    const overrideForDay = scheduleOverrides.find(o => o.class_id === cls.id && o.original_date === dateString);
-    const postponedToDay = scheduleOverrides.find(o => o.class_id === cls.id && o.status === 'postponed' && o.new_date === dateString);
+  const classesForDay = classes.filter(c => c.schedules?.some(s => s.day === dayOfWeek));
 
-    let isScheduledToday = !!regularSchedule;
-    
-    if (overrideForDay && (overrideForDay.status === 'postponed' || overrideForDay.status === 'cancelled')) {
-      isScheduledToday = false;
-    }
-    if (postponedToDay) {
-      isScheduledToday = true;
-    }
-    return isScheduledToday;
-  });
-
-  // Check-ins from check_ins table for selected date
-  const checkIns = checkInsData;
+  // Check-ins from audit log for selected date
+  const checkIns = useMemo(() =>
+    auditLogs.filter(log =>
+      (log.action_type === 'checkin' || log.action_type === 'override_checkin') &&
+      isSameDay(isoToDate(log.timestamp), selectedDate)
+    ), [auditLogs, selectedDate]);
 
   // Overrides for selected date
-  const overrides = checkIns.filter(l => l.is_override);
+  const overrides = checkIns.filter(l => l.action_type === 'override_checkin');
 
   // Invoices created on this date
   const invoicesForDay = useMemo(() =>
@@ -91,14 +55,10 @@ export default function DailyReport() {
   const totalExpenses = expensesForDay.reduce((s, e) => s + e.amount, 0);
   const netBalance = totalIncome - totalExpenses;
   const totalAttendance = classesForDay.reduce((s, c) => s + c.attendance_count, 0);
-  
-  const cashIncome = calculateIncomeByMethod(invoicesForDay, 'Cash');
-  const visaIncome = calculateIncomeByMethod(invoicesForDay, 'Visa');
-  const instapayIncome = calculateIncomeByMethod(invoicesForDay, 'InstaPay');
 
-  const cashExpenses = calculateExpenseByMethod(expensesForDay, 'Cash');
-  const visaExpenses = calculateExpenseByMethod(expensesForDay, 'Visa');
-  const instapayExpenses = calculateExpenseByMethod(expensesForDay, 'InstaPay');
+  const cashIncome = invoicesForDay.filter(i => i.payment_method === 'Cash').reduce((s, i) => s + i.paid_amount, 0);
+  const visaIncome = invoicesForDay.filter(i => i.payment_method === 'Visa').reduce((s, i) => s + i.paid_amount, 0);
+  const instapayIncome = invoicesForDay.filter(i => i.payment_method === 'InstaPay').reduce((s, i) => s + i.paid_amount, 0);
 
   const prevDay = () => setSelectedDate(d => subDays(d, 1));
   const nextDay = () => setSelectedDate(d => {
@@ -107,23 +67,23 @@ export default function DailyReport() {
   });
 
   const summaryCards = [
-    { label: "Door Check-ins", value: checkIns.length, icon: Users, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
+    { label: "Members Checked In", value: checkIns.length, icon: Users, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
     { label: "Classes Today", value: classesForDay.length, icon: Clock, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
-    { label: "Class Attendances", value: totalAttendance, icon: CheckCircle2, color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-100" },
+    { label: "Total Attendance", value: totalAttendance, icon: CheckCircle2, color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-100" },
     { label: "Overrides", value: overrides.length, icon: AlertTriangle, color: overrides.length > 0 ? "text-red-600" : "text-muted-foreground", bg: overrides.length > 0 ? "bg-red-50" : "bg-muted/50", border: overrides.length > 0 ? "border-red-100" : "border-border" },
   ];
 
   return (
     <div className="p-6 space-y-6">
       {/* Header with date nav */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between flex-wrap gap-4">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Daily Report</h1>
           <p className="text-sm text-muted-foreground">Day-by-day accounting and attendance</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+        <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={prevDay}>←</Button>
-          <div className="flex items-center gap-1 px-1 py-1 rounded-lg border bg-card justify-center flex-1 sm:flex-none">
+          <div className="flex items-center gap-1 px-1 py-1 rounded-lg border bg-card justify-center">
             <Input 
               type="date"
               className="h-8 w-[140px] border-none shadow-none focus-visible:ring-0 text-foreground font-semibold"
@@ -170,23 +130,17 @@ export default function DailyReport() {
             </div>
             <p className="text-3xl font-bold text-emerald-600">{totalIncome.toLocaleString()}</p>
             <p className="text-xs text-muted-foreground mt-1">EGP collected</p>
-            <div className="flex flex-wrap gap-2 mt-4">
+            <div className="flex flex-wrap gap-1.5 mt-3">
               {cashIncome > 0 && (
-                <Badge variant="outline" className="text-sm px-3 py-1 font-semibold border-amber-200 bg-amber-50 text-amber-700 shadow-sm">
-                  Cash: {cashIncome.toLocaleString()} EGP
-                </Badge>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Cash: {cashIncome}</span>
               )}
               {visaIncome > 0 && (
-                <Badge variant="outline" className="text-sm px-3 py-1 font-semibold border-blue-200 bg-blue-50 text-blue-700 shadow-sm">
-                  Visa: {visaIncome.toLocaleString()} EGP
-                </Badge>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Visa: {visaIncome}</span>
               )}
               {instapayIncome > 0 && (
-                <Badge variant="outline" className="text-sm px-3 py-1 font-semibold border-violet-200 bg-violet-50 text-violet-700 shadow-sm">
-                  InstaPay: {instapayIncome.toLocaleString()} EGP
-                </Badge>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">InstaPay: {instapayIncome}</span>
               )}
-              {totalIncome === 0 && <span className="text-sm text-muted-foreground">No payments</span>}
+              {totalIncome === 0 && <span className="text-xs text-muted-foreground">No payments</span>}
             </div>
           </CardContent>
         </Card>
@@ -198,24 +152,9 @@ export default function DailyReport() {
             </div>
             <p className="text-3xl font-bold text-red-600">{totalExpenses.toLocaleString()}</p>
             <p className="text-xs text-muted-foreground mt-1">EGP spent</p>
-            <div className="flex flex-wrap gap-2 mt-4">
-              {cashExpenses > 0 && (
-                <Badge variant="outline" className="text-sm px-3 py-1 font-semibold border-amber-200 bg-amber-50 text-amber-700 shadow-sm">
-                  Cash: {cashExpenses.toLocaleString()} EGP
-                </Badge>
-              )}
-              {visaExpenses > 0 && (
-                <Badge variant="outline" className="text-sm px-3 py-1 font-semibold border-blue-200 bg-blue-50 text-blue-700 shadow-sm">
-                  Visa: {visaExpenses.toLocaleString()} EGP
-                </Badge>
-              )}
-              {instapayExpenses > 0 && (
-                <Badge variant="outline" className="text-sm px-3 py-1 font-semibold border-violet-200 bg-violet-50 text-violet-700 shadow-sm">
-                  InstaPay: {instapayExpenses.toLocaleString()} EGP
-                </Badge>
-              )}
-              {totalExpenses === 0 && <span className="text-sm text-muted-foreground">No expenses</span>}
-            </div>
+            {expensesForDay.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-3">{expensesForDay.length} expense record{expensesForDay.length > 1 ? 's' : ''}</p>
+            )}
           </CardContent>
         </Card>
         <Card className={netBalance >= 0 ? "border-emerald-100" : "border-red-100"}>
@@ -231,35 +170,6 @@ export default function DailyReport() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Account Balance by Method */}
-      <Card>
-        <CardContent className="p-5">
-          <p className="text-sm font-semibold text-muted-foreground mb-3">Account Balance (Today)</p>
-          <div className="grid grid-cols-3 gap-4">
-            {[
-              { label: 'Cash', income: cashIncome, expense: cashExpenses },
-              { label: 'Visa', income: visaIncome, expense: visaExpenses },
-              { label: 'InstaPay', income: instapayIncome, expense: instapayExpenses },
-            ].map(({ label, income, expense }) => {
-              const net = income - expense;
-              const positive = net >= 0;
-              return (
-                <div key={label} className={`rounded-lg border p-3 ${positive ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
-                  <p className="text-xs font-medium text-muted-foreground mb-1">{label}</p>
-                  <p className={`text-xl font-bold ${positive ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {positive ? '' : '-'}{Math.abs(net).toLocaleString()} <span className="text-xs font-normal">EGP</span>
-                  </p>
-                  <div className="flex gap-3 mt-1.5 text-[11px]">
-                    <span className="text-emerald-600">↑ {income.toLocaleString()}</span>
-                    <span className="text-red-500">↓ {expense.toLocaleString()}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Sessions */}
@@ -303,13 +213,13 @@ export default function DailyReport() {
           </CardContent>
         </Card>
 
-        {/* Door Check-ins */}
+        {/* Members checked in */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center justify-between">
               <span className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                Door Check-ins ({checkIns.length})
+                Members Checked In ({checkIns.length})
               </span>
             </CardTitle>
           </CardHeader>
@@ -318,25 +228,22 @@ export default function DailyReport() {
               <div className="py-6 text-center text-muted-foreground text-sm">No check-ins recorded for this day</div>
             ) : (
               <div className="space-y-2">
-                {checkIns.map(log => {
-                  const member = members.find(m => m.uuid === log.member_id);
-                  return (
-                    <div key={log.id} className={`flex items-center gap-3 p-2.5 rounded-lg border ${log.is_override ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${log.is_override ? 'bg-red-100' : 'bg-emerald-100'}`}>
-                        {log.is_override
-                          ? <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
-                          : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground">{member?.name || 'Unknown Member'}</p>
-                        {log.is_override && (
-                          <p className="text-xs text-red-600">Override — expired or missing invoice</p>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground flex-shrink-0">{format(isoToDate(log.created_at), "hh:mm a")}</p>
+                {checkIns.map(log => (
+                  <div key={log.id} className={`flex items-center gap-3 p-2.5 rounded-lg border ${log.action_type === 'override_checkin' ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${log.action_type === 'override_checkin' ? 'bg-red-100' : 'bg-emerald-100'}`}>
+                      {log.action_type === 'override_checkin'
+                        ? <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
+                        : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
                     </div>
-                  );
-                })}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground">{log.member_name || log.details.split('(')[1]?.split(')')[0] || 'Member'}</p>
+                      {log.action_type === 'override_checkin' && (
+                        <p className="text-xs text-red-600">Override — expired member</p>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground flex-shrink-0">{format(isoToDate(log.timestamp), "HH:mm")}</p>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>
@@ -400,7 +307,7 @@ export default function DailyReport() {
                   <div key={e.id} className="flex items-center justify-between p-3 rounded-lg bg-red-50 border border-red-100">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-foreground">{e.description || e.category}</p>
-                      <p className="text-xs text-muted-foreground">{e.id} · {e.category}</p>
+                      <p className="text-xs text-muted-foreground">{e.category}</p>
                     </div>
                     <p className="text-sm font-bold text-red-600 flex-shrink-0">{e.amount.toLocaleString()} EGP</p>
                   </div>

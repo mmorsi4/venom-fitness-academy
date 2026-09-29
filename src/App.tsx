@@ -20,11 +20,9 @@ import Discounts from "@/pages/Discounts";
 import DailyReport from "@/pages/DailyReport";
 import Reports from "@/pages/Reports";
 import Liabilities from "@/pages/Liabilities";
-import UsersPage from "@/pages/Users";
 import Employees from "@/pages/Employees";
-import EmployeeCheckIn from "@/pages/EmployeeCheckIn";
+import UsersPage from "@/pages/Users";
 import NotFound from "@/pages/not-found";
-import Register from "@/pages/Register";
 
 const queryClient = new QueryClient();
 
@@ -38,6 +36,7 @@ function Router() {
         <Route path="/subscriptions" component={Subscriptions} />
         <Route path="/invoices" component={Invoices} />
         <Route path="/finance" component={Finance} />
+        <Route path="/employees" component={Employees} />
         <Route path="/coaches" component={Coaches} />
         <Route path="/classes" component={Classes} />
         <Route path="/sports" component={Sports} />
@@ -48,9 +47,6 @@ function Router() {
         <Route path="/reports" component={Reports} />
         <Route path="/liabilities" component={Liabilities} />
         <Route path="/users" component={UsersPage} />
-        <Route path="/employees" component={Employees} />
-        <Route path="/employee-checkin" component={EmployeeCheckIn} />
-
         <Route component={NotFound} />
       </Switch>
     </Layout>
@@ -58,14 +54,13 @@ function Router() {
 }
 
 function AppInner() {
-  const { currentUser, loading } = useAuth();
-  
-  if (loading) {
-    return <div className="min-h-screen bg-sidebar flex items-center justify-center p-4">Loading...</div>;
-  }
-
+  const { currentUser } = useAuth();
   if (!currentUser) return <LoginPage />;
-  return <Router />;
+  return (
+    <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+      <Router />
+    </WouterRouter>
+  );
 }
 
 function App() {
@@ -73,14 +68,7 @@ function App() {
     <AuthProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Switch>
-              <Route path="/register/:id" component={Register} />
-              <Route path="*">
-                <AppInner />
-              </Route>
-            </Switch>
-          </WouterRouter>
+          <AppInner />
           <Toaster richColors position="top-right" />
         </TooltipProvider>
       </QueryClientProvider>
