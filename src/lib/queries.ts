@@ -27,13 +27,23 @@ export async function getMembers() {
   // First, clean up any subscriptions that have expired
   await supabase.rpc('cleanup_expired_subscriptions');
 
-  const { data, error } = await supabase
-    .from('members')
-    .select('*, classes(id, name, schedules, sports(name), coaches(name)), invoices(created_at, package_id)')
-    .order('created_at', { ascending: false });
-  if (error) throw error;
+  const allRows: any[] = [];
+  let page = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await supabase
+      .from('members')
+      .select('*, classes(id, name, schedules, sports(name), coaches(name)), invoices(created_at, package_id)')
+      .order('created_at', { ascending: false })
+      .range(page * pageSize, (page + 1) * pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allRows.push(...data);
+    if (data.length < pageSize) break;
+    page++;
+  }
   
-  return (data ?? []).map((m: any) => {
+  return allRows.map((m: any) => {
     const validInvoices = (m.invoices || []).filter((i: any) => i.package_id != null);
     validInvoices.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     const lastSubDate = validInvoices.length > 0 ? validInvoices[0].created_at : null;
@@ -184,12 +194,22 @@ export async function deletePackage(id: string) {
 // ── Invoices ────────────────────────────────────────────────
 
 export async function getInvoices() {
-  const { data, error } = await supabase
-    .from('invoices')
-    .select('*')
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data as Invoice[];
+  const allRows: any[] = [];
+  let page = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(page * pageSize, (page + 1) * pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allRows.push(...data);
+    if (data.length < pageSize) break;
+    page++;
+  }
+  return allRows as Invoice[];
 }
 
 export async function createInvoice(inv: Omit<Invoice, 'uuid' | 'created_at' | 'id'>) {
