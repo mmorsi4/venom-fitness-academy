@@ -641,8 +641,8 @@ export default function Employees() {
                         <span className="block text-xs text-muted-foreground">{emp.work_days_per_month} days/mo</span>
                       </TableCell>
                       <TableCell className="text-sm font-bold text-foreground">
-                        {emp.base_salary.toLocaleString()} EGP
-                        <span className="block text-xs font-normal text-muted-foreground capitalize">{emp.salary_type}</span>
+                        {(Number(emp.base_salary) || 0).toLocaleString()} EGP
+                        <span className="block text-xs font-normal text-muted-foreground capitalize">{emp.salary_type || 'monthly'}</span>
                       </TableCell>
                       <TableCell>
                         <Badge variant={emp.status === 'active' ? 'default' : 'secondary'} className={emp.status === 'active' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : ''}>
@@ -738,7 +738,7 @@ export default function Employees() {
                         -{log.days_deducted} day(s)
                       </TableCell>
                       <TableCell className="text-sm font-bold text-red-600">
-                        -{log.amount_deducted.toLocaleString()} EGP
+                        -{(Number(log.amount_deducted) || 0).toLocaleString()} EGP
                       </TableCell>
                       <TableCell>
                         {log.is_reverted ? (
@@ -832,9 +832,10 @@ export default function Employees() {
                     return dDate.getMonth() + 1 === selectedMonth && dDate.getFullYear() === selectedYear;
                   });
 
-                  const totalDaysCut = empDeductions.reduce((acc, d) => acc + d.days_deducted, 0);
-                  const totalAmountCut = empDeductions.reduce((acc, d) => acc + d.amount_deducted, 0);
-                  const netEstimated = Math.max(0, emp.base_salary - totalAmountCut);
+                  const totalDaysCut = empDeductions.reduce((acc, d) => acc + (Number(d.days_deducted) || 0), 0);
+                  const totalAmountCut = empDeductions.reduce((acc, d) => acc + (Number(d.amount_deducted) || 0), 0);
+                  const baseSalary = Number(emp.base_salary) || 0;
+                  const netEstimated = Math.max(0, baseSalary - totalAmountCut);
 
                   return (
                     <TableRow key={emp.id}>
@@ -843,7 +844,7 @@ export default function Employees() {
                         <div className="text-xs text-muted-foreground">{emp.job_title}</div>
                       </TableCell>
                       <TableCell className="text-sm font-medium">
-                        {emp.base_salary.toLocaleString()} EGP
+                        {baseSalary.toLocaleString()} EGP
                       </TableCell>
                       <TableCell className="text-sm">
                         {totalAmountCut > 0 ? (
@@ -855,7 +856,7 @@ export default function Employees() {
                         )}
                       </TableCell>
                       <TableCell className="text-sm font-bold text-foreground">
-                        {existingSettlement ? existingSettlement.net_salary.toLocaleString() : netEstimated.toLocaleString()} EGP
+                        {existingSettlement ? (Number(existingSettlement.net_salary) || 0).toLocaleString() : netEstimated.toLocaleString()} EGP
                       </TableCell>
                       <TableCell>
                         {existingSettlement ? (
@@ -1206,10 +1207,11 @@ export default function Employees() {
               const dDate = new Date(d.date);
               return dDate.getMonth() + 1 === selectedMonth && dDate.getFullYear() === selectedYear;
             });
-            const totalDaysCut = empDeductions.reduce((acc, d) => acc + d.days_deducted, 0);
-            const totalAmountCut = empDeductions.reduce((acc, d) => acc + d.amount_deducted, 0);
+            const totalDaysCut = empDeductions.reduce((acc, d) => acc + (Number(d.days_deducted) || 0), 0);
+            const totalAmountCut = empDeductions.reduce((acc, d) => acc + (Number(d.amount_deducted) || 0), 0);
             const bonus = Number(settlementBonus) || 0;
-            const netSalary = Math.max(0, settlingEmployee.base_salary - totalAmountCut + bonus);
+            const baseSalary = Number(settlingEmployee.base_salary) || 0;
+            const netSalary = Math.max(0, baseSalary - totalAmountCut + bonus);
 
             return (
               <div className="space-y-4 py-2">
@@ -1220,7 +1222,7 @@ export default function Employees() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Base Salary:</span>
-                    <span className="font-semibold">{settlingEmployee.base_salary.toLocaleString()} EGP</span>
+                    <span className="font-semibold">{baseSalary.toLocaleString()} EGP</span>
                   </div>
                   <div className="flex justify-between text-red-600">
                     <span>Attendance Deductions ({totalDaysCut} days):</span>
