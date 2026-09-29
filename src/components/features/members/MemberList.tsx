@@ -222,19 +222,19 @@ export function MemberList({
                   <div className="flex flex-col gap-1 text-xs">
                     <div className="flex justify-between w-32">
                       <span className="text-muted-foreground">Sessions:</span>
-                      <span className="font-medium">{m.sessions_remaining === 999 ? "∞" : m.sessions_remaining}</span>
+                      <span className="font-medium">{m.sessions_remaining === 999 ? "∞" : (Number.isFinite(Number(m.sessions_remaining)) ? Number(m.sessions_remaining) : 0)}</span>
                     </div>
                     <div className="flex justify-between w-32">
                       <span className="text-muted-foreground">Freezes:</span>
-                      <span className="font-medium">{m.freeze_days_remaining}</span>
+                      <span className="font-medium">{Number.isFinite(Number(m.freeze_days_remaining)) ? Number(m.freeze_days_remaining) : 0}</span>
                     </div>
                     <div className="flex justify-between w-32">
                       <span className="text-muted-foreground">Invites:</span>
-                      <span className="font-medium">{m.invitations_remaining ?? 0}</span>
+                      <span className="font-medium">{Number.isFinite(Number(m.invitations_remaining)) ? Number(m.invitations_remaining) : 0}</span>
                     </div>
                     <div className="flex justify-between w-32">
                       <span className="text-muted-foreground">InBody:</span>
-                      <span className="font-medium">{m.inbody_sessions_remaining ?? 0}</span>
+                      <span className="font-medium">{Number.isFinite(Number(m.inbody_sessions_remaining)) ? Number(m.inbody_sessions_remaining) : 0}</span>
                     </div>
                   </div>
                 </TableCell>
