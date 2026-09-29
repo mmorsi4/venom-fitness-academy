@@ -509,21 +509,41 @@ export async function deleteClass(id: string) {
   if (error) throw error;
 }
 
-// ── Employees ───────────────────────────────────────────────
-
 export async function getEmployees() {
   const { data, error } = await supabase
     .from('employees')
     .select('*')
     .order('name');
   if (error) throw error;
-  return data as Employee[];
+
+  return (data ?? []).map((e: any) => ({
+    id: e.id,
+    name: e.name,
+    phone: e.phone,
+    email: e.email ?? null,
+    job_title: e.job_title ?? e.department ?? 'Staff',
+    department: e.department ?? e.job_title ?? null,
+    base_salary: Number(e.base_salary ?? e.rate ?? 0),
+    salary_type: e.salary_type ?? 'monthly',
+    hourly_rate: Number(e.hourly_rate ?? 0),
+    shift_start: e.shift_start ? (e.shift_start.length > 5 ? e.shift_start.slice(0, 5) : e.shift_start) : '09:00',
+    shift_end: e.shift_end ? (e.shift_end.length > 5 ? e.shift_end.slice(0, 5) : e.shift_end) : '17:00',
+    work_days_per_month: Number(e.work_days_per_month ?? (e.work_days ? e.work_days.length * 4 : 26)),
+    status: (e.status === 'inactive' ? 'inactive' : 'active') as EmployeeStatus,
+    created_at: e.created_at,
+  })) as Employee[];
 }
 
 export async function createEmployee(emp: Omit<Employee, 'id' | 'created_at'>) {
+  const payload: any = {
+    ...emp,
+    department: emp.job_title || emp.department || 'Staff',
+    rate: Number(emp.base_salary) || 0,
+    status: emp.status || 'active',
+  };
   const { data, error } = await supabase
     .from('employees')
-    .insert(emp)
+    .insert(payload)
     .select()
     .single();
   if (error) throw error;
@@ -531,9 +551,13 @@ export async function createEmployee(emp: Omit<Employee, 'id' | 'created_at'>) {
 }
 
 export async function updateEmployee(id: string, updates: Partial<Employee>) {
+  const payload: any = { ...updates };
+  if (updates.job_title) payload.department = updates.job_title;
+  if (updates.base_salary !== undefined) payload.rate = Number(updates.base_salary);
+
   const { data, error } = await supabase
     .from('employees')
-    .update(updates)
+    .update(payload)
     .eq('id', id)
     .select()
     .single();
