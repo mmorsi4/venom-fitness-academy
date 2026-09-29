@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, LogIn, Package, FileText, DollarSign,
   Dumbbell, Calendar, UserPlus, ClipboardList, Tag,
   ChevronRight, CalendarDays, BarChart2, AlertCircle, Landmark,
-  UserCog, LogOut, Menu, X, Trophy
+  UserCog, LogOut, Menu, X, Trophy, UserCheck
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth, ROLE_NAV } from "@/lib/auth";

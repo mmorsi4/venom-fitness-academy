@@ -122,15 +122,30 @@ export default function Members() {
   const memberDebts = useMemo(() => {
     const map = new Map<string, number>();
     for (const inv of invoices) {
-      if (inv.status !== 'paid') {
-        const remaining = Math.max(0, inv.total_amount - inv.paid_amount);
-        if (remaining > 0) {
-          map.set(inv.member_id, (map.get(inv.member_id) || 0) + remaining);
-        }
+      const paid = Number(inv.paid_amount) || 0;
+      const total = Number(inv.total_amount) || 0;
+      const remaining = Math.max(0, total - paid);
+      if (remaining > 0 || inv.status === 'unpaid' || inv.status === 'partial') {
+        const debtAmt = remaining > 0 ? remaining : total;
+        const addDebt = (key: string) => {
+          if (!key) return;
+          map.set(key, (map.get(key) || 0) + debtAmt);
+        };
+        if (inv.member_id) addDebt(String(inv.member_id));
+        if (inv.member_name) addDebt(inv.member_name.toLowerCase().trim());
       }
     }
     return map;
   }, [invoices]);
+
+  const getMemberDebt = (m: Member) => {
+    return (
+      memberDebts.get(m.uuid) ||
+      memberDebts.get(String(m.id)) ||
+      memberDebts.get(m.name.toLowerCase().trim()) ||
+      0
+    );
+  };
 
   const filtered = members.filter(m => {
     const q = query.toLowerCase();
@@ -139,7 +154,8 @@ export default function Members() {
     if (m.id !== -1) {
       matchSearch = matchSearch || m.id.toString().includes(q);
     }
-    const hasDebt = m.status === 'has_debt' || (memberDebts.get(m.uuid) || 0) > 0;
+    const debtAmount = getMemberDebt(m);
+    const hasDebt = m.status === 'has_debt' || debtAmount > 0;
     const matchStatus =
       statusFilter === "all" ? true :
       statusFilter === "has_debt" ? hasDebt :
@@ -154,7 +170,7 @@ export default function Members() {
     inactive: members.filter(m => m.status === 'inactive').length,
     expiring_soon: members.filter(m => m.status === 'expiring_soon').length,
     expired: members.filter(m => m.status === 'expired').length,
-    has_debt: members.filter(m => m.status === 'has_debt' || (memberDebts.get(m.uuid) || 0) > 0).length,
+    has_debt: members.filter(m => m.status === 'has_debt' || getMemberDebt(m) > 0).length,
     frozen: members.filter(m => m.status === 'frozen').length,
     new: members.filter(m => m.status === 'new').length,
   };
@@ -320,7 +336,7 @@ export default function Members() {
               {filtered.map(m => {
                 const age = calcAge(m.birth_date);
                 const freezeRemaining = (m.freeze_days_total || 0) - (m.freeze_days_used || 0);
-                const debtAmount = memberDebts.get(m.uuid) || 0;
+                const debtAmount = getMemberDebt(m);
                 return (
                   <TableRow key={m.uuid} data-testid={`member-row-${m.uuid}`}>
                     <TableCell>

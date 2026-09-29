@@ -186,5 +186,5 @@ export function useAuth() {
 export const ROLE_NAV: Record<UserRole, string[]> = {
   admin: ['/', '/checkin', '/members', '/subscriptions', '/invoices', '/discounts', '/finance', '/daily', '/reports', '/employees', '/coaches', '/classes', '/sports', '/leads', '/liabilities', '/audit', '/users'],
   reception: ['/', '/checkin', '/members', '/invoices', '/finance', '/employees', '/coaches', '/classes', '/sports', '/daily', '/liabilities'],
-  sales: ['/', '/members', '/leads'],
+  sales: ['/', '/members', '/leads', '/employees'],
 };
