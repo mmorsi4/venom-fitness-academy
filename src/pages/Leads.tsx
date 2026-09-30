@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Plus, Phone, Calendar, StickyNote, TrendingUp, Pencil, Trash2 } from "lucide-react";
+import { Plus, Phone, Calendar, StickyNote, TrendingUp, Pencil, Trash2, UserCheck, User, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -62,12 +63,15 @@ export default function Leads() {
   const [convertedToMemberId, setConvertedToMemberId] = useState("");
   const [filterSource, setFilterSource] = useState("all");
   const [filterInterest, setFilterInterest] = useState("all");
+  const [hideConverted, setHideConverted] = useState(false);
 
-  const filtered = leads.filter(l =>
-    (tab === "all" || l.status === tab) &&
-    (filterSource === "all" || l.source === filterSource) &&
-    (filterInterest === "all" || (l.interest && l.interest.includes(filterInterest)))
-  );
+  const filtered = leads.filter(l => {
+    const isMember = l.status === 'Converted' || !!l.converted_to_member_id || members.some(m => m.phone === l.phone);
+    if (hideConverted && isMember) return false;
+    return (tab === "all" || l.status === tab) &&
+      (filterSource === "all" || l.source === filterSource) &&
+      (filterInterest === "all" || (l.interest && l.interest.includes(filterInterest)));
+  });
 
   const sportsOptions = sports.map(s => ({ value: s.name, label: s.name }));
 
@@ -336,9 +340,14 @@ export default function Leads() {
           </TabsList>
         </Tabs>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-card text-xs">
+            <Switch id="hide-converted" checked={hideConverted} onCheckedChange={setHideConverted} />
+            <Label htmlFor="hide-converted" className="cursor-pointer text-xs font-medium">Hide Converted</Label>
+          </div>
+
           <Select value={filterSource} onValueChange={setFilterSource}>
-            <SelectTrigger className="w-[150px]">
+            <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Source..." />
             </SelectTrigger>
             <SelectContent>
@@ -348,7 +357,7 @@ export default function Leads() {
           </Select>
 
           <Select value={filterInterest} onValueChange={setFilterInterest}>
-            <SelectTrigger className="w-[150px]">
+            <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Interest..." />
             </SelectTrigger>
             <SelectContent>
@@ -361,7 +370,7 @@ export default function Leads() {
 
       {/* Leads list */}
       {filtered.length === 0 ? (
-        <Card><CardContent className="py-12 text-center"><p className="text-muted-foreground">No leads</p></CardContent></Card>
+        <Card><CardContent className="py-12 text-center"><p className="text-muted-foreground">No leads found</p></CardContent></Card>
       ) : (
         <div className="rounded-md border bg-card">
           <Table>
@@ -378,86 +387,141 @@ export default function Leads() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map(lead => (
-                <TableRow
-                  key={lead.id}
-                  data-testid={`lead-row-${lead.id}`}
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => setSelectedLead(lead)}
-                >
-                  <TableCell className="font-medium">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <span className="text-xs font-bold text-primary">{lead.name.charAt(0)}</span>
+              {filtered.map(lead => {
+                const matchingMember = members.find(m => m.phone === lead.phone || (lead.converted_to_member_id && m.uuid === lead.converted_to_member_id));
+                const isConvertedOrMember = lead.status === 'Converted' || !!matchingMember;
+
+                return (
+                  <TableRow
+                    key={lead.id}
+                    data-testid={`lead-row-${lead.id}`}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => setSelectedLead(lead)}
+                  >
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${isConvertedOrMember ? 'bg-emerald-100 text-emerald-700' : 'bg-primary/10 text-primary'}`}>
+                          <span className="text-xs font-bold">{lead.name.charAt(0)}</span>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-foreground">{lead.name}</p>
+                          {matchingMember && (
+                            <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200 mt-0.5 flex items-center gap-1 w-max">
+                              <CheckCircle2 className="w-2.5 h-2.5" />
+                              Member ({matchingMember.id === -1 ? 'Clinic' : matchingMember.id})
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                      {lead.name}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">{lead.phone}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="text-xs">{lead.source}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Calendar className="w-3 h-3" />
-                      <span>{format(new Date(lead.follow_up_date), "dd/MM")}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Phone className="w-3 h-3" />
-                      <span>{lead.calls_made}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {lead.notes.length > 0 ? (
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{lead.phone}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">{lead.source}</Badge>
+                    </TableCell>
+                    <TableCell>
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <StickyNote className="w-3 h-3" />
-                        <span>{lead.notes.length}</span>
+                        <Calendar className="w-3 h-3" />
+                        <span>{format(new Date(lead.follow_up_date), "dd/MM")}</span>
                       </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${statusColors[lead.status]}`}>
-                      {lead.status}
-                      
-                    </span>
-                    {lead.status === 'Converted' && lead.converted_by_user_id && (
-                      <span className="text-xs text-muted-foreground font-normal">
-                        <br></br>by {profiles.find(p => p.id === lead.converted_by_user_id)?.name || 'Unknown'}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Phone className="w-3 h-3" />
+                        <span>{lead.calls_made}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {lead.notes.length > 0 ? (
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <StickyNote className="w-3 h-3" />
+                          <span>{lead.notes.length}</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${statusColors[lead.status]}`}>
+                        {lead.status}
                       </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditLead(lead);
-                          setForm({ name: lead.name, phone: lead.phone, source: lead.source, invitingMemberId: lead.inviting_member_id || "", interest: lead.interest || "" });
-                          setShowEdit(true);
-                        }}
-                        className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                        title="Edit"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteLead(lead);
-                        }}
-                        className="p-1.5 rounded-md hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                      {lead.status === 'Converted' && lead.converted_by_user_id && (
+                        <span className="text-xs text-muted-foreground font-normal">
+                          <br></br>by {profiles.find(p => p.id === lead.converted_by_user_id)?.name || 'Unknown'}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1.5" onClick={e => e.stopPropagation()}>
+                        {matchingMember ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                            onClick={() => navigate(`/members?search=${encodeURIComponent(matchingMember.phone)}`)}
+                            title="View Member Profile"
+                          >
+                            <User className="w-3.5 h-3.5" /> Member
+                          </Button>
+                        ) : lead.status !== 'Converted' ? (
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                            onClick={() => {
+                              setLeadToConvert(lead);
+                              setConvertedToMemberId("");
+                              setShowConvertDialog(true);
+                            }}
+                            title="Convert Lead to Member"
+                          >
+                            <UserCheck className="w-3.5 h-3.5" /> Convert
+                          </Button>
+                        ) : null}
+
+                        {matchingMember && lead.status !== 'Converted' && (
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                            onClick={() => {
+                              updateLead.mutate({
+                                id: lead.id,
+                                updates: {
+                                  status: 'Converted',
+                                  converted_to_member_id: matchingMember.uuid,
+                                  converted_by_user_id: currentUser?.id
+                                }
+                              }, {
+                                onSuccess: () => toast.success(`Lead linked to member ${matchingMember.name}!`)
+                              });
+                            }}
+                            title="Link to existing member"
+                          >
+                            <UserCheck className="w-3.5 h-3.5" /> Link Member
+                          </Button>
+                        )}
+
+                        <button
+                          onClick={() => {
+                            setEditLead(lead);
+                            setForm({ name: lead.name, phone: lead.phone, source: lead.source, invitingMemberId: lead.inviting_member_id || "", interest: lead.interest || "" });
+                            setShowEdit(true);
+                          }}
+                          className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                          title="Edit"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteLead(lead)}
+                          className="p-1.5 rounded-md hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>

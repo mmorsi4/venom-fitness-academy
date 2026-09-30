@@ -155,11 +155,13 @@ export default function Members() {
       matchSearch = m.phone.includes(query.trim());
     }
 
+    const isMemberDebt = invoices.some((i: any) => (i.member_id === m.uuid || String(i.member_id) === String(m.id)) && i.status !== 'paid' && ((Number(i.total_amount) || 0) - (Number(i.paid_amount) || 0) > 0));
     const isFrozen = m.frozen_until ? new Date(m.frozen_until) > new Date() : false;
     let matchStatus = false;
     if (statusFilter === "all") matchStatus = true;
     else if (statusFilter === "frozen") matchStatus = isFrozen;
     else if (statusFilter === "active") matchStatus = m.status === 'active' && !isFrozen;
+    else if (statusFilter === "has_debt") matchStatus = m.status === 'has_debt' || isMemberDebt;
     else matchStatus = m.status === statusFilter;
 
     const matchClass = classFilter === "all" || m.class_id === classFilter;
@@ -184,7 +186,7 @@ export default function Members() {
     frozen: members.filter(m => m.frozen_until && new Date(m.frozen_until) > new Date()).length,
     expiring_soon: members.filter(m => m.status === 'expiring_soon').length,
     expired: members.filter(m => m.status === 'expired').length,
-    has_debt: members.filter(m => m.status === 'has_debt').length,
+    has_debt: members.filter(m => m.status === 'has_debt' || invoices.some((i: any) => (i.member_id === m.uuid || String(i.member_id) === String(m.id)) && i.status !== 'paid' && ((Number(i.total_amount) || 0) - (Number(i.paid_amount) || 0) > 0))).length,
     new: members.filter(m => m.status === 'new').length,
   };
 

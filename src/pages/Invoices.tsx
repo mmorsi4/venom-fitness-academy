@@ -315,17 +315,22 @@ export default function Invoices() {
 
   const handleCreate = () => {
     if (jointStep === 1) {
-      if (!form.memberId || !form.packageId) { toast.error("Select a member and package"); return; }
-      if (needsDescription) { toast.error("A reason is required for custom discounts"); return; }
+      if (!form.memberId) { toast.error("Select a member"); return; }
+      if (!form.packageId) { toast.error("Select a package"); return; }
 
-      // if (form.invoiceDate && form.activationDate) {
-      //   if (new Date(form.invoiceDate) > new Date(form.activationDate)) {
-      //     toast.error("Invoice date cannot be after the activation date.");
-      //     return;
-      //   }
-      // }
+      if (selectedPackage && !form.isFreeMembership && discountAmount > selectedPackage.price) {
+        toast.error(`Discount (${discountAmount.toLocaleString()} EGP) cannot exceed package price (${selectedPackage.price.toLocaleString()} EGP)`);
+        return;
+      }
 
-      if (form.discountMode === 'custom' && discountAmount > 0) {
+      if (form.discountMode === 'custom' && form.customDiscountType === 'percentage' && Number(form.customDiscountValue) > 100) {
+        toast.error("Discount percentage cannot exceed 100%");
+        return;
+      }
+
+      if (needsDescription && !form.isFreeMembership) { toast.error("A reason is required for custom discounts"); return; }
+
+      if (!form.isFreeMembership && form.discountMode === 'custom' && discountAmount > 0) {
         setVerificationAction('create');
         setShowVerificationDialog(true);
         return;
@@ -457,7 +462,7 @@ export default function Invoices() {
           memSplitPayments = [];
           
           const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
-          const cleanName = m.name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase();
+          const cleanName = (m as any).display_id || (m.id && m.id !== -1 ? String(m.id) : '') || m.name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase() || 'MEM';
           customIdToUse = `FREE-${cleanName}-${randomStr}`;
         }
 
@@ -467,10 +472,10 @@ export default function Invoices() {
           package_id: memPkg?.id || null,
           package_name: memPkg?.name ?? "",
           class_id: data.classId === 'none' ? null : (data.classId || null),
-          discount_id: form.discountMode === 'group' ? form.discountGroupId : null,
-          discount_description: form.discountMode === 'custom'
+          discount_id: form.isFreeMembership ? null : (form.discountMode === 'group' ? form.discountGroupId : null),
+          discount_description: form.isFreeMembership ? 'Free Membership' : (form.discountMode === 'custom'
             ? form.customDiscountDescription.trim()
-            : (selectedGroup?.name ?? null),
+            : (selectedGroup?.name ?? null)),
           discount_amount: memDiscount,
           total_amount: memTotal,
           paid_amount: memPaid,
@@ -602,9 +607,20 @@ export default function Invoices() {
 
   const handleEditInvoice = () => {
     if (!editInvoice) return;
+
+    if (selectedEditPackage && !editForm.isFreeMembership && editDiscountAmount > selectedEditPackage.price) {
+      toast.error(`Discount (${editDiscountAmount.toLocaleString()} EGP) cannot exceed package price (${selectedEditPackage.price.toLocaleString()} EGP)`);
+      return;
+    }
+
+    if (editForm.discountMode === 'custom' && editForm.customDiscountType === 'percentage' && Number(editForm.customDiscountValue) > 100) {
+      toast.error("Discount percentage cannot exceed 100%");
+      return;
+    }
+
     if (editNeedsDescription) { toast.error("A reason is required for custom discounts"); return; }
 
-    if (editForm.discountMode === 'custom' && editDiscountAmount > 0 && String(editDiscountAmount) !== String(editInvoice.discount_amount)) {
+    if (!editForm.isFreeMembership && editForm.discountMode === 'custom' && editDiscountAmount > 0 && String(editDiscountAmount) !== String(editInvoice.discount_amount)) {
       setVerificationAction('edit');
       setShowVerificationDialog(true);
       return;
@@ -930,13 +946,29 @@ export default function Invoices() {
                             <Input
                               data-testid="input-invoice-discount"
                               type="number" min="0"
-                              max={form.customDiscountType === 'percentage' ? "100" : undefined}
+                              max={form.customDiscountType === 'percentage' ? "100" : (selectedPackage?.price ? String(selectedPackage.price) : undefined)}
                               placeholder={form.customDiscountType === 'fixed' ? '0' : '0 – 100'}
                               value={form.customDiscountValue}
-                              onChange={e => setForm(p => ({ ...p, customDiscountValue: e.target.value }))}
+                              onChange={e => {
+                                const val = e.target.value;
+                                if (form.customDiscountType === 'percentage' && Number(val) > 100) {
+                                  toast.error("Percentage cannot exceed 100%");
+                                  setForm(p => ({ ...p, customDiscountValue: "100" }));
+                                  return;
+                                }
+                                if (form.customDiscountType === 'fixed' && selectedPackage && Number(val) > selectedPackage.price) {
+                                  toast.error(`Discount cannot exceed package price (${selectedPackage.price} EGP)`);
+                                  setForm(p => ({ ...p, customDiscountValue: String(selectedPackage.price) }));
+                                  return;
+                                }
+                                setForm(p => ({ ...p, customDiscountValue: val }));
+                              }}
                             />
                             {form.customDiscountType === 'percentage' && selectedPackage && form.customDiscountValue && (
                               <p className="text-xs text-muted-foreground">= {discountAmount} EGP off</p>
+                            )}
+                            {selectedPackage && discountAmount > selectedPackage.price && (
+                              <p className="text-xs font-semibold text-destructive">Discount cannot exceed package price ({selectedPackage.price} EGP)</p>
                             )}
                           </div>
                           <div className="space-y-1.5">
@@ -1443,13 +1475,29 @@ export default function Invoices() {
                         </Label>
                         <Input
                           type="number" min="0"
-                          max={editForm.customDiscountType === 'percentage' ? "100" : undefined}
+                          max={editForm.customDiscountType === 'percentage' ? "100" : (selectedEditPackage?.price ? String(selectedEditPackage.price) : undefined)}
                           placeholder={editForm.customDiscountType === 'fixed' ? '0' : '0 – 100'}
                           value={editForm.customDiscountValue}
-                          onChange={e => setEditForm(p => ({ ...p, customDiscountValue: e.target.value }))}
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (editForm.customDiscountType === 'percentage' && Number(val) > 100) {
+                              toast.error("Percentage cannot exceed 100%");
+                              setEditForm(p => ({ ...p, customDiscountValue: "100" }));
+                              return;
+                            }
+                            if (editForm.customDiscountType === 'fixed' && selectedEditPackage && Number(val) > selectedEditPackage.price) {
+                              toast.error(`Discount cannot exceed package price (${selectedEditPackage.price} EGP)`);
+                              setEditForm(p => ({ ...p, customDiscountValue: String(selectedEditPackage.price) }));
+                              return;
+                            }
+                            setEditForm(p => ({ ...p, customDiscountValue: val }));
+                          }}
                         />
                         {editForm.customDiscountType === 'percentage' && selectedEditPackage && editForm.customDiscountValue && (
                           <p className="text-xs text-muted-foreground">= {editDiscountAmount} EGP off</p>
+                        )}
+                        {selectedEditPackage && editDiscountAmount > selectedEditPackage.price && (
+                          <p className="text-xs font-semibold text-destructive">Discount cannot exceed package price ({selectedEditPackage.price} EGP)</p>
                         )}
                       </div>
                       <div className="space-y-1.5">

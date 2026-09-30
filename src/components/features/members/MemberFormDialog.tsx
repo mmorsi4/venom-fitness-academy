@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { validateEgyptPhone } from "@/lib/utils";
-import { useCreateMember, useUpdateMember, useUpdateInvoice, useUpdateLead } from "@/hooks/use-data";
+import { useCreateMember, useUpdateMember, useUpdateInvoice, useUpdateLead, useLeads } from "@/hooks/use-data";
 import { uploadMemberPhoto } from "@/lib/queries";
 import { CameraCapture } from "@/components/CameraCapture";
 import { processImageFile } from "@/lib/imageUtils";
@@ -95,6 +95,7 @@ export function MemberFormDialog({
   const updateMember = useUpdateMember();
   const updateInvoice = useUpdateInvoice();
   const updateLead = useUpdateLead();
+  const { data: leads = [] } = useLeads();
   const [, setLocation] = useLocation();
   const navigate = (path: string, options?: any) => setLocation(path, options);
 
@@ -209,16 +210,20 @@ export function MemberFormDialog({
           }
           const params = new URLSearchParams(searchString);
           const createLeadId = params.get("createLeadId");
-          if (createLeadId && newMember) {
+          const targetLead = createLeadId 
+            ? leads.find(l => String(l.id) === String(createLeadId))
+            : leads.find(l => l.phone === form.phone.trim() && l.status !== 'Converted');
+
+          if (targetLead && newMember) {
             updateLead.mutate({
-              id: createLeadId,
+              id: targetLead.id,
               updates: {
                 status: 'Converted',
                 converted_to_member_id: newMember.uuid,
                 converted_by_user_id: currentUser?.id
               }
             });
-            navigate("/members", { replace: true });
+            if (createLeadId) navigate("/members", { replace: true });
           }
           toast.success(`Member ${form.name} created`);
           closeDialogs();

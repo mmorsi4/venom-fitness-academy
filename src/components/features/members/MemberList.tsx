@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import StatusBadge from "@/components/StatusBadge";
 import type { Member } from "@/lib/types";
+import { formatTo12Hour } from "@/lib/utils";
 
 function calcAge(birthDate?: string | null) {
   if (!birthDate) return null;
@@ -84,6 +85,16 @@ export function MemberList({
                         <p className="font-semibold text-foreground text-sm leading-tight">{m.name}</p>
                         <div className="flex flex-wrap items-center gap-1.5">
                           <StatusBadge status={m.status} />
+                        {(() => {
+                          const memberInvs = invoices.filter((i: any) => (i.member_id === m.uuid || String(i.member_id) === String(m.id)) && i.status !== 'paid');
+                          const debtAmt = memberInvs.reduce((sum: number, i: any) => sum + Math.max(0, (Number(i.total_amount) || 0) - (Number(i.paid_amount) || 0)), 0);
+                          if (debtAmt <= 0) return null;
+                          return (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+                              Due: {debtAmt.toLocaleString()} EGP
+                            </span>
+                          );
+                        })()}
                         {m.frozen_until && new Date(m.frozen_until) > new Date() && (
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">
                             FROZEN
@@ -148,7 +159,7 @@ export function MemberList({
                         <span className="text-muted-foreground mx-1">-</span>
                         <span>{m.class_info.coach_name ?? 'No Coach'}</span>
                         <div className="text-xs text-muted-foreground mt-1">
-                          {m.class_info.schedules?.map(s => `${s?.day?.slice(0, 3)} ${s?.time}`).join(', ')}
+                          {m.class_info.schedules?.map(s => `${s?.day?.slice(0, 3)} ${formatTo12Hour(s?.time)}`).join(', ')}
                         </div>
                       </div>
                     ) : (
@@ -212,19 +223,19 @@ export function MemberList({
                   <div className="flex flex-col gap-1 text-xs">
                     <div className="flex justify-between w-32">
                       <span className="text-muted-foreground">Sessions:</span>
-                      <span className="font-medium">{m.sessions_remaining === 999 ? "∞" : m.sessions_remaining}</span>
+                      <span className="font-medium">{m.sessions_remaining === 999 ? "∞" : (Number.isFinite(Number(m.sessions_remaining)) ? Number(m.sessions_remaining) : 0)}</span>
                     </div>
                     <div className="flex justify-between w-32">
                       <span className="text-muted-foreground">Freezes:</span>
-                      <span className="font-medium">{m.freeze_days_remaining}</span>
+                      <span className="font-medium">{Number.isFinite(Number(m.freeze_days_remaining)) ? Number(m.freeze_days_remaining) : 0}</span>
                     </div>
                     <div className="flex justify-between w-32">
                       <span className="text-muted-foreground">Invites:</span>
-                      <span className="font-medium">{m.invitations_remaining ?? 0}</span>
+                      <span className="font-medium">{Number.isFinite(Number(m.invitations_remaining)) ? Number(m.invitations_remaining) : 0}</span>
                     </div>
                     <div className="flex justify-between w-32">
                       <span className="text-muted-foreground">InBody:</span>
-                      <span className="font-medium">{m.inbody_sessions_remaining ?? 0}</span>
+                      <span className="font-medium">{Number.isFinite(Number(m.inbody_sessions_remaining)) ? Number(m.inbody_sessions_remaining) : 0}</span>
                     </div>
                   </div>
                 </TableCell>

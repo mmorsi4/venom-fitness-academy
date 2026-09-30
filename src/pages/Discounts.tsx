@@ -76,6 +76,16 @@ export default function Discounts() {
       toast.error("Fill in name and discount value");
       return;
     }
+
+    if (form.discountType === 'percentage' && (Number(form.value) <= 0 || Number(form.value) > 100)) {
+      toast.error("Percentage discount must be between 1% and 100%");
+      return;
+    }
+
+    if (form.discountType === 'fixed' && Number(form.value) <= 0) {
+      toast.error("Fixed discount amount must be greater than 0");
+      return;
+    }
     
     if (editDiscount) {
       updateDiscount.mutate({

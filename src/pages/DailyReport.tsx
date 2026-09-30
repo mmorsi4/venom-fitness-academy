@@ -4,7 +4,7 @@ import {
   CalendarDays, Users, DollarSign, TrendingDown, TrendingUp,
   Clock, CheckCircle2, CreditCard, AlertTriangle
 } from "lucide-react";
-import { calculateIncomeByMethod, calculateExpenseByMethod } from "../lib/utils";
+import { calculateIncomeByMethod, calculateExpenseByMethod, formatTo12Hour } from "../lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -277,12 +277,12 @@ export default function DailyReport() {
               <div className="space-y-2">
                 {classesForDay.map(cls => {
                   const pct = Math.round((cls.attendance_count / cls.capacity) * 100);
-                  // Find the schedule for this day to show the time
-                  const time = cls.schedules?.find(s => s.day === dayOfWeek)?.time ?? '--:--';
+                  const rawTime = cls.schedules?.find(s => s.day === dayOfWeek)?.time;
+                  const time = rawTime ? formatTo12Hour(rawTime) : '--:--';
                   return (
                     <div key={cls.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border">
-                      <div className="text-center min-w-[44px]">
-                        <p className="text-sm font-bold text-foreground">{time}</p>
+                      <div className="text-center min-w-[70px]">
+                        <p className="text-xs font-bold text-foreground">{time}</p>
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-foreground">{cls.name}</p>
@@ -397,10 +397,22 @@ export default function DailyReport() {
             ) : (
               <div className="space-y-2">
                 {expensesForDay.map(e => (
-                  <div key={e.id} className="flex items-center justify-between p-3 rounded-lg bg-red-50 border border-red-100">
+                  <div key={e.id} className="flex items-center justify-between p-3 rounded-lg bg-red-50/60 border border-red-100">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-foreground">{e.description || e.category}</p>
-                      <p className="text-xs text-muted-foreground">{e.id} · {e.category}</p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <p className="text-xs text-muted-foreground">{e.id} · {e.category}</p>
+                        {e.payment_method && (
+                          <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 font-medium ${
+                            e.payment_method === 'Cash' ? 'border-amber-200 bg-amber-50 text-amber-700' :
+                            e.payment_method === 'Visa' ? 'border-blue-200 bg-blue-50 text-blue-700' :
+                            e.payment_method === 'InstaPay' ? 'border-violet-200 bg-violet-50 text-violet-700' :
+                            'border-gray-200 bg-gray-50 text-gray-700'
+                          }`}>
+                            {e.payment_method}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                     <p className="text-sm font-bold text-red-600 flex-shrink-0">{e.amount.toLocaleString()} EGP</p>
                   </div>

@@ -141,7 +141,7 @@ export default function Reports() {
     doc.setFontSize(16);
     doc.text('Venom Fitness Academy Member Report', 14, 15);
     doc.setFontSize(10);
-    doc.text(`Generated: ${format(new Date(), 'dd MMM yyyy HH:mm')}  |  Filters: ${activeFiltersCount > 0 ? `${activeFiltersCount} active` : 'None'}  |  Total: ${filtered.length}`, 14, 22);
+    doc.text(`Generated: ${format(new Date(), 'dd MMM yyyy hh:mm a')}  |  Filters: ${activeFiltersCount > 0 ? `${activeFiltersCount} active` : 'None'}  |  Total: ${filtered.length}`, 14, 22);
 
     autoTable(doc, {
       startY: 28,

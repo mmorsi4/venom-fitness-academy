@@ -72,8 +72,17 @@ export async function getMembers() {
       };
     }
 
+    const freezeDays = Number(m.freeze_days_remaining);
+    const sessionsRem = Number(m.sessions_remaining);
+    const invitesRem = Number(m.invitations_remaining);
+    const inbodyRem = Number(m.inbody_sessions_remaining);
+
     return {
       ...m,
+      freeze_days_remaining: Number.isFinite(freezeDays) ? freezeDays : 0,
+      sessions_remaining: Number.isFinite(sessionsRem) ? sessionsRem : 0,
+      invitations_remaining: Number.isFinite(invitesRem) ? invitesRem : 0,
+      inbody_sessions_remaining: Number.isFinite(inbodyRem) ? inbodyRem : 0,
       coach_name: m.coaches?.name ?? null,
       class_info,
       last_subscription_date: lastSubDate,
@@ -913,6 +922,13 @@ export async function createEmployeeDeduction(ded: Omit<EmployeeDeduction, 'id' 
 
 export async function deleteEmployeeDeduction(id: string) {
   const { error } = await supabase.from('employee_deductions').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function waiveEmployeeCheckInDeduction(id: string, notes?: string) {
+  const updates: any = { deduction: 0 };
+  if (notes) updates.notes = notes;
+  const { error } = await supabase.from('employee_checkins').update(updates).eq('id', id);
   if (error) throw error;
 }
 
