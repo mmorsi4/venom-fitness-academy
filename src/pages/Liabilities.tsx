@@ -34,7 +34,7 @@ export default function Liabilities() {
   const [editLiability, setEditLiability] = useState<Liability | null>(null);
   const [form, setForm] = useState({
     name: "", description: "",
-    type: "installment" as "installment" | "one_time",
+    type: "ongoing" as "ongoing" | "installment" | "one_time",
     totalAmount: "", installmentAmount: "",
     frequencyDays: "30",
     nextDueDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
@@ -45,15 +45,19 @@ export default function Liabilities() {
     setForm(p => ({ ...p, [key]: e.target.value }));
 
   const openCreate = () => {
-    setForm({ name: "", description: "", type: "installment", totalAmount: "", installmentAmount: "", frequencyDays: "30", nextDueDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0], notifyDaysBefore: "5" });
+    setForm({ name: "", description: "", type: "ongoing", totalAmount: "", installmentAmount: "", frequencyDays: "30", nextDueDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0], notifyDaysBefore: "5" });
     setShowCreate(true);
   };
 
   const openEdit = (l: Liability) => {
     setEditLiability(l);
+    const isOngoing = l.total_amount >= 99999999;
+    const planType: "ongoing" | "installment" | "one_time" = isOngoing ? "ongoing" : l.type;
     setForm({
-      name: l.name, description: l.description ?? "", type: l.type,
-      totalAmount: String(l.total_amount), installmentAmount: String(l.installment_amount),
+      name: l.name, description: l.description ?? "",
+      type: planType,
+      totalAmount: isOngoing ? "" : String(l.total_amount),
+      installmentAmount: String(l.installment_amount),
       frequencyDays: String(l.frequency_days), nextDueDate: l.next_due_date.split('T')[0],
       notifyDaysBefore: String(l.notify_days_before),
     });
@@ -63,16 +67,23 @@ export default function Liabilities() {
   const closeDialog = () => { setShowCreate(false); setEditLiability(null); };
 
   const handleSave = () => {
-    if (!form.name.trim() || !form.totalAmount || !form.nextDueDate) {
-      toast.error("Name, total amount, and due date are required");
+    if (!form.name.trim() || !form.nextDueDate) {
+      toast.error("Name and due date are required");
       return;
     }
-    const total = Number(form.totalAmount);
+    const isOngoing = form.type === 'ongoing';
+    if (!isOngoing && !form.totalAmount) {
+      toast.error("Total amount is required");
+      return;
+    }
+    const total = isOngoing ? 999999999 : Number(form.totalAmount);
     const installment = form.type === 'one_time' ? total : Number(form.installmentAmount);
-    if (form.type === 'installment' && (!installment || installment <= 0)) {
-      toast.error("Installment amount is required");
+    if (form.type !== 'one_time' && (!installment || installment <= 0)) {
+      toast.error("Recurring amount is required");
       return;
     }
+
+    const dbType: 'installment' | 'one_time' = form.type === 'one_time' ? 'one_time' : 'installment';
 
     if (editLiability) {
       updateLiability.mutate({
@@ -80,7 +91,7 @@ export default function Liabilities() {
         updates: {
           name: form.name.trim(),
           description: form.description.trim(),
-          type: form.type,
+          type: dbType,
           total_amount: total,
           installment_amount: installment,
           frequency_days: form.type === 'one_time' ? 0 : Number(form.frequencyDays),
@@ -98,7 +109,7 @@ export default function Liabilities() {
       createLiability.mutate({
         name: form.name.trim(),
         description: form.description.trim() || "",
-        type: form.type,
+        type: dbType,
         total_amount: total,
         paid_amount: 0,
         installment_amount: installment,
@@ -118,9 +129,11 @@ export default function Liabilities() {
 
   const activeLiabilities = liabilities.filter(l => !l.is_complete);
   const completedLiabilities = liabilities.filter(l => l.is_complete);
-  const totalOutstanding = activeLiabilities.reduce((s, l) => s + (l.total_amount - l.paid_amount), 0);
+  const totalOutstanding = activeLiabilities
+    .filter(l => l.total_amount < 99999999)
+    .reduce((s, l) => s + (l.total_amount - l.paid_amount), 0);
   const nextDue = activeLiabilities
-    .filter(l => differenceInDays(parseISO(l.next_due_date), new Date()) >= 0)
+    .slice()
     .sort((a, b) => parseISO(a.next_due_date).getTime() - parseISO(b.next_due_date).getTime())[0];
 
   return (
@@ -139,7 +152,7 @@ export default function Liabilities() {
       <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-sm">
         <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
         <span>
-          To record a payment, go to <strong>Accounting → Add Expense → Liability Payment</strong> and select the liability. Payments are automatically reflected in the progress bars below.
+          To record a payment, click <strong>Pay Now</strong> on any liability or go to <strong>Accounting → Add Expense → Liability Payment</strong>. Payments automatically advance the due date for monthly obligations.
         </span>
         <Link href="/invoices?action=add-expense" className="ml-auto flex-shrink-0 underline text-xs font-medium hover:text-blue-900">Go to Accounting →</Link>
       </div>
@@ -168,7 +181,11 @@ export default function Liabilities() {
               <div>
                 <p className="text-sm font-bold text-foreground">{nextDue ? nextDue.name : '—'}</p>
                 <p className="text-xs text-muted-foreground">
-                  {nextDue ? `Next: ${format(parseISO(nextDue.next_due_date), 'dd/MM/yyyy')}` : 'No upcoming payments'}
+                  {nextDue ? (
+                    differenceInDays(parseISO(nextDue.next_due_date), new Date()) < 0
+                      ? `OVERDUE: ${format(parseISO(nextDue.next_due_date), 'dd/MM/yyyy')}`
+                      : `Next: ${format(parseISO(nextDue.next_due_date), 'dd/MM/yyyy')}`
+                  ) : 'No upcoming payments'}
                 </p>
               </div>
             </div>
@@ -211,35 +228,57 @@ export default function Liabilities() {
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-foreground">{l.name}</p>
-                          <Badge variant="outline" className="text-xs capitalize">{l.type === 'one_time' ? 'One-Time' : 'Installment'}</Badge>
+                          <Badge variant="outline" className="text-xs capitalize">
+                            {l.total_amount >= 99999999 ? 'Ongoing Recurring' : l.type === 'one_time' ? 'One-Time' : 'Installment'}
+                          </Badge>
                           {isOverdue && <Badge className="text-xs bg-red-600 text-white">Overdue</Badge>}
                           {isDueSoon && !isOverdue && <Badge className="text-xs bg-amber-500 text-white">Due Soon</Badge>}
                         </div>
                         {l.description && <p className="text-xs text-muted-foreground mt-0.5">{l.description}</p>}
                       </div>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => openEdit(l)} className="text-xs h-7 flex-shrink-0">Edit</Button>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Link href={`/invoices?action=add-expense&category=Liability+Payment&liability_id=${l.id}&amount=${l.installment_amount}`}>
+                        <Button size="sm" className="text-xs h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white">
+                          <DollarSign className="w-3.5 h-3.5" /> Pay Now
+                        </Button>
+                      </Link>
+                      <Button variant="outline" size="sm" onClick={() => openEdit(l)} className="text-xs h-7">Edit</Button>
+                    </div>
                   </div>
 
-                  {/* Progress bar */}
-                  <div>
-                    <div className="flex items-center justify-between text-sm mb-1.5">
-                      <span className="text-muted-foreground">Paid: <span className="font-semibold text-foreground">{l.paid_amount.toLocaleString()} EGP</span></span>
-                      <span className="text-muted-foreground">Remaining: <span className="font-semibold text-red-600">{remaining.toLocaleString()} EGP</span></span>
+                  {/* Progress bar or Ongoing status */}
+                  {l.total_amount >= 99999999 ? (
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-blue-50/60 border border-blue-200/70 text-xs">
+                      <div>
+                        <span className="font-semibold text-blue-900 block">Ongoing Recurring Payment</span>
+                        <span className="text-muted-foreground">{l.installment_amount.toLocaleString()} EGP / {FREQUENCY_OPTIONS.find(f => f.value === String(l.frequency_days))?.label ?? 'month'}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-muted-foreground block">Total Paid to Date:</span>
+                        <span className="font-bold text-emerald-600 text-sm">{l.paid_amount.toLocaleString()} EGP</span>
+                      </div>
                     </div>
-                    <div className="h-3 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${pct >= 75 ? 'bg-emerald-500' : pct >= 40 ? 'bg-amber-500' : 'bg-red-500'}`}
-                        style={{ width: `${pct}%` }}
-                      />
+                  ) : (
+                    <div>
+                      <div className="flex items-center justify-between text-sm mb-1.5">
+                        <span className="text-muted-foreground">Paid: <span className="font-semibold text-foreground">{l.paid_amount.toLocaleString()} EGP</span></span>
+                        <span className="text-muted-foreground">Remaining: <span className="font-semibold text-red-600">{remaining.toLocaleString()} EGP</span></span>
+                      </div>
+                      <div className="h-3 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${pct >= 75 ? 'bg-emerald-500' : pct >= 40 ? 'bg-amber-500' : 'bg-red-500'}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-xs text-muted-foreground">{pct}% of {l.total_amount.toLocaleString()} EGP total</span>
+                        {l.type === 'installment' && (
+                          <span className="text-xs text-muted-foreground">{l.installment_amount.toLocaleString()} EGP / {FREQUENCY_OPTIONS.find(f => f.value === String(l.frequency_days))?.label ?? `${l.frequency_days}d`}</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-xs text-muted-foreground">{pct}% of {l.total_amount.toLocaleString()} EGP total</span>
-                      {l.type === 'installment' && (
-                        <span className="text-xs text-muted-foreground">{l.installment_amount.toLocaleString()} EGP / {FREQUENCY_OPTIONS.find(f => f.value === String(l.frequency_days))?.label ?? `${l.frequency_days}d`}</span>
-                      )}
-                    </div>
-                  </div>
+                  )}
 
                   {/* Next due */}
                   <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${isOverdue ? 'bg-red-50 border border-red-200 text-red-700' : isDueSoon ? 'bg-amber-50 border border-amber-200 text-amber-700' : 'bg-muted/50 text-muted-foreground'}`}>
@@ -316,28 +355,33 @@ export default function Liabilities() {
               <Textarea placeholder="Optional details..." value={form.description} onChange={f('description')} rows={2} />
             </div>
             <div className="space-y-1.5">
-              <Label>Type</Label>
-              <Select value={form.type} onValueChange={(v: "installment" | "one_time") => setForm(p => ({ ...p, type: v }))}>
+              <Label>Liability Type</Label>
+              <Select value={form.type} onValueChange={(v: "ongoing" | "installment" | "one_time") => setForm(p => ({ ...p, type: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="installment">Installment (recurring payments)</SelectItem>
-                  <SelectItem value="one_time">One-Time Payment</SelectItem>
+                  <SelectItem value="ongoing">Ongoing Recurring (Rent, Utilities — No End Date)</SelectItem>
+                  <SelectItem value="installment">Fixed Installments (Loans, Equipment — Ends when paid)</SelectItem>
+                  <SelectItem value="one_time">One-Time Payment (Single lump sum)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Total Amount (EGP) *</Label>
-                <Input type="number" placeholder="0" value={form.totalAmount} onChange={f('totalAmount')} />
-              </div>
-              {form.type === 'installment' && (
+
+            <div className={`grid ${form.type === 'ongoing' ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
+              {form.type !== 'ongoing' && (
                 <div className="space-y-1.5">
-                  <Label>Installment Amount (EGP)</Label>
+                  <Label>{form.type === 'one_time' ? 'Amount (EGP) *' : 'Total Debt Amount (EGP) *'}</Label>
+                  <Input type="number" placeholder="0" value={form.totalAmount} onChange={f('totalAmount')} />
+                </div>
+              )}
+              {form.type !== 'one_time' && (
+                <div className="space-y-1.5">
+                  <Label>{form.type === 'ongoing' ? 'Recurring Amount (EGP) *' : 'Installment Amount (EGP) *'}</Label>
                   <Input type="number" placeholder="0" value={form.installmentAmount} onChange={f('installmentAmount')} />
                 </div>
               )}
             </div>
-            {form.type === 'installment' && (
+
+            {form.type !== 'one_time' && (
               <div className="space-y-1.5">
                 <Label>Frequency</Label>
                 <Select value={form.frequencyDays} onValueChange={v => setForm(p => ({ ...p, frequencyDays: v }))}>
@@ -358,10 +402,16 @@ export default function Liabilities() {
                 <Input type="number" min="1" max="30" value={form.notifyDaysBefore} onChange={f('notifyDaysBefore')} />
               </div>
             </div>
-            {form.totalAmount && form.type === 'installment' && form.installmentAmount && (
-              <div className="px-3 py-2 rounded-lg bg-muted/50 text-xs text-muted-foreground">
-                Estimated installments: {Math.ceil(Number(form.totalAmount) / Number(form.installmentAmount))} payments
+            {form.type === 'ongoing' ? (
+              <div className="px-3 py-2 rounded-lg bg-blue-50/70 border border-blue-200/80 text-xs text-blue-900 font-medium">
+                ✓ Repeats {FREQUENCY_OPTIONS.find(o => o.value === form.frequencyDays)?.label.toLowerCase() || 'monthly'} indefinitely • Notifies {form.notifyDaysBefore || 5} days before each due date
               </div>
+            ) : (
+              form.totalAmount && form.type === 'installment' && form.installmentAmount && (
+                <div className="px-3 py-2 rounded-lg bg-muted/50 text-xs text-muted-foreground">
+                  Estimated installments: {Math.ceil(Number(form.totalAmount) / Number(form.installmentAmount))} payments
+                </div>
+              )
             )}
           </div>
           <DialogFooter>

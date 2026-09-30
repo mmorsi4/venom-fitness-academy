@@ -28,8 +28,8 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   useEmployees, useCreateEmployee, useUpdateEmployee, useDeleteEmployee,
   useEmployeeCheckIns, useCreateEmployeeCheckIn,
-  useEmployeeDeductions, useCreateEmployeeDeduction,
-  useUpdateEmployeeCheckInTime, useDeleteEmployeeCheckIn,
+  useEmployeeDeductions, useCreateEmployeeDeduction, useDeleteEmployeeDeduction,
+  useUpdateEmployeeCheckInTime, useDeleteEmployeeCheckIn, useWaiveEmployeeCheckInDeduction,
   useCreateExpense
 } from "@/hooks/use-data";
 import { useAuth } from "@/lib/auth";
@@ -50,8 +50,12 @@ const emptyForm = {
   shiftStart: "09:00",
   shiftEnd: "17:00",
   lateThresholdMinutes: "15",
+  deduction15mDays: "0.25",
+  deduction20mDays: "0.5",
+  deduction30mPlusDays: "1",
+  workDaysPerMonth: "26",
   deductionPerMinute: "0",
-  missedDayDeduction: "0",
+  missedDayDeduction: "1",
   user_id: "",
   status: "active" as "active" | "inactive"
 };
@@ -66,8 +70,12 @@ function empToForm(e: Employee) {
     shiftStart: e.shift_start || "09:00",
     shiftEnd: e.shift_end || "17:00",
     lateThresholdMinutes: String(e.late_threshold_minutes ?? 15),
+    deduction15mDays: String((e as any).deduction_15m_days ?? 0.25),
+    deduction20mDays: String((e as any).deduction_20m_days ?? 0.5),
+    deduction30mPlusDays: String((e as any).deduction_30m_plus_days ?? 1),
+    workDaysPerMonth: String((e as any).work_days_per_month ?? 26),
     deductionPerMinute: String(e.deduction_per_minute ?? 0),
-    missedDayDeduction: String(e.missed_day_deduction ?? 0),
+    missedDayDeduction: String(e.missed_day_deduction ?? 1),
     user_id: e.user_id || "",
     status: (e as any).status || "active" as "active" | "inactive"
   };
@@ -87,9 +95,13 @@ export default function Employees() {
   const { data: allDeductions = [] } = useEmployeeDeductions();
   const createCheckIn = useCreateEmployeeCheckIn();
   const createDeduction = useCreateEmployeeDeduction();
+  const deleteDeduction = useDeleteEmployeeDeduction();
+  const waiveCheckInDeduction = useWaiveEmployeeCheckInDeduction();
   const createExpense = useCreateExpense();
   const updateEmployeeCheckInTime = useUpdateEmployeeCheckInTime();
   const deleteEmployeeCheckIn = useDeleteEmployeeCheckIn();
+
+  const [deductionsModalEmp, setDeductionsModalEmp] = useState<Employee | null>(null);
 
   const [tab, setTab] = useState("directory");
   const [search, setSearch] = useState("");
@@ -159,6 +171,10 @@ export default function Employees() {
       shift_start: form.shiftStart || null,
       shift_end: form.shiftEnd || null,
       late_threshold_minutes: Number(form.lateThresholdMinutes) || 0,
+      deduction_15m_days: Number(form.deduction15mDays) >= 0 ? Number(form.deduction15mDays) : 0.25,
+      deduction_20m_days: Number(form.deduction20mDays) >= 0 ? Number(form.deduction20mDays) : 0.50,
+      deduction_30m_plus_days: Number(form.deduction30mPlusDays) >= 0 ? Number(form.deduction30mPlusDays) : 1.00,
+      work_days_per_month: Number(form.workDaysPerMonth) || 26,
       deduction_per_minute: Number(form.deductionPerMinute) || 0,
       missed_day_deduction: Number(form.missedDayDeduction) || 0,
       user_id: form.user_id || null,
@@ -403,6 +419,15 @@ export default function Employees() {
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                onClick={() => setDeductionsModalEmp(emp)}
+                                className="h-8 w-8 p-0 text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                                title="Manage deductions & penalties"
+                              >
+                                <Clock className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
                                 onClick={() => openEdit(emp)}
                                 className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
                                 title="Edit employee details"
@@ -471,8 +496,28 @@ export default function Employees() {
                             const diff = differenceInMinutes(now, shiftStart);
                             const threshold = emp.late_threshold_minutes ?? 15;
                             if (diff > threshold) {
-                              lateMinutes = diff - threshold;
-                              deduction = lateMinutes * (emp.deduction_per_minute || 0);
+                              const lateAfterGrace = diff - threshold;
+                              lateMinutes = diff;
+
+                              const workDays = (emp as any).work_days_per_month || 26;
+                              const dailyRate = (emp.rate || 0) > 0 ? ((emp.rate || 0) / workDays) : 0;
+
+                              let daysCut = 0;
+                              let tierLabel = "";
+
+                              if (lateAfterGrace <= 15) {
+                                daysCut = (emp as any).deduction_15m_days !== undefined ? Number((emp as any).deduction_15m_days) : 0.25;
+                                tierLabel = "1–15m after grace";
+                              } else if (lateAfterGrace <= 20) {
+                                daysCut = (emp as any).deduction_20m_days !== undefined ? Number((emp as any).deduction_20m_days) : 0.50;
+                                tierLabel = "16–20m after grace";
+                              } else {
+                                daysCut = (emp as any).deduction_30m_plus_days !== undefined ? Number((emp as any).deduction_30m_plus_days) : 1.00;
+                                tierLabel = "30+m after grace";
+                              }
+
+                              deduction = Math.round(daysCut * dailyRate);
+                              notes = `Arrived ${diff}m late (${lateAfterGrace}m after grace). Deducted ${daysCut} day (${deduction} EGP) [${tierLabel}]`;
                             }
                           }
 
@@ -481,7 +526,7 @@ export default function Employees() {
                             checked_in_at: now.toISOString(),
                             late_minutes: lateMinutes,
                             deduction,
-                            notes: lateMinutes > 0 ? `Arrived ${lateMinutes}m late` : "On time"
+                            notes: lateMinutes > 0 ? notes : "On time"
                           }, {
                             onSuccess: () => {
                               toast.success(
@@ -541,12 +586,13 @@ export default function Employees() {
                   <TableHead>Amount</TableHead>
                   <TableHead>Date & Time</TableHead>
                   <TableHead>Reason / Notes</TableHead>
+                  {isAdmin && <TableHead className="text-right w-[110px]">Action</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {allDeductions.length === 0 && allCheckIns.filter(ci => (ci.deduction || 0) > 0).length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
+                    <TableCell colSpan={isAdmin ? 6 : 5} className="py-12 text-center text-muted-foreground">
                       No deductions recorded
                     </TableCell>
                   </TableRow>
@@ -574,6 +620,26 @@ export default function Employees() {
                           <TableCell className="text-xs text-foreground">
                             {d.reason}
                           </TableCell>
+                          {isAdmin && (
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={deleteDeduction.isPending}
+                                onClick={() => {
+                                  deleteDeduction.mutate(d.id, {
+                                    onSuccess: () => toast.success(`Removed deduction of ${d.amount} EGP for ${emp?.name || 'employee'}`),
+                                    onError: (err: any) => toast.error(`Error: ${err.message}`)
+                                  });
+                               }}
+                                className="h-8 px-2.5 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 gap-1.5 font-medium"
+                                title="Remove manual penalty"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Remove</span>
+                              </Button>
+                            </TableCell>
+                          )}
                         </TableRow>
                       );
                     })}
@@ -602,6 +668,29 @@ export default function Employees() {
                             <TableCell className="text-xs text-muted-foreground">
                               {ci.notes || `Arrived ${ci.late_minutes}m after shift grace period`}
                             </TableCell>
+                            {isAdmin && (
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={waiveCheckInDeduction.isPending}
+                                  onClick={() => {
+                                    waiveCheckInDeduction.mutate({
+                                      id: ci.id,
+                                      notes: (ci.notes ? `${ci.notes} | ` : '') + 'Late deduction waived by admin'
+                                    }, {
+                                      onSuccess: () => toast.success(`Waived late penalty of ${(ci.deduction || 0)} EGP for ${emp?.name || 'employee'}`),
+                                      onError: (err: any) => toast.error(`Error: ${err.message}`)
+                                    });
+                                  }}
+                                  className="h-8 px-2.5 text-xs text-amber-700 hover:text-amber-800 hover:bg-amber-50 gap-1.5 font-medium"
+                                  title="Waive late penalty"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                  <span>Waive</span>
+                                </Button>
+                              </TableCell>
+                            )}
                           </TableRow>
                         );
                       })}
@@ -681,7 +770,18 @@ export default function Employees() {
                         {empCheckIns.length} day(s)
                       </TableCell>
                       <TableCell className="text-sm font-semibold text-red-600">
-                        {totalDeductions > 0 ? `-${totalDeductions.toLocaleString()} EGP` : "0 EGP"}
+                        {totalDeductions > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setDeductionsModalEmp(emp)}
+                            className="underline hover:text-red-700 font-semibold cursor-pointer text-left"
+                            title="Click to view and remove deductions for this employee"
+                          >
+                            -{totalDeductions.toLocaleString()} EGP
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground">0 EGP</span>
+                        )}
                       </TableCell>
                       <TableCell className="font-bold text-primary text-base">
                         {netSalary.toLocaleString()} EGP
@@ -800,37 +900,150 @@ export default function Employees() {
               </div>
             </div>
 
-            {/* Check-In & Lateness Rules Settings */}
+            {/* Check-In & Lateness Rules Settings (Per Day) */}
             <div className="p-3.5 rounded-xl bg-muted/40 border space-y-3">
-              <p className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <Settings className="w-3.5 h-3.5 text-primary" /> Check-in & Deduction Settings
-              </p>
-              <div className="grid grid-cols-3 gap-2 text-xs">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <Settings className="w-3.5 h-3.5 text-primary" /> Check-in & Deduction Settings
+                </p>
+                <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground bg-background">
+                  Day-based (per day)
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                 <div className="space-y-1">
-                  <Label className="text-[11px]">Grace Period (mins)</Label>
-                  <Input
-                    type="number"
-                    value={form.lateThresholdMinutes}
-                    onChange={e => setForm(p => ({ ...p, lateThresholdMinutes: e.target.value }))}
-                  />
+                  <Label className="text-[11px] font-medium">Grace Period</Label>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      min="0"
+                      value={form.lateThresholdMinutes}
+                      onChange={e => setForm(p => ({ ...p, lateThresholdMinutes: e.target.value }))}
+                      className="pr-9 h-8 text-xs"
+                    />
+                    <span className="absolute right-2 top-2 text-[10px] text-muted-foreground">min</span>
+                  </div>
                 </div>
+
                 <div className="space-y-1">
-                  <Label className="text-[11px]">Deduct per late min (EGP)</Label>
-                  <Input
-                    type="number"
-                    value={form.deductionPerMinute}
-                    onChange={e => setForm(p => ({ ...p, deductionPerMinute: e.target.value }))}
-                  />
+                  <Label className="text-[11px] font-medium">1–15m after grace</Label>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      placeholder="0.25"
+                      value={form.deduction15mDays}
+                      onChange={e => setForm(p => ({ ...p, deduction15mDays: e.target.value }))}
+                      className="pr-9 h-8 text-xs"
+                    />
+                    <span className="absolute right-2 top-2 text-[10px] text-muted-foreground">day</span>
+                  </div>
                 </div>
+
                 <div className="space-y-1">
-                  <Label className="text-[11px]">Missed day rate (EGP)</Label>
-                  <Input
-                    type="number"
-                    value={form.missedDayDeduction}
-                    onChange={e => setForm(p => ({ ...p, missedDayDeduction: e.target.value }))}
-                  />
+                  <Label className="text-[11px] font-medium">16–20m after grace</Label>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      placeholder="0.5"
+                      value={form.deduction20mDays}
+                      onChange={e => setForm(p => ({ ...p, deduction20mDays: e.target.value }))}
+                      className="pr-9 h-8 text-xs"
+                    />
+                    <span className="absolute right-2 top-2 text-[10px] text-muted-foreground">day</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-medium">30+m after grace</Label>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      placeholder="1.0"
+                      value={form.deduction30mPlusDays}
+                      onChange={e => setForm(p => ({ ...p, deduction30mPlusDays: e.target.value }))}
+                      className="pr-9 h-8 text-xs"
+                    />
+                    <span className="absolute right-2 top-2 text-[10px] text-muted-foreground">day</span>
+                  </div>
                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-medium">Missed Day Rate</Label>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      placeholder="1.0"
+                      value={form.missedDayDeduction}
+                      onChange={e => setForm(p => ({ ...p, missedDayDeduction: e.target.value }))}
+                      className="pr-9 h-8 text-xs"
+                    />
+                    <span className="absolute right-2 top-2 text-[10px] text-muted-foreground">day</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-medium">Working Days / Month</Label>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      min="1"
+                      max="31"
+                      placeholder="26"
+                      value={form.workDaysPerMonth}
+                      onChange={e => setForm(p => ({ ...p, workDaysPerMonth: e.target.value }))}
+                      className="pr-10 h-8 text-xs"
+                    />
+                    <span className="absolute right-2 top-2 text-[10px] text-muted-foreground">days</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Live salary deduction preview */}
+              {Number(form.rate) > 0 && (
+                <div className="p-2.5 rounded-lg bg-background/80 border text-[11px] text-muted-foreground space-y-1.5 mt-1">
+                  {(() => {
+                    const salary = Number(form.rate) || 0;
+                    const days = Number(form.workDaysPerMonth) || 26;
+                    const dailyRate = Math.round(salary / days);
+                    const t1 = Math.round((Number(form.deduction15mDays) || 0) * dailyRate);
+                    const t2 = Math.round((Number(form.deduction20mDays) || 0) * dailyRate);
+                    const t3 = Math.round((Number(form.deduction30mPlusDays) || 0) * dailyRate);
+                    return (
+                      <>
+                        <div className="flex justify-between items-center font-semibold text-foreground">
+                          <span>Daily Salary:</span>
+                          <span>{salary.toLocaleString()} ÷ {days} days = <span className="text-primary font-bold">{dailyRate.toLocaleString()} EGP/day</span></span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1 pt-0.5 text-[10.5px]">
+                          <div className="p-1 rounded bg-muted/40 text-center">
+                            <span className="block text-[10px] text-muted-foreground">1–15m late:</span>
+                            <span className="font-bold text-red-600">-{t1} EGP</span> <span className="text-[10px]">({form.deduction15mDays || 0}d)</span>
+                          </div>
+                          <div className="p-1 rounded bg-muted/40 text-center">
+                            <span className="block text-[10px] text-muted-foreground">16–20m late:</span>
+                            <span className="font-bold text-red-600">-{t2} EGP</span> <span className="text-[10px]">({form.deduction20mDays || 0}d)</span>
+                          </div>
+                          <div className="p-1 rounded bg-muted/40 text-center">
+                            <span className="block text-[10px] text-muted-foreground">30+m late:</span>
+                            <span className="font-bold text-red-600">-{t3} EGP</span> <span className="text-[10px]">({form.deduction30mPlusDays || 0}d)</span>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -973,6 +1186,68 @@ export default function Employees() {
                   </div>
                 </div>
 
+                {totalDeductions > 0 && (
+                  <div className="space-y-1.5 p-3 rounded-xl bg-red-50/40 border border-red-200/50">
+                    <p className="text-xs font-semibold text-red-800 flex items-center justify-between">
+                      <span>Applied Deductions ({empDeductions.length + empCheckIns.filter(ci => (ci.deduction || 0) > 0).length})</span>
+                      <span className="text-[10px] text-muted-foreground font-normal">Click to forgive/remove</span>
+                    </p>
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                      {empDeductions.map(d => (
+                        <div key={d.id} className="flex items-center justify-between p-1.5 rounded-lg bg-white border border-red-100 text-xs shadow-xs">
+                          <div className="truncate mr-2">
+                            <span className="font-bold text-red-600">-{d.amount.toLocaleString()} EGP</span>
+                            <span className="text-muted-foreground ml-1.5">({d.reason})</span>
+                          </div>
+                          {isAdmin && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={deleteDeduction.isPending}
+                              onClick={() => {
+                                deleteDeduction.mutate(d.id, {
+                                  onSuccess: () => toast.success(`Removed deduction of ${d.amount} EGP`),
+                                  onError: (e) => toast.error(`Error: ${e.message}`)
+                                });
+                              }}
+                              className="h-6 px-2 text-[11px] text-red-600 hover:text-red-700 hover:bg-red-50 font-medium shrink-0"
+                            >
+                              <Trash2 className="w-3 h-3 mr-1" /> Remove
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                      {empCheckIns.filter(ci => (ci.deduction || 0) > 0).map(ci => (
+                        <div key={`ci-${ci.id}`} className="flex items-center justify-between p-1.5 rounded-lg bg-white border border-amber-100 text-xs shadow-xs">
+                          <div className="truncate mr-2">
+                            <span className="font-bold text-amber-600">-{(ci.deduction || 0).toLocaleString()} EGP</span>
+                            <span className="text-muted-foreground ml-1.5">(Late {ci.late_minutes}m)</span>
+                          </div>
+                          {isAdmin && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={waiveCheckInDeduction.isPending}
+                              onClick={() => {
+                                waiveCheckInDeduction.mutate({
+                                  id: ci.id,
+                                  notes: (ci.notes ? `${ci.notes} | ` : '') + 'Waived in payroll settlement'
+                                }, {
+                                  onSuccess: () => toast.success(`Waived late penalty of ${(ci.deduction || 0)} EGP`),
+                                  onError: (e) => toast.error(`Error: ${e.message}`)
+                                });
+                              }}
+                              className="h-6 px-2 text-[11px] text-amber-700 hover:text-amber-800 hover:bg-amber-50 font-medium shrink-0"
+                            >
+                              <RotateCcw className="w-3 h-3 mr-1" /> Waive
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>Bonus (EGP)</Label>
@@ -1019,6 +1294,148 @@ export default function Employees() {
             <Button onClick={handleSettlePayroll} disabled={createExpense.isPending} className="font-bold">
               Confirm & Settle Paycheck
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Employee Specific Deductions Modal ── */}
+      <Dialog open={!!deductionsModalEmp} onOpenChange={o => !o && setDeductionsModalEmp(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Deductions & Adjustments: {deductionsModalEmp?.name}</DialogTitle>
+          </DialogHeader>
+          {deductionsModalEmp && (() => {
+            const empDeductions = allDeductions.filter(d => d.employee_id === deductionsModalEmp.id);
+            const manualTotal = empDeductions.reduce((s, d) => s + d.amount, 0);
+
+            const empCheckIns = allCheckIns.filter(ci => ci.employee_id === deductionsModalEmp.id);
+            const lateCheckIns = empCheckIns.filter(ci => (ci.deduction || 0) > 0);
+            const lateTotal = lateCheckIns.reduce((s, ci) => s + (ci.deduction || 0), 0);
+            const totalDeductions = manualTotal + lateTotal;
+
+            return (
+              <div className="space-y-4 py-2">
+                <div className="p-3 rounded-xl bg-muted/40 border flex justify-between items-center text-sm">
+                  <div>
+                    <p className="font-semibold text-foreground">{deductionsModalEmp.name}</p>
+                    <p className="text-xs text-muted-foreground">{deductionsModalEmp.department} • Base: {(deductionsModalEmp.rate || 0).toLocaleString()} EGP</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs text-muted-foreground block">Total Deductions</span>
+                    <span className="font-bold text-red-600 text-base">-{totalDeductions.toLocaleString()} EGP</span>
+                  </div>
+                </div>
+
+                {isAdmin && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full gap-2 border-dashed border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+                    onClick={() => {
+                      setManualDeductionForm({
+                        employee_id: deductionsModalEmp.id,
+                        amount: "",
+                        reason: "",
+                        date: new Date().toISOString().split("T")[0]
+                      });
+                      setShowManualDeduction(true);
+                    }}
+                  >
+                    <Plus className="w-4 h-4" /> Add Manual Deduction
+                  </Button>
+                )}
+
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Applied Penalties & Deductions ({empDeductions.length + lateCheckIns.length})
+                  </h4>
+
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                    {empDeductions.length === 0 && lateCheckIns.length === 0 ? (
+                      <div className="p-6 text-center text-muted-foreground text-xs border rounded-lg bg-card">
+                        No deductions recorded for this staff member.
+                      </div>
+                    ) : (
+                      <>
+                        {empDeductions.map(d => (
+                          <div key={d.id} className="flex items-center justify-between p-2.5 rounded-lg border bg-card hover:bg-muted/30">
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-[10px] px-1.5 py-0">
+                                  Manual
+                                </Badge>
+                                <span className="font-bold text-red-600 text-sm">-{d.amount.toLocaleString()} EGP</span>
+                              </div>
+                              <p className="text-xs text-foreground mt-0.5">{d.reason}</p>
+                              <p className="text-[10px] text-muted-foreground">{format(new Date(d.created_at), "dd MMM yyyy hh:mm a")}</p>
+                            </div>
+                            {isAdmin && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={deleteDeduction.isPending}
+                                onClick={() => {
+                                  deleteDeduction.mutate(d.id, {
+                                    onSuccess: () => toast.success(`Removed deduction of ${d.amount} EGP`),
+                                    onError: (e) => toast.error(`Error: ${e.message}`)
+                                  });
+                                }}
+                                className="h-7 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 gap-1"
+                                title="Remove deduction"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Remove</span>
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+
+                        {lateCheckIns.map(ci => (
+                          <div key={`ci-${ci.id}`} className="flex items-center justify-between p-2.5 rounded-lg border bg-card hover:bg-muted/30">
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0">
+                                  Late ({ci.late_minutes}m)
+                                </Badge>
+                                <span className="font-bold text-amber-600 text-sm">-{(ci.deduction || 0).toLocaleString()} EGP</span>
+                              </div>
+                              <p className="text-xs text-foreground mt-0.5">{ci.notes || "Late check-in arrival"}</p>
+                              <p className="text-[10px] text-muted-foreground">
+                                {format(new Date(ci.checked_in_at || ci.check_in_time || ci.created_at || ""), "dd MMM yyyy hh:mm a")}
+                              </p>
+                            </div>
+                            {isAdmin && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={waiveCheckInDeduction.isPending}
+                                onClick={() => {
+                                  waiveCheckInDeduction.mutate({
+                                    id: ci.id,
+                                    notes: (ci.notes ? `${ci.notes} | ` : '') + 'Late deduction waived by admin'
+                                  }, {
+                                    onSuccess: () => toast.success(`Waived late penalty of ${(ci.deduction || 0)} EGP`),
+                                    onError: (e) => toast.error(`Error: ${e.message}`)
+                                  });
+                                }}
+                                className="h-7 px-2 text-xs text-amber-700 hover:text-amber-800 hover:bg-amber-50 gap-1"
+                                title="Waive late penalty"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Waive</span>
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeductionsModalEmp(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

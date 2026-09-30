@@ -925,6 +925,13 @@ export async function deleteEmployeeDeduction(id: string) {
   if (error) throw error;
 }
 
+export async function waiveEmployeeCheckInDeduction(id: string, notes?: string) {
+  const updates: any = { deduction: 0 };
+  if (notes) updates.notes = notes;
+  const { error } = await supabase.from('employee_checkins').update(updates).eq('id', id);
+  if (error) throw error;
+}
+
 // ── Finance Base Balances ────────────────────────────────────
 
 export async function getFinanceBaseBalances() {

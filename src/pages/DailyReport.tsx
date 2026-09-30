@@ -397,10 +397,22 @@ export default function DailyReport() {
             ) : (
               <div className="space-y-2">
                 {expensesForDay.map(e => (
-                  <div key={e.id} className="flex items-center justify-between p-3 rounded-lg bg-red-50 border border-red-100">
+                  <div key={e.id} className="flex items-center justify-between p-3 rounded-lg bg-red-50/60 border border-red-100">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-foreground">{e.description || e.category}</p>
-                      <p className="text-xs text-muted-foreground">{e.id} · {e.category}</p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <p className="text-xs text-muted-foreground">{e.id} · {e.category}</p>
+                        {e.payment_method && (
+                          <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 font-medium ${
+                            e.payment_method === 'Cash' ? 'border-amber-200 bg-amber-50 text-amber-700' :
+                            e.payment_method === 'Visa' ? 'border-blue-200 bg-blue-50 text-blue-700' :
+                            e.payment_method === 'InstaPay' ? 'border-violet-200 bg-violet-50 text-violet-700' :
+                            'border-gray-200 bg-gray-50 text-gray-700'
+                          }`}>
+                            {e.payment_method}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                     <p className="text-sm font-bold text-red-600 flex-shrink-0">{e.amount.toLocaleString()} EGP</p>
                   </div>

@@ -285,6 +285,10 @@ export interface Employee {
   late_threshold_minutes: number;
   deduction_per_minute: number;
   missed_day_deduction: number;
+  deduction_15m_days?: number;
+  deduction_20m_days?: number;
+  deduction_30m_plus_days?: number;
+  work_days_per_month?: number;
   user_id?: string | null;
   created_at: string;
 }

@@ -66,7 +66,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const dueLiabilities = liabilities.filter(l => {
     if (l.is_complete) return false;
     const daysUntil = differenceInDays(parseISO(l.next_due_date), new Date());
-    return daysUntil <= l.notify_days_before && daysUntil >= 0;
+    return daysUntil <= l.notify_days_before;
   });
 
   const handleLogout = () => {
@@ -179,8 +179,10 @@ export default function Layout({ children }: { children: ReactNode }) {
                 <AlertCircle className="w-5 h-5 flex-shrink-0 animate-pulse mt-0.5 md:mt-0" />
                 <span className="font-medium leading-tight">
                   <strong>{l.name}</strong> — {l.type === 'one_time' ? 'Payment' : 'Installment'} of{' '}
-                  <strong>{l.installment_amount.toLocaleString()} EGP</strong> due{' '}
-                  {daysUntil === 0 ? 'today' : `in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}`}
+                  <strong>{l.installment_amount.toLocaleString()} EGP</strong>{' '}
+                  {daysUntil < 0
+                    ? <strong className="bg-white text-red-700 px-1.5 py-0.5 rounded text-xs font-bold uppercase">OVERDUE by {Math.abs(daysUntil)} day{Math.abs(daysUntil) !== 1 ? 's' : ''}</strong>
+                    : daysUntil === 0 ? 'due today' : `due in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}`}
                   {' '}
                   <span className="hidden md:inline">· Pay via Accounting → Add Expense → Liability Payment</span>
                 </span>

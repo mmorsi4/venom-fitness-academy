@@ -119,9 +119,55 @@ export function ExpensesView() {
 
   const pageSize = 25;
 
-  const uniqueExistingCategories = [...new Set(expenses.map(e => e.category))];
-  const dynamicCategories = [...new Set([...EXPENSE_BASE_CATEGORIES, ...uniqueExistingCategories])].filter(c => c !== LIABILITY_CATEGORY);
-  const allCategories = [...dynamicCategories, LIABILITY_CATEGORY, "CUSTOM"];
+  const coreCategories = [
+    "Salaries",
+    "Coach Loan",
+    "Liability Payment",
+    "Rent",
+    "Maintenance",
+    "Purchases",
+    "Government Bills",
+    "Marketing",
+    "Refund",
+    "Other"
+  ];
+
+  const legacySynonyms: Record<string, string> = {
+    'employee salary': 'Salaries',
+    'comission': 'Salaries',
+    'due payment': 'Liability Payment',
+    'loans/debts': 'Liability Payment',
+    'electricity': 'Government Bills',
+    'bill': 'Government Bills',
+    'internet recharge': 'Government Bills',
+  };
+
+  const customExistingCategories = [...new Set(expenses.map(e => e.category))]
+    .filter(c => {
+      if (!c) return false;
+      const lower = c.toLowerCase().trim();
+      if (coreCategories.some(core => core.toLowerCase() === lower)) return false;
+      if (legacySynonyms[lower]) return false;
+      return true;
+    })
+    .sort((a, b) => a.localeCompare(b));
+
+  const allCategories = [
+    "Salaries",
+    "Coach Loan",
+    "Liability Payment",
+    "Rent",
+    "Maintenance",
+    "Purchases",
+    "Government Bills",
+    "Marketing",
+    "Refund",
+    ...customExistingCategories,
+    "Other",
+    "CUSTOM"
+  ];
+
+  const uniqueExistingCategories = [...new Set([...allCategories.filter(c => c !== "CUSTOM"), ...expenses.map(e => e.category)])];
 
   const isLiabilityPayment = form.category === LIABILITY_CATEGORY;
   const activeLiabilities = liabilities.filter(l => !l.is_complete);
@@ -739,10 +785,10 @@ export function ExpensesView() {
               <Label>Category</Label>
               <Select value={form.category} onValueChange={handleCategoryChange}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-60 overflow-y-auto">
                   {allCategories.map(c => (
-                    <SelectItem key={c} value={c}>
-                      {c === 'CUSTOM' ? 'Add Custom Category...' : c}
+                    <SelectItem key={c} value={c} className={c === 'CUSTOM' ? 'font-semibold text-primary border-t mt-1 pt-1.5' : ''}>
+                      {c === 'CUSTOM' ? '+ Add Custom Category...' : c === 'Liability Payment' ? 'Liability Payment (Rent / Loans)' : c}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -896,10 +942,10 @@ export function ExpensesView() {
               <Label>Category</Label>
               <Select value={editForm.category} onValueChange={v => setEditForm(p => ({ ...p, category: v, customCategory: v === 'CUSTOM' ? '' : p.customCategory }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-60 overflow-y-auto">
                   {allCategories.filter(c => c !== LIABILITY_CATEGORY).map(c => (
-                    <SelectItem key={c} value={c}>
-                      {c === 'CUSTOM' ? 'Add Custom Category...' : c}
+                    <SelectItem key={c} value={c} className={c === 'CUSTOM' ? 'font-semibold text-primary border-t mt-1 pt-1.5' : ''}>
+                      {c === 'CUSTOM' ? '+ Add Custom Category...' : c}
                     </SelectItem>
                   ))}
                 </SelectContent>

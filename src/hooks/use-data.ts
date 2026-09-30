@@ -587,6 +587,17 @@ export function useDeleteEmployeeDeduction() {
   });
 }
 
+export function useWaiveEmployeeCheckInDeduction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, notes }: { id: string; notes?: string }) => q.waiveEmployeeCheckInDeduction(id, notes),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['employeeCheckIns'] });
+      qc.invalidateQueries({ queryKey: queryKeys.employeeCheckIns });
+    },
+  });
+}
+
 // -- Finance Base Balances --
 
 export function useFinanceBaseBalances() {
