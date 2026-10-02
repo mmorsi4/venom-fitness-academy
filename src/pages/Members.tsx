@@ -28,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog, useFreezeMember, useUnfreezeMember, usePackages, useCreateInvoice, useAuditLogs, useInvoices, useUpdateInvoice, useMemberCheckIns, useDeleteMemberCheckIn, useUpdateMemberCheckIn, useUpdateLead } from "@/hooks/use-data";
+import { useMembers, useCoaches, useClasses, useCreateMember, useUpdateMember, useDeleteMember, useCreateAuditLog, useFreezeMember, useUnfreezeMember, usePackages, useCreateInvoice, useAuditLogs, useInvoices, useUpdateInvoice, useMemberCheckIns, useDeleteMemberCheckIn, useUpdateMemberCheckIn, useUpdateLead, useDiscounts } from "@/hooks/use-data";
 import { uploadMemberPhoto } from "@/lib/queries";
 import { CameraCapture } from "@/components/CameraCapture";
 import { processImageFile } from "@/lib/imageUtils";
@@ -60,6 +60,7 @@ export default function Members() {
   const freezeMember = useFreezeMember();
   const unfreezeMember = useUnfreezeMember();
   const { data: packages = [] } = usePackages();
+  const { data: discounts = [] } = useDiscounts();
   const { data: auditLogs = [] } = useAuditLogs();
   const createInvoice = useCreateInvoice();
   const updateLead = useUpdateLead();
@@ -84,9 +85,26 @@ export default function Members() {
   const [upgradePaymentMethod, setUpgradePaymentMethod] = useState("Cash");
   const [upgradeInvoiceId, setUpgradeInvoiceId] = useState("");
   const [upgradePaymentDate, setUpgradePaymentDate] = useState("");
-  const [upgradeDiscount, setUpgradeDiscount] = useState("");
+  const [upgradeDiscountMode, setUpgradeDiscountMode] = useState<"none" | "saved" | "custom">("none");
+  const [upgradeDiscountId, setUpgradeDiscountId] = useState("");
+  const [upgradeCustomDiscountValue, setUpgradeCustomDiscountValue] = useState("");
+  const [upgradeCustomDiscountType, setUpgradeCustomDiscountType] = useState<"fixed" | "percentage">("fixed");
   const [upgradePaidAmount, setUpgradePaidAmount] = useState("");
   const [upgradePackageCategoryFilter, setUpgradePackageCategoryFilter] = useState<string>("All");
+
+  const resetUpgradeState = () => {
+    setUpgradeMemberState(null);
+    setUpgradePackageId("");
+    setUpgradePaymentMethod("Cash");
+    setUpgradeInvoiceId("");
+    setUpgradePaymentDate("");
+    setUpgradeDiscountMode("none");
+    setUpgradeDiscountId("");
+    setUpgradeCustomDiscountValue("");
+    setUpgradeCustomDiscountType("fixed");
+    setUpgradePaidAmount("");
+    setUpgradePackageCategoryFilter("All");
+  };
   const [historyMember, setHistoryMember] = useState<Member | null>(null);
   const { data: checkInHistory = [] } = useMemberCheckIns(historyMember?.uuid || "");
   const deleteMemberCheckIn = useDeleteMemberCheckIn(historyMember?.uuid || "");
@@ -291,10 +309,38 @@ export default function Members() {
     });
   };
 
+  const currentUpgradePkg = packages.find(p => p.name === upgradeMemberState?.package_name);
+  const newUpgradePkg = packages.find(p => p.id.toString() === upgradePackageId);
+  const upgradePriceDiff = Math.max(0, (newUpgradePkg?.price || 0) - (currentUpgradePkg?.price || 0));
+
+  const activeDiscounts = discounts.filter(d => d.active);
+  const selectedUpgradeDiscount = activeDiscounts.find(d => d.id === upgradeDiscountId);
+
+  const computeUpgradeDiscountAmount = () => {
+    if (upgradeDiscountMode === 'saved' && selectedUpgradeDiscount) {
+      if (selectedUpgradeDiscount.discount_type === 'percentage') {
+        return Math.round(upgradePriceDiff * selectedUpgradeDiscount.value / 100);
+      } else {
+        return Math.min(upgradePriceDiff, selectedUpgradeDiscount.value);
+      }
+    } else if (upgradeDiscountMode === 'custom' && upgradeCustomDiscountValue) {
+      const val = Number(upgradeCustomDiscountValue) || 0;
+      if (upgradeCustomDiscountType === 'percentage') {
+        return Math.round(upgradePriceDiff * val / 100);
+      } else {
+        return Math.min(upgradePriceDiff, val);
+      }
+    }
+    return 0;
+  };
+
+  const calculatedUpgradeDiscount = computeUpgradeDiscountAmount();
+  const upgradeFinalExpected = Math.max(0, upgradePriceDiff - calculatedUpgradeDiscount);
+
   const handleUpgrade = async () => {
     if (!upgradeMemberState || !upgradePackageId) return;
-    const currentPkg = packages.find(p => p.name === upgradeMemberState.package_name);
-    const newPkg = packages.find(p => p.id.toString() === upgradePackageId);
+    const currentPkg = currentUpgradePkg;
+    const newPkg = newUpgradePkg;
     if (!currentPkg || !newPkg) {
       toast.error("Package data missing");
       return;
@@ -313,9 +359,9 @@ export default function Members() {
     const actDate = new Date(activationDateStr);
     const newExpiresAt = new Date(actDate.getTime() + newPkg.validity_days * 86400000).toISOString();
 
-    const priceDiff = Math.max(0, newPkg.price - currentPkg.price);
-    const discountAmt = Number(upgradeDiscount) || 0;
-    const finalExpected = Math.max(0, priceDiff - discountAmt);
+    const priceDiff = upgradePriceDiff;
+    const discountAmt = calculatedUpgradeDiscount;
+    const finalExpected = upgradeFinalExpected;
     const actualPaid = upgradePaidAmount !== "" ? Number(upgradePaidAmount) : finalExpected;
 
     if (activeInvoice) {
@@ -325,20 +371,27 @@ export default function Members() {
       });
     }
 
+    const discountDesc = upgradeDiscountMode === 'saved' && selectedUpgradeDiscount
+      ? `${selectedUpgradeDiscount.name} (${selectedUpgradeDiscount.discount_type === 'percentage' ? `${selectedUpgradeDiscount.value}%` : `${selectedUpgradeDiscount.value} EGP`})`
+      : discountAmt > 0
+        ? 'Custom Upgrade Discount'
+        : null;
+
     createInvoice.mutate({
       member_id: upgradeMemberState.uuid,
       member_name: upgradeMemberState.name,
       class_id: upgradeMemberState.class_id || null,
       package_id: newPkg.id,
       package_name: newPkg.name,
-      total_amount: newPkg.price,
+      total_amount: finalExpected,
       paid_amount: actualPaid,
       status: actualPaid >= finalExpected ? 'paid' : (actualPaid > 0 ? 'partial' : 'unpaid'),
-      discount_id: null,
-      discount_description: discountAmt > 0 ? 'Upgrade Discount' : null,
+      discount_id: upgradeDiscountMode === 'saved' ? upgradeDiscountId || null : null,
+      discount_description: discountDesc,
       discount_amount: discountAmt,
       payment_method: upgradePaymentMethod as any,
       activation_date: activationDateStr,
+      notes: `Package upgrade from ${currentPkg.name} to ${newPkg.name}. Difference: ${priceDiff} EGP, Discount: ${discountAmt} EGP`,
       ...(upgradePaymentDate ? { created_at: new Date(upgradePaymentDate).toISOString() } : {}),
       ...(upgradeInvoiceId.trim() ? { id: upgradeInvoiceId.trim() } : {})
     }, {
@@ -350,7 +403,7 @@ export default function Members() {
             package_id: newPkg.id,
             sessions_remaining: newSessions,
             expires_at: newExpiresAt,
-            status: 'active'
+            status: actualPaid >= finalExpected ? 'active' : 'has_debt'
           }
         }, {
           onSuccess: () => {
@@ -362,17 +415,10 @@ export default function Members() {
               member_id: upgradeMemberState.uuid,
               member_name: upgradeMemberState.name,
               timestamp: new Date().toISOString(),
-              details: `Upgraded from ${currentPkg.name} to ${newPkg.name}. Difference paid: ${priceDiff} EGP`,
+              details: `Upgraded from ${currentPkg.name} to ${newPkg.name}. Expected: ${finalExpected} EGP, Paid: ${actualPaid} EGP`,
             });
             toast.success("Package upgraded successfully");
-            setUpgradeMemberState(null);
-            setUpgradePackageId("");
-            setUpgradePaymentMethod("Cash");
-            setUpgradeInvoiceId("");
-            setUpgradePaymentDate("");
-            setUpgradeDiscount("");
-            setUpgradePaidAmount("");
-            setUpgradePackageCategoryFilter("All");
+            resetUpgradeState();
           }
         });
       },
@@ -576,7 +622,7 @@ export default function Members() {
       </Dialog>
 
       {/* Upgrade Member Dialog */}
-      <Dialog open={!!upgradeMemberState} onOpenChange={o => { if (!o) { setUpgradeMemberState(null); setUpgradePackageId(""); setUpgradePaymentMethod("Cash"); setUpgradeInvoiceId(""); setUpgradePaymentDate(""); setUpgradeDiscount(""); setUpgradePaidAmount(""); setUpgradePackageCategoryFilter("All"); } }}>
+      <Dialog open={!!upgradeMemberState} onOpenChange={o => { if (!o) resetUpgradeState(); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Upgrade Package</DialogTitle>
@@ -628,31 +674,117 @@ export default function Members() {
                     <Input placeholder="e.g. INV-123" value={upgradeInvoiceId} onChange={e => setUpgradeInvoiceId(e.target.value)} />
                   </div>
                 </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>Payment Date</Label>
                     <Input type="date" value={upgradePaymentDate} onChange={e => setUpgradePaymentDate(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Discount <span className="text-muted-foreground text-xs">(optional)</span></Label>
-                    <Input type="number" min="0" placeholder="0 EGP" value={upgradeDiscount} onChange={e => setUpgradeDiscount(e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
                     <Label>Paid Amount (EGP)</Label>
-                    <Input type="number" min="0" placeholder={`Full Amount (${Math.max(0, (packages.find(p => p.id.toString() === upgradePackageId)?.price || 0) - (packages.find(p => p.name === upgradeMemberState.package_name)?.price || 0) - Number(upgradeDiscount))} EGP)`} value={upgradePaidAmount} onChange={e => setUpgradePaidAmount(e.target.value)} />
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder={`Full (${upgradeFinalExpected} EGP)`}
+                      value={upgradePaidAmount}
+                      onChange={e => setUpgradePaidAmount(e.target.value)}
+                    />
                   </div>
                 </div>
-                <div className="px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100 text-sm space-y-1 mt-2">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Difference to Pay</span>
-                    <span className="font-bold text-emerald-600">
-                      {Math.max(0, (packages.find(p => p.id.toString() === upgradePackageId)?.price || 0) - (packages.find(p => p.name === upgradeMemberState.package_name)?.price || 0))} EGP
-                    </span>
+
+                <div className="space-y-2 pt-2 border-t">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold">Discount</Label>
+                    <div className="flex gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={upgradeDiscountMode === 'none' ? 'default' : 'outline'}
+                        className="h-6 text-xs px-2"
+                        onClick={() => { setUpgradeDiscountMode('none'); setUpgradeDiscountId(''); setUpgradeCustomDiscountValue(''); }}
+                      >
+                        None
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={upgradeDiscountMode === 'saved' ? 'default' : 'outline'}
+                        className="h-6 text-xs px-2"
+                        onClick={() => { setUpgradeDiscountMode('saved'); }}
+                      >
+                        Saved List
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={upgradeDiscountMode === 'custom' ? 'default' : 'outline'}
+                        className="h-6 text-xs px-2"
+                        onClick={() => { setUpgradeDiscountMode('custom'); setUpgradeDiscountId(''); }}
+                      >
+                        Custom
+                      </Button>
+                    </div>
                   </div>
-                  {(Number(upgradeDiscount) > 0) && (
-                    <div className="flex justify-between"><span className="text-muted-foreground">After Discount</span>
-                      <span className="font-bold text-emerald-600">
-                        {Math.max(0, (packages.find(p => p.id.toString() === upgradePackageId)?.price || 0) - (packages.find(p => p.name === upgradeMemberState.package_name)?.price || 0) - Number(upgradeDiscount))} EGP
-                      </span>
+
+                  {upgradeDiscountMode === 'saved' && (
+                    <div className="space-y-1">
+                      <Select value={upgradeDiscountId} onValueChange={setUpgradeDiscountId}>
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Select a gym discount..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {activeDiscounts.map(d => (
+                            <SelectItem key={d.id} value={d.id} className="text-xs">
+                              {d.name} ({d.discount_type === 'percentage' ? `${d.value}%` : `${d.value} EGP`})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {upgradeDiscountMode === 'custom' && (
+                    <div className="flex gap-2">
+                      <Input
+                        type="number"
+                        min="0"
+                        placeholder={upgradeCustomDiscountType === 'percentage' ? "e.g. 10%" : "e.g. 200 EGP"}
+                        className="h-8 text-xs flex-1"
+                        value={upgradeCustomDiscountValue}
+                        onChange={e => setUpgradeCustomDiscountValue(e.target.value)}
+                      />
+                      <Select value={upgradeCustomDiscountType} onValueChange={(v: "fixed" | "percentage") => setUpgradeCustomDiscountType(v)}>
+                        <SelectTrigger className="h-8 w-24 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="fixed">EGP</SelectItem>
+                          <SelectItem value="percentage">%</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+
+                <div className="px-3 py-2.5 rounded-lg bg-emerald-50 border border-emerald-100 text-sm space-y-1.5 mt-2">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground text-xs">Package Difference</span>
+                    <span className="font-semibold text-xs">{upgradePriceDiff.toLocaleString()} EGP</span>
+                  </div>
+                  {calculatedUpgradeDiscount > 0 && (
+                    <div className="flex justify-between text-emerald-700">
+                      <span className="text-xs">Discount</span>
+                      <span className="font-semibold text-xs">- {calculatedUpgradeDiscount.toLocaleString()} EGP</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between border-t border-emerald-200/60 pt-1 text-sm">
+                    <span className="font-medium text-emerald-900">Total Difference Due</span>
+                    <span className="font-bold text-emerald-700">{upgradeFinalExpected.toLocaleString()} EGP</span>
+                  </div>
+                  {upgradePaidAmount !== "" && Number(upgradePaidAmount) < upgradeFinalExpected && (
+                    <div className="flex justify-between border-t border-amber-200/80 pt-1 text-xs text-amber-800">
+                      <span>Remaining Debt</span>
+                      <span className="font-bold">{(upgradeFinalExpected - Number(upgradePaidAmount)).toLocaleString()} EGP</span>
                     </div>
                   )}
                 </div>
@@ -660,7 +792,7 @@ export default function Members() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setUpgradeMemberState(null); setUpgradePackageId(""); setUpgradePaymentMethod("Cash"); setUpgradeInvoiceId(""); setUpgradePaymentDate(""); setUpgradeDiscount(""); setUpgradePaidAmount(""); setUpgradePackageCategoryFilter("All"); }}>Cancel</Button>
+            <Button variant="outline" onClick={resetUpgradeState}>Cancel</Button>
             <Button onClick={handleUpgrade} disabled={createInvoice.isPending || updateMember.isPending}>
               {createInvoice.isPending || updateMember.isPending ? "Upgrading..." : "Upgrade Now"}
             </Button>
